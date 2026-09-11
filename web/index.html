@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSH Terminal</title>
+    <link rel="stylesheet" href="/css/style.css?v=7">
+</head>
+<body>
+    <div id="app">
+        <header id="header">
+            <div class="header-left">
+                <button id="menu-btn" class="header-icon-btn" title="Configuración de conexión" aria-label="Abrir menú de configuración">
+                    <svg class="icon-gear" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                </button>
+
+                <div id="target-pill" class="target-pill" title="Servidor y usuario activo">
+                    <span id="target-user-host" class="target-host">...</span>
+                    <span id="target-shell-badge" class="badge-shell">powershell</span>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <button id="reconnect-btn" class="header-btn" title="Reconectar sesión SSH">
+                    <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                    </svg>
+                    <span>Reconectar</span>
+                </button>
+                <span id="status" class="status disconnected">Desconectado</span>
+            </div>
+        </header>
+
+        <main id="output" aria-label="Salida del terminal"></main>
+
+        <footer id="input-area">
+            <span id="prompt-path" class="prompt-path">~</span>
+            <span class="prompt-char">&gt;</span>
+            <input
+                type="text"
+                id="command-input"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Escribe un comando y presiona Enter..."
+                autofocus
+            />
+        </footer>
+    </div>
+
+    <!-- Modal de Configuración -->
+    <div id="config-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog" role="dialog" aria-labelledby="modal-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                    </div>
+                    <h2 id="modal-title">Configuración de Conexión</h2>
+                </div>
+                <button id="close-modal-btn" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+
+            <form id="config-form" class="modal-body" novalidate>
+                <div class="form-row">
+                    <div class="form-field flex-2">
+                        <label for="cfg-host">Host / Servidor IP <span class="req">*</span></label>
+                        <input type="text" id="cfg-host" name="host" placeholder="ej. 192.168.101.80" required autocomplete="off" />
+                    </div>
+                    <div class="form-field flex-1">
+                        <label for="cfg-port">Puerto <span class="req">*</span></label>
+                        <input type="number" id="cfg-port" name="port" placeholder="22" value="22" min="1" max="65535" required autocomplete="off" />
+                    </div>
+                </div>
+
+                <div class="form-field">
+                    <label for="cfg-user">Usuario SSH <span class="req">*</span></label>
+                    <input type="text" id="cfg-user" name="user" placeholder="ej. andres" required autocomplete="off" />
+                </div>
+
+                <div class="form-field">
+                    <label>Terminal / Shell de Conexión</label>
+                    <div class="shell-cards">
+                        <label class="shell-card">
+                            <input type="radio" name="shell" value="powershell" checked />
+                            <div class="shell-card-content">
+                                <div class="shell-title">
+                                    <span class="shell-badge-icon pwsh">PS</span>
+                                    <strong>PowerShell</strong>
+                                </div>
+                                <span class="shell-desc">powershell.exe</span>
+                            </div>
+                        </label>
+                        <label class="shell-card">
+                            <input type="radio" name="shell" value="cmd" />
+                            <div class="shell-card-content">
+                                <div class="shell-title">
+                                    <span class="shell-badge-icon cmd">&gt;_</span>
+                                    <strong>CMD</strong>
+                                </div>
+                                <span class="shell-desc">cmd.exe tradicional</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-field">
+                    <label for="cfg-start-path">Ruta Predeterminada de Inicio</label>
+                    <input type="text" id="cfg-start-path" name="startPath" placeholder="ej. C:\Users\andres o C:\proyectos" autocomplete="off" />
+                    <small class="field-hint">Directorio en el que comenzará la sesión de terminal al conectarse.</small>
+                </div>
+
+                <div class="form-field">
+                    <label for="cfg-key-path">Ubicación de la llave privada SSH <span class="req">*</span></label>
+                    <input type="text" id="cfg-key-path" name="keyPath" placeholder="ej. C:/Users/andres/.ssh/id_ed25519" autocomplete="off" />
+                    <small class="field-hint">Ruta local de la llave privada usada para la conexión.</small>
+                </div>
+
+                <div id="modal-feedback" class="modal-feedback hidden"></div>
+
+                <div class="modal-footer">
+                    <button type="button" id="btn-reset-defaults" class="btn btn-ghost" title="Restablecer a valores de entorno y config.properties">
+                        Valores por Defecto
+                    </button>
+                    <div class="modal-footer-actions">
+                        <button type="button" id="btn-cancel-modal" class="btn btn-secondary">
+                            Cancelar
+                        </button>
+                        <button type="submit" id="btn-save-connect" class="btn btn-primary">
+                            Guardar y Conectar
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/js/ansi.js?v=9"></script>
+    <script src="/js/websocket.js?v=9"></script>
+    <script src="/js/app.js?v=9"></script>
+</body>
+</html>
