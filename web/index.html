@@ -10,10 +10,9 @@
     <div id="app">
         <header id="header">
             <div class="header-left">
-                <button id="menu-btn" class="header-icon-btn" title="Configuración de conexión" aria-label="Abrir menú de configuración">
-                    <svg class="icon-gear" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
-                        <circle cx="12" cy="12" r="3"></circle>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                <button id="menu-btn" class="header-icon-btn" title="Abrir menú lateral" aria-label="Abrir menú lateral">
+                    <svg class="icon-menu" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
+                        <path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round" />
                     </svg>
                 </button>
 
@@ -49,6 +48,93 @@
             />
         </footer>
     </div>
+
+    <aside id="app-sidebar" class="app-sidebar hidden">
+        <div class="sidebar-head">
+            <div class="sidebar-title">
+                <span class="sidebar-kicker">Panel</span>
+                <span class="sidebar-label">SSH Web</span>
+            </div>
+            <button id="close-sidebar-btn" class="sidebar-close" aria-label="Cerrar menú">×</button>
+        </div>
+
+        <nav class="sidebar-nav">
+            <button class="sidebar-link active" data-menu="config">Configuración</button>
+            <button class="sidebar-link" data-menu="vms">Máquinas virtuales</button>
+        </nav>
+
+        <section id="sidebar-config-view" class="sidebar-view active">
+            <div class="sidebar-view-title">Configuración</div>
+            <div class="sidebar-view-actions">
+                <button id="open-config-modal" class="btn btn-primary sidebar-open-config">Abrir configuración</button>
+            </div>
+            <div class="sidebar-config-grid">
+                <div class="sidebar-config-item">
+                    <span class="sidebar-config-label">Host</span>
+                    <span id="side-host" class="sidebar-config-value">Sin host</span>
+                </div>
+                <div class="sidebar-config-item">
+                    <span class="sidebar-config-label">Puerto</span>
+                    <span id="side-port" class="sidebar-config-value">22</span>
+                </div>
+                <div class="sidebar-config-item">
+                    <span class="sidebar-config-label">Usuario</span>
+                    <span id="side-user" class="sidebar-config-value">Sin usuario</span>
+                </div>
+                <div class="sidebar-config-item">
+                    <span class="sidebar-config-label">Shell</span>
+                    <span id="side-shell" class="sidebar-config-value">powershell</span>
+                </div>
+            </div>
+        </section>
+
+        <section id="sidebar-vms-view" class="sidebar-view">
+            <div class="sidebar-view-title">Máquinas virtuales</div>
+            <div class="vms-toolbar">
+                <button id="open-create-vm" class="btn btn-primary">Crear MV</button>
+            </div>
+
+            <div id="vm-form-wrap" class="vm-form-wrap hidden">
+                <div id="vm-form-loader" class="vm-form-loader hidden">
+                    <span class="vm-loader-spinner" aria-hidden="true"></span>
+                    <span class="vm-loader-label">Creando VM</span>
+                </div>
+                <div id="vm-form-feedback" class="vm-form-feedback hidden"></div>
+                <form id="vm-form" class="vm-form">
+                    <div class="form-field">
+                        <label for="vm-name">Nombre</label>
+                        <input type="text" id="vm-name" name="name" required autocomplete="off" />
+                    </div>
+                    <div class="form-field">
+                        <label for="vm-iso">ISO</label>
+                        <select id="vm-iso" name="iso" required></select>
+                    </div>
+                    <div class="form-row compact">
+                        <div class="form-field">
+                            <label for="vm-cores">CPU</label>
+                            <input type="number" id="vm-cores" name="cores" min="1" value="2" required />
+                        </div>
+                        <div class="form-field">
+                            <label for="vm-memory">Memoria MB</label>
+                            <input type="number" id="vm-memory" name="memoryMB" min="512" value="2048" required />
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label for="vm-disk">Disco GB</label>
+                        <input type="number" id="vm-disk" name="diskGB" min="10" value="40" required />
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="cancel-vm-form" class="btn btn-secondary">Cancelar</button>
+                        <button type="submit" id="vm-submit" class="btn btn-primary">Crear</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="vm-list-wrapper">
+                <div id="vm-list" class="vm-list"></div>
+            </div>
+        </section>
+    </aside>
 
     <!-- Modal de Configuración -->
     <div id="config-modal" class="modal-backdrop hidden" aria-hidden="true">

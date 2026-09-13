@@ -3,14 +3,19 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/feliren/ssh-web/internal/config"
 	"github.com/feliren/ssh-web/internal/ssh"
+	"github.com/feliren/ssh-web/internal/vm"
 	"github.com/gorilla/websocket"
 )
 
@@ -31,28 +36,42 @@ var upgrader = websocket.Upgrader{
 
 // Handler gestiona las peticiones HTTP, el endpoint de configuracion y la conexion WebSocket
 type Handler struct {
-	cfgMu  sync.RWMutex
-	cfg    *config.Config
-	log    *slog.Logger
-	static http.Handler
+	cfgMu   sync.RWMutex
+	cfg     *config.Config
+	log     *slog.Logger
+	static  http.Handler
+	vmStore *vmFileStore
+	vmSvc   *vm.Service
 }
 
 // NewHandler inicializa el enrutador para archivos estaticos, configuracion y el endpoint WebSocket
 func NewHandler(cfg *config.Config, log *slog.Logger, staticDir string) *Handler {
+	vmStore := newVMFileStore(filepath.Join(".", "vms.json"))
 	return &Handler{
-		cfg:    cfg,
-		log:    log,
-		static: http.FileServer(http.Dir(staticDir)),
+		cfg:     cfg,
+		log:     log,
+		static:  http.FileServer(http.Dir(staticDir)),
+		vmStore: vmStore,
+		vmSvc:   vm.NewService(cfg, log),
 	}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch r.URL.Path {
-	case "/ws":
+	switch {
+	case r.URL.Path == "/ws":
 		h.handleWebSocket(w, r)
 		return
-	case "/api/config":
+	case r.URL.Path == "/api/config":
 		h.handleConfig(w, r)
+		return
+	case r.URL.Path == "/api/vms":
+		h.handleVirtualMachines(w, r)
+		return
+	case r.URL.Path == "/api/isos":
+		h.handleISOs(w, r)
+		return
+	case strings.HasPrefix(r.URL.Path, "/api/vms/"):
+		h.handleVirtualMachineByID(w, r)
 		return
 	}
 
@@ -139,6 +158,107 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 		h.cfgMu.Unlock()
 
 		json.NewEncoder(w).Encode(resp)
+
+	default:
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleISOs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	isos := []string{}
+	isoFile := filepath.Join(".", "isos.json")
+	data, err := os.ReadFile(isoFile)
+	if err == nil {
+		var payload struct {
+			ISOs []struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+			} `json:"isos"`
+		}
+		if json.Unmarshal(data, &payload) == nil {
+			for _, item := range payload.ISOs {
+				if strings.TrimSpace(item.Name) != "" {
+					isos = append(isos, item.Name)
+				}
+			}
+		}
+	}
+	if len(isos) == 0 {
+		isos = []string{
+			"ubuntu-24.04.5-live-server-amd64.iso",
+			"debian-13.5.0-amd64-netinst.iso",
+		}
+	}
+	json.NewEncoder(w).Encode(map[string][]string{"isos": isos})
+}
+
+func (h *Handler) handleVirtualMachines(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		vms, err := h.vmSvc.List()
+		if err != nil {
+			h.log.Warn("no se pudo listar maquinas virtuales por SSH", "error", err)
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(vms)
+
+	case http.MethodPost:
+		var req ssh.VMCreateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"cuerpo de solicitud invalido"}`, http.StatusBadRequest)
+			return
+		}
+
+		vm, err := h.vmSvc.Create(req)
+		if err != nil {
+			h.log.Warn("no se pudo crear maquina virtual por SSH", "error", err)
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(vm)
+
+	default:
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleVirtualMachineByID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	id := strings.TrimPrefix(r.URL.Path, "/api/vms/")
+	id = strings.TrimSpace(id)
+	if id == "" {
+		http.Error(w, `{"error":"id requerido"}`, http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		vm, err := h.vmSvc.Get(id)
+		if err != nil {
+			h.log.Warn("no se pudo consultar detalle de maquina virtual", "error", err)
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(vm)
+
+	case http.MethodDelete:
+		if err := h.vmSvc.Delete(id); err != nil {
+			h.log.Warn("no se pudo eliminar maquina virtual por SSH", "error", err)
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
 
 	default:
 		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)

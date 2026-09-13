@@ -13,6 +13,33 @@ class TerminalApp {
         this.menuBtn = document.getElementById('menu-btn');
         this.reconnectBtn = document.getElementById('reconnect-btn');
 
+        // Sidebar y vistas de navegación
+        this.sidebarEl = document.getElementById('app-sidebar');
+        this.closeSidebarBtn = document.getElementById('close-sidebar-btn');
+        this.openConfigModalBtn = document.getElementById('open-config-modal');
+        this.sideHost = document.getElementById('side-host');
+        this.sidePort = document.getElementById('side-port');
+        this.sideUser = document.getElementById('side-user');
+        this.sideShell = document.getElementById('side-shell');
+        this.sideViews = Array.from(document.querySelectorAll('.sidebar-view'));
+        this.sideLinks = Array.from(document.querySelectorAll('.sidebar-link'));
+
+        // VM elements
+        this.vmListEl = document.getElementById('vm-list');
+        this.vmFormWrap = document.getElementById('vm-form-wrap');
+        this.vmFormLoader = document.getElementById('vm-form-loader');
+        this.vmFormFeedback = document.getElementById('vm-form-feedback');
+        this.openCreateVmBtn = document.getElementById('open-create-vm');
+        this.cancelVmFormBtn = document.getElementById('cancel-vm-form');
+        this.vmSubmitBtn = document.getElementById('vm-submit');
+        this.vmForm = document.getElementById('vm-form');
+        this.vmNameInput = document.getElementById('vm-name');
+        this.vmISOSelect = document.getElementById('vm-iso');
+        this.vmCoresInput = document.getElementById('vm-cores');
+        this.vmMemoryInput = document.getElementById('vm-memory');
+        this.vmDiskInput = document.getElementById('vm-disk');
+        this.vmCreateInProgress = false;
+
         // Elementos del modal de configuracion
         this.modalEl = document.getElementById('config-modal');
         this.closeModalBtn = document.getElementById('close-modal-btn');
@@ -56,6 +83,8 @@ class TerminalApp {
 
         this.bindEvents();
         this.loadInitialConfig();
+        this.loadISOs();
+        this.loadVirtualMachines();
     }
 
     async loadInitialConfig() {
@@ -68,6 +97,7 @@ class TerminalApp {
 
                 this.populateForm(this.currentConfig);
                 this.updateTargetPill(this.currentConfig);
+                this.updateSidebarConfig(this.currentConfig);
                 this.updateCurrentPath(this.currentConfig.sshStartPath || '~');
 
                 // Si el host o usuario no están configurados, abrir modal automáticamente
@@ -151,9 +181,12 @@ class TerminalApp {
         // Redimensionamiento de ventana
         window.addEventListener('resize', () => this.handleResize());
 
-        // Foco inteligente en terminal (sin interferir con modales ni botones de cabecera)
+        // Foco inteligente en terminal (sin interferir con modales, cabecera ni el panel lateral)
         document.addEventListener('click', (e) => {
-            if (this.isModalOpen() || e.target.closest('#config-modal') || e.target.closest('#header')) {
+            if (this.isModalOpen() ||
+                e.target.closest('#config-modal') ||
+                e.target.closest('#header') ||
+                e.target.closest('#app-sidebar')) {
                 return;
             }
             const selection = window.getSelection();
@@ -162,10 +195,40 @@ class TerminalApp {
             }
         });
 
-        // Apertura del modal de configuracion
+        // Apertura del menu lateral de navegacion
         this.menuBtn.addEventListener('click', () => {
+            this.toggleSidebar();
+        });
+
+        this.closeSidebarBtn.addEventListener('click', () => {
+            this.toggleSidebar(false);
+        });
+
+        this.sideLinks.forEach((link) => {
+            link.addEventListener('click', () => {
+                const target = link.dataset.menu;
+                this.switchSidebarView(target);
+            });
+        });
+
+        this.openConfigModalBtn.addEventListener('click', () => {
+            this.toggleSidebar(false);
             this.openModal();
         });
+
+        this.openCreateVmBtn.addEventListener('click', () => {
+            this.hideVMFeedback();
+            this.vmFormWrap.classList.toggle('hidden');
+        });
+
+        this.cancelVmFormBtn.addEventListener('click', () => {
+            this.vmFormWrap.classList.add('hidden');
+            this.vmForm.reset();
+            this.hideVMFeedback();
+            this.setCreateLoading(false);
+        });
+
+        this.vmForm.addEventListener('submit', (e) => this.handleVMCreate(e));
 
         // Boton de reconexion directa
         this.reconnectBtn.addEventListener('click', () => {
@@ -202,6 +265,201 @@ class TerminalApp {
 
         // Envio del formulario de configuracion (Guardar y Conectar)
         this.configForm.addEventListener('submit', (e) => this.handleConfigSubmit(e));
+    }
+
+    toggleSidebar(forceOpen) {
+        if (!this.sidebarEl) return;
+        if (typeof forceOpen === 'boolean') {
+            this.sidebarEl.classList.toggle('hidden', !forceOpen);
+            return;
+        }
+        this.sidebarEl.classList.toggle('hidden');
+    }
+
+    switchSidebarView(view) {
+        this.sideLinks.forEach((l) => l.classList.toggle('active', l.dataset.menu === view));
+        this.sideViews.forEach((s) => s.classList.toggle('active', s.id === `sidebar-${view}-view`));
+    }
+
+    updateSidebarConfig(cfg) {
+        if (!cfg) return;
+        if (this.sideHost) this.sideHost.textContent = cfg.sshHost || 'Sin host';
+        if (this.sidePort) this.sidePort.textContent = String(cfg.sshPort || 22);
+        if (this.sideUser) this.sideUser.textContent = cfg.sshUser || 'Sin usuario';
+        if (this.sideShell) this.sideShell.textContent = (cfg.sshShell || 'powershell').toLowerCase();
+    }
+
+    async loadISOs() {
+        try {
+            const res = await fetch('/api/isos');
+            if (!res.ok) return;
+            const data = await res.json();
+            const isos = data.isos || [];
+            this.vmISOSelect.innerHTML = isos.map((iso) => `<option value="${iso}">${iso}</option>`).join('');
+        } catch (e) {
+            console.warn('No se pudieron cargar los ISOs:', e);
+        }
+    }
+
+    async loadVirtualMachines() {
+        try {
+            const res = await fetch('/api/vms');
+            if (!res.ok) return;
+            const vms = await res.json();
+            this.renderVMList(vms);
+        } catch (e) {
+            console.warn('No se pudieron cargar las máquinas virtuales:', e);
+        }
+    }
+
+    renderVMList(vms) {
+        if (!this.vmListEl) return;
+        if (!Array.isArray(vms) || vms.length === 0) {
+            this.vmListEl.innerHTML = `<div class="empty-vm-list">No hay máquinas virtuales</div>`;
+            return;
+        }
+
+        this.vmListEl.innerHTML = vms.map((vm) => `
+            <div class="vm-card">
+                <div class="vm-card-header">
+                    <span class="vm-name">${vm.name}</span>
+                    <span class="vm-os">${vm.os}</span>
+                </div>
+                <div class="vm-card-details">
+                    <span>ISO: ${vm.iso}</span>
+                    <span>CPU: ${vm.cores}</span>
+                    <span>RAM: ${vm.memoryMB} MB</span>
+                    <span>Disco: ${vm.diskGB} GB</span>
+                </div>
+                <div class="vm-card-actions">
+                    <button class="btn btn-secondary view-vm" data-id="${vm.id}">Ver</button>
+                    <button class="btn btn-danger delete-vm" data-id="${vm.id}">Eliminar</button>
+                </div>
+            </div>
+        `).join('');
+
+        this.vmListEl.querySelectorAll('[data-id]').forEach((btn) => {
+            btn.addEventListener('click', async (event) => {
+                const id = event.target.dataset.id;
+                if (event.target.classList.contains('delete-vm')) {
+                    await this.deleteVirtualMachine(id);
+                    return;
+                }
+                await this.viewVirtualMachine(id);
+            });
+        });
+    }
+
+    async viewVirtualMachine(id) {
+        try {
+            const res = await fetch(`/api/vms/${id}`);
+            if (!res.ok) return;
+            const vm = await res.json();
+            this.showModalFeedback(`VM ${vm.name}: SO ${vm.os}, ISO ${vm.iso}, CPU ${vm.cores}, RAM ${vm.memoryMB} MB, Disco ${vm.diskGB} GB`, 'success');
+        } catch (e) {
+            console.warn('No se pudo ver la VM:', e);
+        }
+    }
+
+    async deleteVirtualMachine(id) {
+        try {
+            const res = await fetch(`/api/vms/${id}`, { method: 'DELETE' });
+            if (!res.ok) return;
+            this.loadVirtualMachines();
+        } catch (e) {
+            console.warn('No se pudo eliminar la VM:', e);
+        }
+    }
+
+    setCreateLoading(isBusy) {
+        this.vmCreateInProgress = isBusy;
+        this.vmFormWrap.classList.toggle('creating', isBusy);
+        this.vmFormLoader.classList.toggle('hidden', !isBusy);
+        this.vmSubmitBtn.disabled = isBusy;
+        this.cancelVmFormBtn.disabled = isBusy;
+        Array.from(this.vmForm.elements).forEach((el) => {
+            if (el !== this.vmSubmitBtn && el !== this.cancelVmFormBtn) {
+                el.disabled = isBusy;
+            }
+        });
+    }
+
+    showVMCreateFeedback(text, type = 'error') {
+        if (!this.vmFormFeedback) return;
+        this.vmFormFeedback.textContent = text;
+        this.vmFormFeedback.className = `vm-form-feedback ${type}`;
+        this.vmFormFeedback.classList.remove('hidden');
+    }
+
+    hideVMFeedback() {
+        if (!this.vmFormFeedback) return;
+        this.vmFormFeedback.textContent = '';
+        this.vmFormFeedback.className = 'vm-form-feedback hidden';
+    }
+
+    parseApiError(text) {
+        try {
+            const payload = JSON.parse(text);
+            if (payload && payload.error) return payload.error;
+        } catch (_) {
+            // El backend puede responder con una cadena libre.
+        }
+        return text || 'No se pudo crear la máquina virtual.';
+    }
+
+    async handleVMCreate(e) {
+        e.preventDefault();
+        if (this.vmCreateInProgress) return;
+
+        const payload = {
+            name: this.vmNameInput.value.trim(),
+            iso: this.vmISOSelect.value,
+            cores: parseInt(this.vmCoresInput.value, 10) || 1,
+            memoryMB: parseInt(this.vmMemoryInput.value, 10) || 1024,
+            diskGB: parseInt(this.vmDiskInput.value, 10) || 10,
+        };
+
+        if (!payload.name) {
+            this.showVMCreateFeedback('El nombre de la VM es obligatorio.', 'error');
+            this.vmNameInput.focus();
+            return;
+        }
+
+        if (!payload.iso) {
+            this.showVMCreateFeedback('Debe elegir una ISO.', 'error');
+            this.vmISOSelect.focus();
+            return;
+        }
+
+        this.hideVMFeedback();
+        this.setCreateLoading(true);
+
+        try {
+            const res = await fetch('/api/vms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                this.showVMCreateFeedback(this.parseApiError(text), 'error');
+                return;
+            }
+
+            const vm = await res.json();
+            this.vmForm.reset();
+            this.hideVMFeedback();
+            this.loadVirtualMachines();
+            this.showVMCreateFeedback(`VM creada: ${vm.name || payload.name}`, 'success');
+            this.vmFormWrap.classList.remove('hidden');
+            this.vmFormWrap.classList.remove('creating');
+            this.vmFormLoader.classList.add('hidden');
+        } catch (err) {
+            console.warn('No se pudo crear la máquina virtual:', err);
+            this.showVMCreateFeedback(err && err.message ? err.message : 'No se pudo crear la máquina virtual.', 'error');
+        } finally {
+            this.setCreateLoading(false);
+        }
     }
 
     isModalOpen() {
@@ -285,6 +543,7 @@ class TerminalApp {
 
         this.currentConfig = { ...newConfig };
         this.updateTargetPill(this.currentConfig);
+        this.updateSidebarConfig(this.currentConfig);
         this.updateCurrentPath(this.currentConfig.sshStartPath || '~');
 
         this.closeModal();
@@ -404,9 +663,10 @@ class TerminalApp {
         if (lastEscape === -1) return combined;
 
         const tail = combined.slice(lastEscape);
-        // CSI incompleta (por ejemplo ESC[2, a la espera de la J) u OSC sin terminar.
-        if ((tail.startsWith('\x1b[') && !/\x1b\[[0-?]*[ -/]*[@-~]$/.test(tail)) ||
-            (tail.startsWith('\x1b]') && !/(?:\x07|\x1b\\)$/.test(tail))) {
+        const isBrokenCSI = tail.startsWith('\x1b[') && !/\x1b\[[0-?]*[ -/]*[@-~]$/.test(tail);
+        const isBrokenOSC = tail.startsWith('\x1b]') && !/(?:\x07|\x1b\\)$/.test(tail);
+
+        if (isBrokenCSI || isBrokenOSC) {
             this.pendingEscapeSequence = tail;
             return combined.slice(0, lastEscape);
         }
@@ -433,22 +693,38 @@ class TerminalApp {
     processText(text) {
         if (!text) return;
 
-        const processed = this.removeBackspaces(text);
-        const tokens = processed.split(/(\r\n|\r|\n)/);
+        const processed = this.removeBackspaces(AnsiParser.sanitizeText(text));
+        const normalized = processed.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const lines = normalized.split('\n');
 
-        for (const token of tokens) {
-            if (token === '') continue;
-
-            if (token === '\r\n' || token === '\n') {
-                this.finishLine();
-            } else if (token === '\r') {
-                this.pendingText = '';
-                if (this.currentLineEl) {
-                    this.currentLineEl.innerHTML = '';
-                }
-            } else {
-                this.appendToCurrentLine(token);
+        for (const rawLine of lines) {
+            const line = rawLine.replace(/\s+$/g, '');
+            const plain = line.trim();
+            if (!plain) {
+                continue;
             }
+
+            // Filtra el ruido de la PTY de PowerShell: líneas de prompt, “P”, “>>”
+            // y el artefacto “PPS C:\...>” que se empalma con el texto del comando.
+            if (plain === 'P' || plain === '>>' || plain === '>' || /^PPS\s+[A-Za-z]:\\/.test(plain)) {
+                continue;
+            }
+
+            if (/^PS\s+[A-Za-z]:\\[^>]*>\s*$/.test(plain)) {
+                const path = AnsiParser.extractPath(line);
+                if (path) {
+                    this.updateCurrentPath(path);
+                }
+                continue;
+            }
+
+            if (/^PS\s+[A-Za-z]:\\[^>]*>\s+/.test(plain)) {
+                continue;
+            }
+
+            // Render line-by-line; avoid nested run of the same prompt fragments.
+            this.appendToCurrentLine(line);
+            this.finishLine();
         }
 
         this.scrollToBottom();
@@ -467,42 +743,10 @@ class TerminalApp {
         if (detectedPath) {
             this.updateCurrentPath(detectedPath);
         }
-        const promptState = this.getRemotePromptState(this.pendingText);
-        if (this.hiddenRemotePrompt || promptState === 'prompt') {
-            // El prompt se muestra exclusivamente en la barra de entrada propia.
-            this.hiddenRemotePrompt = true;
-            this.remotePromptCandidate = false;
-            this.currentLineEl.innerHTML = '';
-            return;
-        }
 
-        if (promptState === 'candidate') {
-            // Esperar solo el siguiente fragmento para distinguir "P" de "PS ".
-            // No se marca como prompt todavía: puede ser salida real (p. ej. ping).
-            this.remotePromptCandidate = true;
-            this.currentLineEl.innerHTML = '';
-            return;
-        }
-
-        this.remotePromptCandidate = false;
         const result = AnsiParser.renderToHTML(this.pendingText, []);
         this.activeClasses = result.classes;
         this.currentLineEl.innerHTML = result.html;
-    }
-
-    getRemotePromptState(text) {
-        const plain = AnsiParser.stripAnsi(text).replace(/\r/g, '');
-        const shell = (this.currentConfig.sshShell || '').toLowerCase();
-
-        if (shell === 'powershell' || shell === 'powershell.exe' || shell === 'pwsh') {
-            if (/^P(?:S\s*)?$/.test(plain)) return 'candidate';
-            if (/^PS\s+[a-zA-Z]:[\\/][^>\r\n]*>.*$/.test(plain)) return 'prompt';
-            return null;
-        }
-
-        if (/^[a-zA-Z]:[\\/][^>\r\n]*$/.test(plain)) return 'candidate';
-        if (/^[a-zA-Z]:[\\/][^>\r\n]*>.*$/.test(plain)) return 'prompt';
-        return null;
     }
 
     finishLine() {
