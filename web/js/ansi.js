@@ -91,10 +91,21 @@ const AnsiParser = (() => {
 
     function sanitizeText(text) {
         if (!text) return '';
-        return text
+        let clean = text
             .replace(OSC_REGEX, '')
             .replace(DEC_REGEX, '')
-            .replace(NON_SGR_CSI_REGEX, '');
+            .replace(NON_SGR_CSI_REGEX, '')
+            .replace(/\x07/g, '')
+            .replace(/\x1b\]0;[^\x07\x1b\r\n]*(?:\x07|\x1b\\)/g, '')
+            .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
+
+        clean = clean.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        clean = clean.replace(/PPS\s+([A-Za-z]:\\)/g, 'PS $1');
+        clean = clean.replace(/^P\s+PS\s+/gm, 'PS ');
+        clean = clean.replace(/^P\s*$/gm, '');
+        clean = clean.replace(/^>>\s*$/gm, '');
+        clean = clean.replace(/^>\s*$/gm, '');
+        return clean;
     }
 
     function renderToHTML(text, activeClasses) {
@@ -165,6 +176,7 @@ const AnsiParser = (() => {
         stripAnsi,
         hasClearScreen,
         removeClearScreen,
+        sanitizeText,
         renderToHTML,
         extractPath,
     };

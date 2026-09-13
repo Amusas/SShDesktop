@@ -1,17 +1,91 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	gossh "golang.org/x/crypto/ssh"
 )
+
+// CreateVirtualMachine lanza una creación de VM remota por SSH usando un comando de ejemplo seguro.
+func CreateVirtualMachine(ctx context.Context, cfg Config, vm interface {
+	GetName() string
+	GetOS() string
+	GetISO() string
+	GetCores() int
+	GetMemoryMB() int
+	GetDiskGB() int
+}, log *slog.Logger) error {
+	_ = ctx
+	name := sanitizeToken(vm.GetName())
+	osName := sanitizeToken(vm.GetOS())
+	iso := sanitizeToken(vm.GetISO())
+	cores := vm.GetCores()
+	memory := vm.GetMemoryMB()
+	disk := vm.GetDiskGB()
+	cmd := fmt.Sprintf(`mkdir -p "/tmp/ssh-web-vms" && printf 'name=%s;os=%s;iso=%s;cores=%d;memory=%d;disk=%d' > "/tmp/ssh-web-vms/%s.json"`,
+		name, osName, iso, cores, memory, disk, name)
+	if _, err := ExecuteCommand(cfg, cmd, log); err != nil {
+		return fmt.Errorf("creando maquina virtual remota por SSH: %w", err)
+	}
+	log.Info("maquina virtual registrada remotamente por SSH", "name", vm.GetName(), "iso", vm.GetISO())
+	return nil
+}
+
+func ExecuteCommand(cfg Config, command string, log *slog.Logger) (string, error) {
+	authMethods, err := buildAuthMethods(cfg)
+	if err != nil {
+		return "", fmt.Errorf("construyendo metodos de autenticacion: %w", err)
+	}
+
+	clientConfig := &gossh.ClientConfig{
+		User:            cfg.User,
+		Auth:            authMethods,
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+	}
+
+	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	client, err := gossh.Dial("tcp", addr, clientConfig)
+	if err != nil {
+		return "", fmt.Errorf("conectando al servidor SSH: %w", err)
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("creando sesion SSH para comando: %w", err)
+	}
+	defer session.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	session.Stdout = &stdout
+	session.Stderr = &stderr
+
+	if err := session.Run(command); err != nil {
+		if stderr.Len() > 0 {
+			return stdout.String(), fmt.Errorf("ejecutando comando remoto: %w: %s", err, strings.TrimSpace(stderr.String()))
+		}
+		return stdout.String(), fmt.Errorf("ejecutando comando remoto: %w", err)
+	}
+
+	out := strings.TrimSpace(stdout.String())
+	return out, nil
+}
+
+func sanitizeToken(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	re := regexp.MustCompile(`[^a-z0-9._-]+`)
+	return re.ReplaceAllString(value, "-")
+}
 
 const readBufferSize = 4096
 
@@ -64,7 +138,7 @@ func NewSession(ctx context.Context, cfg Config, log *slog.Logger) (*Session, er
 	}
 
 	modes := gossh.TerminalModes{
-		gossh.ECHO:          1,
+		gossh.ECHO:          0,
 		gossh.TTY_OP_ISPEED: 14400,
 		gossh.TTY_OP_OSPEED: 14400,
 	}
@@ -88,14 +162,6 @@ func NewSession(ctx context.Context, cfg Config, log *slog.Logger) (*Session, er
 		session.Close()
 		client.Close()
 		return nil, fmt.Errorf("abriendo canal stdout: %w", err)
-	}
-
-	stderr, err := session.StderrPipe()
-	if err != nil {
-		stdin.Close()
-		session.Close()
-		client.Close()
-		return nil, fmt.Errorf("abriendo canal stderr: %w", err)
 	}
 
 	shellType := strings.ToLower(strings.TrimSpace(cfg.Shell))
@@ -149,7 +215,6 @@ func NewSession(ctx context.Context, cfg Config, log *slog.Logger) (*Session, er
 	log.Info("sesion SSH establecida", "direccion", addr, "shell", cfg.Shell)
 
 	go s.pumpOutput(ctx, stdout, "stdout")
-	go s.pumpOutput(ctx, stderr, "stderr")
 
 	go func() {
 		<-ctx.Done()
