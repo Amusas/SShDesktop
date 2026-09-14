@@ -289,6 +289,19 @@ body {
     border-color: var(--border);
 }
 
+.btn[disabled] {
+    opacity: 0.72;
+    cursor: not-allowed;
+    filter: grayscale(0.2);
+}
+
+.btn-busy {
+    background: var(--accent-yellow);
+    color: #221100;
+    border-color: var(--accent-yellow);
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.4), 0 0 14px rgba(245, 158, 11, 0.30);
+}
+
 .btn-danger {
     background: rgba(239, 68, 68, 0.15);
     color: var(--accent-red);

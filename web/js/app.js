@@ -323,25 +323,25 @@ class TerminalApp {
             <div class="vm-card">
                 <div class="vm-card-header">
                     <span class="vm-name">${vm.name}</span>
-                    <span class="vm-os">${vm.os}</span>
+                    <span class="vm-os">${vm.os || 'VM'}</span>
                 </div>
                 <div class="vm-card-details">
-                    <span>ISO: ${vm.iso}</span>
-                    <span>CPU: ${vm.cores}</span>
-                    <span>RAM: ${vm.memoryMB} MB</span>
-                    <span>Disco: ${vm.diskGB} GB</span>
+                    <span>ISO: ${vm.iso || '-'}</span>
+                    <span>CPU: ${vm.cores || 0}</span>
+                    <span>RAM: ${vm.memoryMB || 0} MB</span>
+                    <span>Disco: ${vm.diskGB || 0} GB</span>
                 </div>
                 <div class="vm-card-actions">
-                    <button class="btn btn-secondary view-vm" data-id="${vm.id}">Ver</button>
-                    <button class="btn btn-danger delete-vm" data-id="${vm.id}">Eliminar</button>
+                    <button class="btn btn-secondary view-vm" data-id="${vm.name}">Ver</button>
+                    <button class="btn btn-danger delete-vm" data-id="${vm.name}">Eliminar</button>
                 </div>
             </div>
         `).join('');
 
         this.vmListEl.querySelectorAll('[data-id]').forEach((btn) => {
             btn.addEventListener('click', async (event) => {
-                const id = event.target.dataset.id;
-                if (event.target.classList.contains('delete-vm')) {
+                const id = event.currentTarget.dataset.id;
+                if (event.currentTarget.classList.contains('delete-vm')) {
                     await this.deleteVirtualMachine(id);
                     return;
                 }
@@ -352,22 +352,33 @@ class TerminalApp {
 
     async viewVirtualMachine(id) {
         try {
-            const res = await fetch(`/api/vms/${id}`);
-            if (!res.ok) return;
+            const res = await fetch(`/api/vms/${encodeURIComponent(id)}`);
+            if (!res.ok) {
+                const text = await res.text();
+                this.appendErrorLine(`[Ver VM] ${this.parseApiError(text)}`);
+                return;
+            }
             const vm = await res.json();
-            this.showModalFeedback(`VM ${vm.name}: SO ${vm.os}, ISO ${vm.iso}, CPU ${vm.cores}, RAM ${vm.memoryMB} MB, Disco ${vm.diskGB} GB`, 'success');
+            this.appendInfoLine(`[Ver VM] ${vm.name}: SO ${vm.os}, ISO ${vm.iso}, CPU ${vm.cores}, RAM ${vm.memoryMB} MB, Disco ${vm.diskGB} GB`);
         } catch (e) {
             console.warn('No se pudo ver la VM:', e);
+            this.appendErrorLine('[Ver VM] No se pudo consultar la máquina virtual.');
         }
     }
 
     async deleteVirtualMachine(id) {
         try {
-            const res = await fetch(`/api/vms/${id}`, { method: 'DELETE' });
-            if (!res.ok) return;
-            this.loadVirtualMachines();
+            const res = await fetch(`/api/vms/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const text = await res.text();
+                this.appendErrorLine(`[Eliminar VM] ${this.parseApiError(text)}`);
+                return;
+            }
+            this.appendInfoLine(`[Eliminar VM] ${id} solicitado.`);
+            await this.loadVirtualMachines();
         } catch (e) {
             console.warn('No se pudo eliminar la VM:', e);
+            this.appendErrorLine('[Eliminar VM] No se pudo eliminar la máquina virtual.');
         }
     }
 
@@ -375,8 +386,14 @@ class TerminalApp {
         this.vmCreateInProgress = isBusy;
         this.vmFormWrap.classList.toggle('creating', isBusy);
         this.vmFormLoader.classList.toggle('hidden', !isBusy);
+
         this.vmSubmitBtn.disabled = isBusy;
         this.cancelVmFormBtn.disabled = isBusy;
+        this.vmSubmitBtn.classList.toggle('btn-busy', isBusy);
+        this.cancelVmFormBtn.classList.toggle('btn-busy', isBusy);
+        this.vmSubmitBtn.textContent = isBusy ? 'Creando...' : 'Crear';
+        this.cancelVmFormBtn.textContent = isBusy ? 'Cancelando...' : 'Cancelar';
+
         Array.from(this.vmForm.elements).forEach((el) => {
             if (el !== this.vmSubmitBtn && el !== this.cancelVmFormBtn) {
                 el.disabled = isBusy;
@@ -442,21 +459,26 @@ class TerminalApp {
             });
             if (!res.ok) {
                 const text = await res.text();
-                this.showVMCreateFeedback(this.parseApiError(text), 'error');
+                const errMsg = this.parseApiError(text);
+                this.appendErrorLine(`[Crear VM] ${errMsg}`);
+                this.vmFormWrap.classList.add('hidden');
+                this.vmForm.reset();
+                this.hideVMFeedback();
                 return;
             }
 
             const vm = await res.json();
             this.vmForm.reset();
+            this.vmFormWrap.classList.add('hidden');
             this.hideVMFeedback();
-            this.loadVirtualMachines();
-            this.showVMCreateFeedback(`VM creada: ${vm.name || payload.name}`, 'success');
-            this.vmFormWrap.classList.remove('hidden');
-            this.vmFormWrap.classList.remove('creating');
-            this.vmFormLoader.classList.add('hidden');
+            await this.loadVirtualMachines();
+            this.appendInfoLine(`[Crear VM] ${vm.name || payload.name} creada correctamente.`);
         } catch (err) {
             console.warn('No se pudo crear la máquina virtual:', err);
-            this.showVMCreateFeedback(err && err.message ? err.message : 'No se pudo crear la máquina virtual.', 'error');
+            this.vmFormWrap.classList.add('hidden');
+            this.vmForm.reset();
+            this.hideVMFeedback();
+            this.appendErrorLine(`[Crear VM] ${err && err.message ? err.message : 'No se pudo crear la máquina virtual.'}`);
         } finally {
             this.setCreateLoading(false);
         }

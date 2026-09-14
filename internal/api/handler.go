@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -242,9 +243,19 @@ func (h *Handler) handleVirtualMachineByID(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	decodedID, err := url.PathUnescape(id)
+	if err != nil {
+		decodedID = id
+	}
+	decodedID = strings.TrimSpace(decodedID)
+	if decodedID == "" {
+		http.Error(w, `{"error":"id requerido"}`, http.StatusBadRequest)
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
-		vm, err := h.vmSvc.Get(id)
+		vm, err := h.vmSvc.Get(decodedID)
 		if err != nil {
 			h.log.Warn("no se pudo consultar detalle de maquina virtual", "error", err)
 			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusNotFound)
@@ -253,12 +264,12 @@ func (h *Handler) handleVirtualMachineByID(w http.ResponseWriter, r *http.Reques
 		json.NewEncoder(w).Encode(vm)
 
 	case http.MethodDelete:
-		if err := h.vmSvc.Delete(id); err != nil {
+		if err := h.vmSvc.Delete(decodedID); err != nil {
 			h.log.Warn("no se pudo eliminar maquina virtual por SSH", "error", err)
 			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
+		json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": decodedID})
 
 	default:
 		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
