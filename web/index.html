@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SSH Terminal</title>
-    <link rel="stylesheet" href="/css/style.css?v=7">
+    <link rel="stylesheet" href="/css/style.css?v=12">
 </head>
 <body>
     <div id="app">
         <header id="header">
             <div class="header-left">
                 <button id="menu-btn" class="header-icon-btn" title="Abrir menú lateral" aria-label="Abrir menú lateral">
-                    <svg class="icon-menu" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
+                    <svg class="icon-menu" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
                         <path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round" />
                     </svg>
                 </button>
@@ -49,24 +49,55 @@
         </footer>
     </div>
 
+    <!-- Menú Lateral (Sidebar) -->
+    <div id="sidebar-backdrop" class="sidebar-backdrop hidden" aria-hidden="true"></div>
     <aside id="app-sidebar" class="app-sidebar hidden">
         <div class="sidebar-head">
             <div class="sidebar-title">
-                <span class="sidebar-kicker">Panel</span>
-                <span class="sidebar-label">SSH Web</span>
+                <span class="sidebar-kicker">Menú de Navegación</span>
+                <span class="sidebar-label">SSH Web Terminal</span>
             </div>
-            <button id="close-sidebar-btn" class="sidebar-close" aria-label="Cerrar menú">×</button>
+            <button id="close-sidebar-btn" class="sidebar-close" aria-label="Cerrar menú">&times;</button>
         </div>
 
         <nav class="sidebar-nav">
-            <button class="sidebar-link active" data-menu="config">Configuración</button>
-            <button class="sidebar-link" data-menu="vms">Máquinas virtuales</button>
+            <button class="sidebar-link active" data-menu="config">
+                <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                <span>Configuración</span>
+            </button>
+            <button class="sidebar-link" data-menu="vms">
+                <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                    <line x1="8" y1="21" x2="16" y2="21"></line>
+                    <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+                <span>Máquinas Virtuales</span>
+            </button>
+            <button class="sidebar-link" data-menu="keys">
+                <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+                    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+                </svg>
+                <span>Llaves SSH</span>
+            </button>
         </nav>
 
+        <!-- Vista Sidebar: Configuración -->
         <section id="sidebar-config-view" class="sidebar-view active">
-            <div class="sidebar-view-title">Configuración</div>
+            <div class="sidebar-view-header">
+                <div class="sidebar-view-title">Configuración de Conexión</div>
+                <p class="sidebar-view-desc">Ajusta los parámetros del servidor SSH, usuario y tipo de shell.</p>
+            </div>
             <div class="sidebar-view-actions">
-                <button id="open-config-modal" class="btn btn-primary sidebar-open-config">Abrir configuración</button>
+                <button id="open-config-modal" class="btn btn-primary sidebar-open-config">
+                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    <span>Editar Configuración</span>
+                </button>
             </div>
             <div class="sidebar-config-grid">
                 <div class="sidebar-config-item">
@@ -88,75 +119,212 @@
             </div>
         </section>
 
+        <!-- Vista Sidebar: Máquinas Virtuales -->
         <section id="sidebar-vms-view" class="sidebar-view">
-            <div class="sidebar-view-title">Máquinas virtuales</div>
-            <div class="vms-toolbar">
-                <button id="open-create-vm" class="btn btn-primary">Crear MV</button>
+            <div class="sidebar-view-header">
+                <div class="sidebar-view-title">Máquinas Virtuales</div>
+                <p class="sidebar-view-desc">Crea y administra máquinas virtuales en el servidor remoto vía SSH.</p>
             </div>
 
+            <div class="vms-toolbar">
+                <button id="open-create-vm" class="btn btn-primary">
+                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    <span>+ Crear MV</span>
+                </button>
+                <button id="refresh-vms-btn" class="btn btn-secondary btn-icon" title="Refrescar lista">
+                    <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Formulario de Creación de MV -->
             <div id="vm-form-wrap" class="vm-form-wrap hidden">
-                <div id="vm-form-loader" class="vm-form-loader hidden">
-                    <span class="vm-loader-spinner" aria-hidden="true"></span>
-                    <span class="vm-loader-label">Creando VM</span>
+                <div class="vm-form-header">
+                    <h3>Nueva Máquina Virtual</h3>
+                    <button type="button" id="close-vm-form-btn" class="modal-close-btn">&times;</button>
                 </div>
                 <div id="vm-form-feedback" class="vm-form-feedback hidden"></div>
                 <form id="vm-form" class="vm-form">
                     <div class="form-field">
-                        <label for="vm-name">Nombre</label>
-                        <input type="text" id="vm-name" name="name" required autocomplete="off" />
+                        <label for="vm-name">Nombre de la MV <span class="req">*</span></label>
+                        <input type="text" id="vm-name" name="name" placeholder="ej. Ubuntu-Server-Dev" required autocomplete="off" />
                     </div>
+
                     <div class="form-field">
-                        <label for="vm-iso">ISO</label>
-                        <select id="vm-iso" name="iso" required></select>
+                        <label for="vm-os">Sistema Operativo (SO) <span class="req">*</span></label>
+                        <select id="vm-os" name="os" required>
+                            <option value="Ubuntu 24.04 LTS">Ubuntu 24.04 LTS</option>
+                            <option value="Ubuntu 22.04 LTS">Ubuntu 22.04 LTS</option>
+                            <option value="Debian 13 (Trixie)">Debian 13 (Trixie)</option>
+                            <option value="Debian 12 (Bookworm)">Debian 12 (Bookworm)</option>
+                            <option value="Windows 11">Windows 11</option>
+                            <option value="Windows 10">Windows 10</option>
+                            <option value="Windows Server 2022">Windows Server 2022</option>
+                            <option value="CentOS Stream 9">CentOS Stream 9</option>
+                            <option value="Alpine Linux 3.19">Alpine Linux 3.19</option>
+                            <option value="Arch Linux">Arch Linux</option>
+                        </select>
                     </div>
+
+                    <div class="form-field">
+                        <label for="vm-iso">Imagen ISO<span class="req">*</span></label>
+                        <select id="vm-iso" name="iso" required>
+                            <!-- Se llena y filtra automáticamente según el SO elegido -->
+                        </select>
+                    </div>
+
                     <div class="form-row compact">
                         <div class="form-field">
-                            <label for="vm-cores">CPU</label>
-                            <input type="number" id="vm-cores" name="cores" min="1" value="2" required />
+                            <label for="vm-cores">CPU Cores</label>
+                            <input type="number" id="vm-cores" name="cores" min="1" max="64" value="2" required />
                         </div>
                         <div class="form-field">
-                            <label for="vm-memory">Memoria MB</label>
-                            <input type="number" id="vm-memory" name="memoryMB" min="512" value="2048" required />
+                            <label for="vm-memory">Memoria RAM (MB)</label>
+                            <input type="number" id="vm-memory" name="memoryMB" min="512" max="131072" step="512" value="2048" required />
                         </div>
                     </div>
+
                     <div class="form-field">
-                        <label for="vm-disk">Disco GB</label>
-                        <input type="number" id="vm-disk" name="diskGB" min="10" value="40" required />
+                        <label for="vm-disk">Disco (GB)</label>
+                        <input type="number" id="vm-disk" name="diskGB" min="5" max="2048" value="40" required />
                     </div>
+
                     <div class="form-actions">
                         <button type="button" id="cancel-vm-form" class="btn btn-secondary">Cancelar</button>
-                        <button type="submit" id="vm-submit" class="btn btn-primary">Crear</button>
+                        <button type="submit" id="vm-submit" class="btn btn-primary">
+                            <span class="btn-spinner hidden" aria-hidden="true"></span>
+                            <span class="btn-text">Crear Máquina</span>
+                        </button>
                     </div>
                 </form>
             </div>
 
+            <!-- Lista de VMs -->
             <div class="vm-list-wrapper">
                 <div id="vm-list" class="vm-list"></div>
             </div>
         </section>
+
+        <!-- Vista Sidebar: Llaves SSH -->
+        <section id="sidebar-keys-view" class="sidebar-view">
+            <div class="sidebar-view-header">
+                <div class="sidebar-view-title">Llaves SSH de Máquinas Virtuales</div>
+                <p class="sidebar-view-desc">Llaves criptográficas (públicas y privadas) generadas automáticamente para cada máquina virtual.</p>
+            </div>
+
+            <div class="vms-toolbar">
+                <div class="keys-count-pill" id="keys-count-pill">0 Llaves</div>
+                <button id="refresh-keys-btn" class="btn btn-secondary btn-icon" title="Refrescar llaves">
+                    <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="vm-list-wrapper">
+                <div id="keys-list" class="keys-list"></div>
+            </div>
+        </section>
     </aside>
 
-    <div id="delete-vm-modal" class="modal-backdrop hidden" aria-hidden="true">
-        <div class="modal-dialog delete-modal-dialog" role="dialog" aria-labelledby="delete-vm-title">
+    <!-- Modal Ver Características de MV -->
+    <div id="vm-details-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog vm-details-dialog" role="dialog" aria-labelledby="vm-details-title">
             <div class="modal-header">
                 <div class="modal-title-group">
                     <div class="modal-icon-wrap">
                         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
-                            <path d="M3 6h18M8 6V4h8v2M6 10l1 10h10l1-10" />
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
                         </svg>
                     </div>
-                    <h2 id="delete-vm-title">Eliminar máquina virtual</h2>
+                    <h2 id="vm-details-title">Características de la Máquina Virtual</h2>
                 </div>
-                <button id="close-delete-vm-modal" class="modal-close-btn" aria-label="Cerrar ventana">×</button>
+                <button id="close-vm-details-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            <div class="modal-body vm-details-body">
+                <div class="vm-details-grid" id="vm-details-content">
+                    <!-- Se llena dinámicamente -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" id="btn-close-vm-details" class="btn btn-secondary">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Confirmación de Eliminación de VM -->
+    <div id="delete-vm-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog delete-modal-dialog" role="dialog" aria-labelledby="delete-vm-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap warning">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h2 id="delete-vm-title">Confirmar Eliminación de Máquina</h2>
+                </div>
+                <button id="close-delete-vm-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
             </div>
             <div class="modal-body delete-modal-body">
                 <div class="delete-confirm-copy">
-                    <span>¿Estás seguro que quieres eliminar la máquina virtual?</span>
-                    <strong id="delete-vm-name">VM</strong>
+                    <p>¿Estás seguro de que deseas eliminar la máquina virtual?</p>
+                    <div class="delete-vm-badge">
+                        <strong id="delete-vm-name">VM</strong>
+                    </div>
+                    <p class="delete-warning-sub">Esta acción eliminará la máquina virtual y sus recursos asociados vía SSH.</p>
                 </div>
+                <div id="delete-vm-feedback" class="modal-feedback hidden"></div>
                 <div class="delete-confirm-actions">
                     <button type="button" id="cancel-delete-vm" class="btn btn-secondary">Cancelar</button>
-                    <button type="button" id="confirm-delete-vm" class="btn btn-danger">Sí, eliminar</button>
+                    <button type="button" id="confirm-delete-vm" class="btn btn-danger">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Sí, eliminar</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Confirmación de Eliminación de Llave -->
+    <div id="delete-key-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog delete-modal-dialog" role="dialog" aria-labelledby="delete-key-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap warning">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h2 id="delete-key-title">Eliminar Llave SSH</h2>
+                </div>
+                <button id="close-delete-key-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            <div class="modal-body delete-modal-body">
+                <div class="delete-confirm-copy">
+                    <p>¿Estás seguro de que deseas eliminar este par de llaves SSH?</p>
+                    <div class="delete-vm-badge">
+                        <strong id="delete-key-name">id_rsa</strong>
+                    </div>
+                    <p class="delete-warning-sub">Ya no podrás descargar esta clave privada después de eliminarla.</p>
+                </div>
+                <div id="delete-key-feedback" class="modal-feedback hidden"></div>
+                <div class="delete-confirm-actions">
+                    <button type="button" id="cancel-delete-key" class="btn btn-secondary">Cancelar</button>
+                    <button type="button" id="confirm-delete-key" class="btn btn-danger">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Sí, eliminar</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -224,13 +392,11 @@
                 <div class="form-field">
                     <label for="cfg-start-path">Ruta Predeterminada de Inicio</label>
                     <input type="text" id="cfg-start-path" name="startPath" placeholder="ej. C:\Users\andres o C:\proyectos" autocomplete="off" />
-                    <small class="field-hint">Directorio en el que comenzará la sesión de terminal al conectarse.</small>
                 </div>
 
                 <div class="form-field">
                     <label for="cfg-key-path">Ubicación de la llave privada SSH <span class="req">*</span></label>
                     <input type="text" id="cfg-key-path" name="keyPath" placeholder="ej. C:/Users/andres/.ssh/id_ed25519" autocomplete="off" />
-                    <small class="field-hint">Ruta local de la llave privada usada para la conexión.</small>
                 </div>
 
                 <div id="modal-feedback" class="modal-feedback hidden"></div>
@@ -252,8 +418,8 @@
         </div>
     </div>
 
-    <script src="/js/ansi.js?v=9"></script>
-    <script src="/js/websocket.js?v=9"></script>
-    <script src="/js/app.js?v=9"></script>
+    <script src="/js/ansi.js?v=12"></script>
+    <script src="/js/websocket.js?v=12"></script>
+    <script src="/js/app.js?v=12"></script>
 </body>
 </html>

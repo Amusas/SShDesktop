@@ -2,15 +2,58 @@
   "isos": [
     {
       "name": "ubuntu-24.04.5-live-server-amd64.iso",
-      "url": "https://releases.ubuntu.com/24.04.5/ubuntu-24.04.5-live-server-amd64.iso",
-      "os": "Ubuntu 24.04",
+      "os": "Ubuntu 24.04 LTS",
+      "vboxOsType": "Ubuntu_64"
+    },
+    {
+      "name": "ubuntu-22.04.4-live-server-amd64.iso",
+      "os": "Ubuntu 22.04 LTS",
+      "vboxOsType": "Ubuntu_64"
+    },
+    {
+      "name": "ubuntu-24.04-desktop-amd64.iso",
+      "os": "Ubuntu 24.04 LTS",
       "vboxOsType": "Ubuntu_64"
     },
     {
       "name": "debian-13.7.0-amd64-netinst.iso",
-      "url": "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.7.0-amd64-netinst.iso",
-      "os": "Debian 13",
+      "os": "Debian 13 (Trixie)",
       "vboxOsType": "Debian_64"
+    },
+    {
+      "name": "debian-12.5.0-amd64-netinst.iso",
+      "os": "Debian 12 (Bookworm)",
+      "vboxOsType": "Debian_64"
+    },
+    {
+      "name": "Win11_23H2_Spanish_x64v2.iso",
+      "os": "Windows 11",
+      "vboxOsType": "Windows11_64"
+    },
+    {
+      "name": "Win10_22H2_Spanish_x64.iso",
+      "os": "Windows 10",
+      "vboxOsType": "Windows10_64"
+    },
+    {
+      "name": "Windows_Server_2022_x64.iso",
+      "os": "Windows Server 2022",
+      "vboxOsType": "Windows2022_64"
+    },
+    {
+      "name": "CentOS-Stream-9-latest-x86_64-dvd1.iso",
+      "os": "CentOS Stream 9",
+      "vboxOsType": "RedHat_64"
+    },
+    {
+      "name": "alpine-standard-3.19.1-x86_64.iso",
+      "os": "Alpine Linux 3.19",
+      "vboxOsType": "Linux_64"
+    },
+    {
+      "name": "archlinux-2024.03.01-x86_64.iso",
+      "os": "Arch Linux",
+      "vboxOsType": "ArchLinux_64"
     }
   ]
 }

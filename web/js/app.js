@@ -1,4 +1,4 @@
-// Gestor de la interfaz de terminal web, configuracion dinamica y conexion WebSocket
+// Gestor de la interfaz de terminal web, menú lateral, gestión de VMs, Llaves SSH y conexión WebSocket
 class TerminalApp {
     constructor() {
         // Elementos principales de la terminal
@@ -15,6 +15,7 @@ class TerminalApp {
 
         // Sidebar y vistas de navegación
         this.sidebarEl = document.getElementById('app-sidebar');
+        this.sidebarBackdrop = document.getElementById('sidebar-backdrop');
         this.closeSidebarBtn = document.getElementById('close-sidebar-btn');
         this.openConfigModalBtn = document.getElementById('open-config-modal');
         this.sideHost = document.getElementById('side-host');
@@ -27,18 +28,26 @@ class TerminalApp {
         // VM elements
         this.vmListEl = document.getElementById('vm-list');
         this.vmFormWrap = document.getElementById('vm-form-wrap');
-        this.vmFormLoader = document.getElementById('vm-form-loader');
         this.vmFormFeedback = document.getElementById('vm-form-feedback');
         this.openCreateVmBtn = document.getElementById('open-create-vm');
+        this.closeVmFormBtn = document.getElementById('close-vm-form-btn');
         this.cancelVmFormBtn = document.getElementById('cancel-vm-form');
+        this.refreshVmsBtn = document.getElementById('refresh-vms-btn');
         this.vmSubmitBtn = document.getElementById('vm-submit');
         this.vmForm = document.getElementById('vm-form');
         this.vmNameInput = document.getElementById('vm-name');
+        this.vmOSSelect = document.getElementById('vm-os');
         this.vmISOSelect = document.getElementById('vm-iso');
         this.vmCoresInput = document.getElementById('vm-cores');
         this.vmMemoryInput = document.getElementById('vm-memory');
         this.vmDiskInput = document.getElementById('vm-disk');
-        this.vmCreateInProgress = false;
+        this.rawISOItems = [];
+
+        // VM details modal
+        this.vmDetailsModal = document.getElementById('vm-details-modal');
+        this.closeVmDetailsModalBtn = document.getElementById('close-vm-details-modal');
+        this.btnCloseVmDetails = document.getElementById('btn-close-vm-details');
+        this.vmDetailsContent = document.getElementById('vm-details-content');
 
         // VM delete confirmation modal
         this.deleteVmModal = document.getElementById('delete-vm-modal');
@@ -46,7 +55,20 @@ class TerminalApp {
         this.cancelDeleteVmBtn = document.getElementById('cancel-delete-vm');
         this.confirmDeleteVmBtn = document.getElementById('confirm-delete-vm');
         this.deleteVmNameEl = document.getElementById('delete-vm-name');
+        this.deleteVmFeedback = document.getElementById('delete-vm-feedback');
         this.pendingDeleteVmName = null;
+
+        // Keys elements
+        this.keysListEl = document.getElementById('keys-list');
+        this.keysCountPill = document.getElementById('keys-count-pill');
+        this.refreshKeysBtn = document.getElementById('refresh-keys-btn');
+        this.deleteKeyModal = document.getElementById('delete-key-modal');
+        this.closeDeleteKeyModalBtn = document.getElementById('close-delete-key-modal');
+        this.cancelDeleteKeyBtn = document.getElementById('cancel-delete-key');
+        this.confirmDeleteKeyBtn = document.getElementById('confirm-delete-key');
+        this.deleteKeyNameEl = document.getElementById('delete-key-name');
+        this.deleteKeyFeedback = document.getElementById('delete-key-feedback');
+        this.pendingDeleteKeyId = null;
 
         // Elementos del modal de configuracion
         this.modalEl = document.getElementById('config-modal');
@@ -56,7 +78,7 @@ class TerminalApp {
         this.configForm = document.getElementById('config-form');
         this.modalFeedback = document.getElementById('modal-feedback');
 
-        // Inputs del formulario
+        // Inputs del formulario de configuracion
         this.cfgHost = document.getElementById('cfg-host');
         this.cfgPort = document.getElementById('cfg-port');
         this.cfgUser = document.getElementById('cfg-user');
@@ -70,11 +92,9 @@ class TerminalApp {
         this.activeClasses = [];
         this.currentLineEl = null;
         this.pendingText = '';
-        this.hiddenRemotePrompt = false;
-        this.remotePromptCandidate = false;
-        // Las secuencias VT pueden llegar partidas entre dos mensajes WebSocket.
-        this.pendingEscapeSequence = '';
         this.currentPath = '~';
+        this.isClearingScreen = false;
+        this.ignoreEchoCommand = null;
 
         // Configuracion por defecto y activa
         this.defaultConfig = null;
@@ -93,6 +113,7 @@ class TerminalApp {
         this.loadInitialConfig();
         this.loadISOs();
         this.loadVirtualMachines();
+        this.loadKeys();
     }
 
     async loadInitialConfig() {
@@ -108,7 +129,6 @@ class TerminalApp {
                 this.updateSidebarConfig(this.currentConfig);
                 this.updateCurrentPath(this.currentConfig.sshStartPath || '~');
 
-                // Si el host o usuario no están configurados, abrir modal automáticamente
                 if (!this.currentConfig.sshHost || !this.currentConfig.sshUser) {
                     this.openModal();
                     this.showModalFeedback('Por favor configura el host y usuario para conectarte.', 'error');
@@ -162,6 +182,14 @@ class TerminalApp {
         }
     }
 
+    updateSidebarConfig(cfg) {
+        if (!cfg) return;
+        if (this.sideHost) this.sideHost.textContent = cfg.sshHost || 'Sin host';
+        if (this.sidePort) this.sidePort.textContent = String(cfg.sshPort || 22);
+        if (this.sideUser) this.sideUser.textContent = cfg.sshUser || 'Sin usuario';
+        if (this.sideShell) this.sideShell.textContent = (cfg.sshShell || 'powershell').toLowerCase();
+    }
+
     connectCurrent() {
         const shell = this.currentConfig.sshShell || 'powershell';
         const params = {
@@ -172,6 +200,10 @@ class TerminalApp {
             startPath: this.currentConfig.sshStartPath || '',
             keyPath: this.currentConfig.sshKeyPath || '',
         };
+
+        if (this.currentConfig.sshPassword) {
+            params.password = this.currentConfig.sshPassword;
+        }
 
         this.ws.reconnectWith(params);
     }
@@ -189,12 +221,9 @@ class TerminalApp {
         // Redimensionamiento de ventana
         window.addEventListener('resize', () => this.handleResize());
 
-        // Foco inteligente en terminal (sin interferir con modales, cabecera ni el panel lateral)
+        // Foco inteligente en terminal
         document.addEventListener('click', (e) => {
-            if (this.isModalOpen() ||
-                e.target.closest('#config-modal') ||
-                e.target.closest('#header') ||
-                e.target.closest('#app-sidebar')) {
+            if (this.isModalOpen() || this.isSidebarOpen() || e.target.closest('.modal-dialog') || e.target.closest('#app-sidebar') || e.target.closest('#header')) {
                 return;
             }
             const selection = window.getSelection();
@@ -203,7 +232,7 @@ class TerminalApp {
             }
         });
 
-        // Apertura del menu lateral de navegacion
+        // Apertura y cierre del menú lateral (3 líneas)
         this.menuBtn.addEventListener('click', () => {
             this.toggleSidebar();
         });
@@ -212,6 +241,13 @@ class TerminalApp {
             this.toggleSidebar(false);
         });
 
+        if (this.sidebarBackdrop) {
+            this.sidebarBackdrop.addEventListener('click', () => {
+                this.toggleSidebar(false);
+            });
+        }
+
+        // Pestañas de navegación del sidebar (config, vms, keys)
         this.sideLinks.forEach((link) => {
             link.addEventListener('click', () => {
                 const target = link.dataset.menu;
@@ -219,23 +255,57 @@ class TerminalApp {
             });
         });
 
+        // Abrir modal de configuración desde el sidebar
         this.openConfigModalBtn.addEventListener('click', () => {
             this.toggleSidebar(false);
             this.openModal();
         });
 
+        // Control del formulario de creación de VM
         this.openCreateVmBtn.addEventListener('click', () => {
             this.hideVMFeedback();
             this.vmFormWrap.classList.toggle('hidden');
+            if (!this.vmFormWrap.classList.contains('hidden')) {
+                this.filterISOsBySelectedOS();
+                setTimeout(() => this.vmNameInput.focus(), 50);
+            }
         });
+
+        if (this.closeVmFormBtn) {
+            this.closeVmFormBtn.addEventListener('click', () => {
+                this.vmFormWrap.classList.add('hidden');
+                this.vmForm.reset();
+                this.hideVMFeedback();
+            });
+        }
 
         this.cancelVmFormBtn.addEventListener('click', () => {
             this.vmFormWrap.classList.add('hidden');
             this.vmForm.reset();
             this.hideVMFeedback();
-            this.setCreateLoading(false);
         });
 
+        this.refreshVmsBtn.addEventListener('click', () => {
+            this.loadVirtualMachines();
+        });
+
+        if (this.refreshKeysBtn) {
+            this.refreshKeysBtn.addEventListener('click', () => {
+                this.loadKeys();
+            });
+        }
+
+        // Cambio de SO en el formulario -> filtrar ISOs en tiempo real
+        if (this.vmOSSelect) {
+            this.vmOSSelect.addEventListener('change', () => {
+                this.filterISOsBySelectedOS();
+            });
+        }
+
+        // Envío de formulario de creación de VM
+        this.vmForm.addEventListener('submit', (e) => this.handleVMCreate(e));
+
+        // Modales de eliminación de VM
         this.closeDeleteVmModalBtn.addEventListener('click', () => this.closeDeleteModal());
         this.cancelDeleteVmBtn.addEventListener('click', () => this.closeDeleteModal());
         this.confirmDeleteVmBtn.addEventListener('click', () => {
@@ -243,7 +313,27 @@ class TerminalApp {
             this.executeDeleteVirtualMachine(this.pendingDeleteVmName);
         });
 
-        this.vmForm.addEventListener('submit', (e) => this.handleVMCreate(e));
+        // Modales de eliminación de Llave
+        if (this.closeDeleteKeyModalBtn) {
+            this.closeDeleteKeyModalBtn.addEventListener('click', () => this.closeDeleteKeyModal());
+        }
+        if (this.cancelDeleteKeyBtn) {
+            this.cancelDeleteKeyBtn.addEventListener('click', () => this.closeDeleteKeyModal());
+        }
+        if (this.confirmDeleteKeyBtn) {
+            this.confirmDeleteKeyBtn.addEventListener('click', () => {
+                if (!this.pendingDeleteKeyId) return;
+                this.executeDeleteKey(this.pendingDeleteKeyId);
+            });
+        }
+
+        // Modales de detalles de VM
+        if (this.closeVmDetailsModalBtn) {
+            this.closeVmDetailsModalBtn.addEventListener('click', () => this.closeDetailsModal());
+        }
+        if (this.btnCloseVmDetails) {
+            this.btnCloseVmDetails.addEventListener('click', () => this.closeDetailsModal());
+        }
 
         // Boton de reconexion directa
         this.reconnectBtn.addEventListener('click', () => {
@@ -252,23 +342,43 @@ class TerminalApp {
             this.connectCurrent();
         });
 
-        // Cierre del modal
+        // Cierre del modal de configuración
         this.closeModalBtn.addEventListener('click', () => this.closeModal());
         this.cancelModalBtn.addEventListener('click', () => this.closeModal());
 
         // Cierre con tecla Escape
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && this.isModalOpen()) {
-                this.closeModal();
+            if (e.key === 'Escape') {
+                if (this.isModalOpen()) {
+                    this.closeModal();
+                    this.closeDeleteModal();
+                    this.closeDeleteKeyModal();
+                    this.closeDetailsModal();
+                } else if (this.isSidebarOpen()) {
+                    this.toggleSidebar(false);
+                }
             }
         });
 
-        // Cierre al hacer clic fuera del dialogo modal
+        // Cierre al hacer clic fuera de modales
         this.modalEl.addEventListener('click', (e) => {
-            if (e.target === this.modalEl) {
-                this.closeModal();
-            }
+            if (e.target === this.modalEl) this.closeModal();
         });
+        if (this.deleteVmModal) {
+            this.deleteVmModal.addEventListener('click', (e) => {
+                if (e.target === this.deleteVmModal) this.closeDeleteModal();
+            });
+        }
+        if (this.deleteKeyModal) {
+            this.deleteKeyModal.addEventListener('click', (e) => {
+                if (e.target === this.deleteKeyModal) this.closeDeleteKeyModal();
+            });
+        }
+        if (this.vmDetailsModal) {
+            this.vmDetailsModal.addEventListener('click', (e) => {
+                if (e.target === this.vmDetailsModal) this.closeDetailsModal();
+            });
+        }
 
         // Boton de valores por defecto
         this.resetDefaultsBtn.addEventListener('click', () => {
@@ -282,96 +392,318 @@ class TerminalApp {
         this.configForm.addEventListener('submit', (e) => this.handleConfigSubmit(e));
     }
 
+    isSidebarOpen() {
+        return this.sidebarEl && !this.sidebarEl.classList.contains('hidden');
+    }
+
     toggleSidebar(forceOpen) {
         if (!this.sidebarEl) return;
-        if (typeof forceOpen === 'boolean') {
-            this.sidebarEl.classList.toggle('hidden', !forceOpen);
-            return;
+        const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : this.sidebarEl.classList.contains('hidden');
+        this.sidebarEl.classList.toggle('hidden', !shouldOpen);
+        if (this.sidebarBackdrop) {
+            this.sidebarBackdrop.classList.toggle('hidden', !shouldOpen);
         }
-        this.sidebarEl.classList.toggle('hidden');
+        if (shouldOpen) {
+            this.loadISOs();
+            this.loadVirtualMachines();
+            this.loadKeys();
+        }
     }
 
     switchSidebarView(view) {
         this.sideLinks.forEach((l) => l.classList.toggle('active', l.dataset.menu === view));
         this.sideViews.forEach((s) => s.classList.toggle('active', s.id === `sidebar-${view}-view`));
+        if (view === 'keys') {
+            this.loadKeys();
+        } else if (view === 'vms') {
+            this.loadVirtualMachines();
+        }
     }
 
-    updateSidebarConfig(cfg) {
-        if (!cfg) return;
-        if (this.sideHost) this.sideHost.textContent = cfg.sshHost || 'Sin host';
-        if (this.sidePort) this.sidePort.textContent = String(cfg.sshPort || 22);
-        if (this.sideUser) this.sideUser.textContent = cfg.sshUser || 'Sin usuario';
-        if (this.sideShell) this.sideShell.textContent = (cfg.sshShell || 'powershell').toLowerCase();
-    }
-
+    // =========================================================================
+    // Filtrado de ISOs según el SO seleccionado
+    // =========================================================================
     async loadISOs() {
         try {
             const res = await fetch('/api/isos');
             if (!res.ok) return;
             const data = await res.json();
-            const isos = data.isos || [];
-            this.vmISOSelect.innerHTML = isos.map((iso) => `<option value="${iso}">${iso}</option>`).join('');
+            this.rawISOItems = data.items || [];
+            this.filterISOsBySelectedOS();
         } catch (e) {
             console.warn('No se pudieron cargar los ISOs:', e);
         }
     }
 
+    filterISOsBySelectedOS() {
+        if (!this.vmISOSelect || !this.vmOSSelect) return;
+        const selectedOS = this.vmOSSelect.value || 'Ubuntu 24.04 LTS';
+        const osLower = selectedOS.toLowerCase();
+
+        let filtered = this.rawISOItems.filter((item) => {
+            const itemOS = (item.os || '').toLowerCase();
+            const itemName = (item.isoFilename || item.name || '').toLowerCase();
+
+            if (osLower.includes('ubuntu')) return itemOS.includes('ubuntu') || itemName.includes('ubuntu');
+            if (osLower.includes('debian')) return itemOS.includes('debian') || itemName.includes('debian');
+            if (osLower.includes('windows 11')) return itemName.includes('win11') || itemOS.includes('11');
+            if (osLower.includes('windows 10')) return itemName.includes('win10') || itemOS.includes('10');
+            if (osLower.includes('server')) return itemName.includes('server') || itemOS.includes('server');
+            if (osLower.includes('centos') || osLower.includes('redhat')) return itemOS.includes('centos') || itemName.includes('centos') || itemName.includes('rhel');
+            if (osLower.includes('alpine')) return itemOS.includes('alpine') || itemName.includes('alpine');
+            if (osLower.includes('arch')) return itemOS.includes('arch') || itemName.includes('arch');
+
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            filtered = this.rawISOItems;
+        }
+
+        this.vmISOSelect.innerHTML = filtered.map((item) => {
+            const filename = item.isoFilename || item.name;
+            return `<option value="${filename}">${filename}</option>`;
+        }).join('');
+    }
+
+    // =========================================================================
+    // Gestión de Máquinas Virtuales (Listado, Creación, Detalles, Eliminación)
+    // =========================================================================
     async loadVirtualMachines() {
+        if (!this.vmListEl) return;
+        this.vmListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando máquinas virtuales...</div>`;
         try {
             const res = await fetch('/api/vms');
-            if (!res.ok) return;
+            if (!res.ok) {
+                const text = await res.text();
+                this.vmListEl.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">Error al consultar VMs: ${this.parseApiError(text)}</div>`;
+                return;
+            }
             const vms = await res.json();
             this.renderVMList(vms);
         } catch (e) {
             console.warn('No se pudieron cargar las máquinas virtuales:', e);
+            this.vmListEl.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">No se pudo conectar al servidor para listar VMs.</div>`;
         }
     }
 
     renderVMList(vms) {
         if (!this.vmListEl) return;
         if (!Array.isArray(vms) || vms.length === 0) {
-            this.vmListEl.innerHTML = `<div class="empty-vm-list">No hay máquinas virtuales</div>`;
+            this.vmListEl.innerHTML = `<div class="empty-vm-list">No hay máquinas virtuales creadas o registradas.</div>`;
             return;
         }
 
         this.vmListEl.innerHTML = vms.map((vm) => `
-            <div class="vm-card">
+            <div class="vm-card" id="vm-card-${this.escapeAttr(vm.name)}">
                 <div class="vm-card-header">
-                    <span class="vm-name">${vm.name}</span>
-                    <span class="vm-os">${vm.os || 'VM'}</span>
+                    <span class="vm-name">${this.escapeHTML(vm.name)}</span>
+                    <span class="vm-os">${this.escapeHTML(vm.os || 'Linux')}</span>
                 </div>
                 <div class="vm-card-details">
-                    <span>ISO: ${vm.iso || '-'}</span>
-                    <span>CPU: ${vm.cores || 0}</span>
-                    <span>RAM: ${vm.memoryMB || 0} MB</span>
-                    <span>Disco: ${vm.diskGB || 0} GB</span>
+                    <span><strong>CPU:</strong> ${vm.cores || 2} Cores</span>
+                    <span><strong>RAM:</strong> ${vm.memoryMB || 2048} MB</span>
+                    <span><strong>Disco:</strong> ${vm.diskGB || 40} GB</span>
+                    <span><strong>Estado:</strong> ${this.escapeHTML(vm.state || 'Creada')}</span>
                 </div>
                 <div class="vm-card-delete-loader hidden">
                     <span class="vm-card-spinner"></span>
-                    <span>Eliminando...</span>
+                    <span>Eliminando máquina virtual...</span>
                 </div>
                 <div class="vm-card-actions">
-                    <button class="btn btn-secondary view-vm" data-id="${vm.name}">Ver</button>
-                    <button class="btn btn-danger delete-vm" data-id="${vm.name}">Eliminar</button>
+                    <button class="btn btn-secondary view-vm" data-id="${this.escapeAttr(vm.name)}">Ver</button>
+                    <button class="btn btn-danger delete-vm" data-id="${this.escapeAttr(vm.name)}">Eliminar</button>
                 </div>
             </div>
         `).join('');
 
-        this.vmListEl.querySelectorAll('[data-id]').forEach((btn) => {
-            btn.addEventListener('click', async (event) => {
-                const id = event.currentTarget.dataset.id;
-                if (event.currentTarget.classList.contains('delete-vm')) {
-                    this.deleteVirtualMachine(id);
-                    return;
-                }
-                await this.viewVirtualMachine(id);
+        this.vmListEl.querySelectorAll('.view-vm').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.id;
+                this.viewVirtualMachine(id);
+            });
+        });
+
+        this.vmListEl.querySelectorAll('.delete-vm').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.id;
+                this.openDeleteVMModal(id);
             });
         });
     }
 
+    async viewVirtualMachine(id) {
+        if (!this.vmDetailsModal || !this.vmDetailsContent) return;
+        this.vmDetailsContent.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:16px"><span class="btn-spinner"></span> Cargando detalles...</div>`;
+        this.vmDetailsModal.classList.remove('hidden');
+        this.vmDetailsModal.setAttribute('aria-hidden', 'false');
+
+        try {
+            const res = await fetch(`/api/vms/${encodeURIComponent(id)}`);
+            if (!res.ok) {
+                const text = await res.text();
+                this.vmDetailsContent.innerHTML = `<div style="grid-column:1/-1;color:var(--accent-red)">Error al consultar VM: ${this.parseApiError(text)}</div>`;
+                return;
+            }
+            const vm = await res.json();
+
+            const cores = vm.cores > 0 ? vm.cores : 2;
+            const memoryMB = vm.memoryMB > 0 ? vm.memoryMB : 2048;
+            const diskGB = vm.diskGB > 0 ? vm.diskGB : 40;
+            const os = vm.os && vm.os !== '' ? vm.os : 'Linux';
+
+            this.vmDetailsContent.innerHTML = `
+                <div class="vm-detail-item">
+                    <span class="vm-detail-key">Nombre de la MV</span>
+                    <span class="vm-detail-val">${this.escapeHTML(vm.name)}</span>
+                </div>
+                <div class="vm-detail-item">
+                    <span class="vm-detail-key">Sistema Operativo</span>
+                    <span class="vm-detail-val" style="color:var(--accent-green)">${this.escapeHTML(os)}</span>
+                </div>
+                <div class="vm-detail-item">
+                    <span class="vm-detail-key">CPU (Cores)</span>
+                    <span class="vm-detail-val">${cores} vCPU</span>
+                </div>
+                <div class="vm-detail-item">
+                    <span class="vm-detail-key">Memoria RAM</span>
+                    <span class="vm-detail-val">${memoryMB} MB (${(memoryMB/1024).toFixed(1)} GB)</span>
+                </div>
+                <div class="vm-detail-item">
+                    <span class="vm-detail-key">Almacenamiento (Disco)</span>
+                    <span class="vm-detail-val">${diskGB} GB</span>
+                </div>
+                <div class="vm-detail-item">
+                    <span class="vm-detail-key">Estado Actual</span>
+                    <span class="vm-detail-val" style="color:var(--accent)">${this.escapeHTML(vm.state || 'Creada')}</span>
+                </div>
+                ${vm.iso ? `
+                <div class="vm-detail-item full-width">
+                    <span class="vm-detail-key">Imagen ISO</span>
+                    <span class="vm-detail-val">${this.escapeHTML(vm.iso)}</span>
+                </div>` : ''}
+                ${vm.keyName || vm.keyId ? `
+                <div class="vm-detail-item full-width">
+                    <span class="vm-detail-key">Llave SSH Asignada</span>
+                    <span class="vm-detail-val" style="color:var(--accent-yellow)">🔑 ${this.escapeHTML(vm.keyName || vm.keyId)}</span>
+                </div>` : ''}
+                ${vm.network ? `
+                <div class="vm-detail-item full-width">
+                    <span class="vm-detail-key">Adaptador de Red</span>
+                    <span class="vm-detail-val">${this.escapeHTML(vm.network)}</span>
+                </div>` : ''}
+                ${vm.diskPath ? `
+                <div class="vm-detail-item full-width">
+                    <span class="vm-detail-key">Ruta del Disco Virtual</span>
+                    <span class="vm-detail-val">${this.escapeHTML(vm.diskPath)}</span>
+                </div>` : ''}
+            `;
+        } catch (e) {
+            console.warn('Error al ver VM:', e);
+            this.vmDetailsContent.innerHTML = `<div style="grid-column:1/-1;color:var(--accent-red)">No se pudo cargar la información de la máquina virtual.</div>`;
+        }
+    }
+
+    closeDetailsModal() {
+        if (!this.vmDetailsModal) return;
+        this.vmDetailsModal.classList.add('hidden');
+        this.vmDetailsModal.setAttribute('aria-hidden', 'true');
+    }
+
+    async handleVMCreate(e) {
+        e.preventDefault();
+
+        const name = this.vmNameInput.value.trim();
+        const os = this.vmOSSelect.value || 'Ubuntu 24.04 LTS';
+        const iso = this.vmISOSelect.value || '';
+        const cores = parseInt(this.vmCoresInput.value, 10) || 2;
+        const memoryMB = parseInt(this.vmMemoryInput.value, 10) || 2048;
+        const diskGB = parseInt(this.vmDiskInput.value, 10) || 40;
+
+        if (!name) {
+            this.showVMCreateFeedback('El nombre de la máquina es obligatorio.', 'error');
+            this.vmNameInput.focus();
+            return;
+        }
+
+        if (!iso) {
+            this.showVMCreateFeedback('Debes seleccionar una imagen ISO.', 'error');
+            return;
+        }
+
+        this.setCreateVMLoading(true);
+        this.hideVMFeedback();
+
+        try {
+            const payload = { name, os, iso, cores, memoryMB, diskGB };
+            const res = await fetch('/api/vms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                const errMsg = this.parseApiError(text);
+                this.showVMCreateFeedback(`Error al crear VM: ${errMsg}`, 'error');
+                this.setCreateVMLoading(false);
+                return;
+            }
+
+            this.showVMCreateFeedback(`¡Máquina virtual '${name}' y su llave SSH creadas exitosamente!`, 'success');
+            this.appendInfoLine(`[Crear VM] Máquina virtual '${name}' creada exitosamente con par de llaves SSH.`);
+
+            setTimeout(() => {
+                this.vmFormWrap.classList.add('hidden');
+                this.vmForm.reset();
+                this.hideVMFeedback();
+                this.setCreateVMLoading(false);
+            }, 1200);
+
+            await this.loadVirtualMachines();
+            await this.loadKeys();
+        } catch (err) {
+            console.warn('Error al crear VM:', err);
+            this.showVMCreateFeedback('No se pudo conectar al servidor para crear la MV.', 'error');
+            this.setCreateVMLoading(false);
+        }
+    }
+
+    setCreateVMLoading(loading) {
+        if (!this.vmSubmitBtn) return;
+        const spinner = this.vmSubmitBtn.querySelector('.btn-spinner');
+        const text = this.vmSubmitBtn.querySelector('.btn-text');
+
+        this.vmSubmitBtn.disabled = loading;
+        if (this.cancelVmFormBtn) this.cancelVmFormBtn.disabled = loading;
+
+        if (spinner) spinner.classList.toggle('hidden', !loading);
+        if (text) text.textContent = loading ? 'Creando Máquina...' : 'Crear Máquina';
+    }
+
+    showVMCreateFeedback(text, type = 'error') {
+        if (!this.vmFormFeedback) return;
+        this.vmFormFeedback.textContent = text;
+        this.vmFormFeedback.className = `vm-form-feedback ${type}`;
+    }
+
+    hideVMFeedback() {
+        if (!this.vmFormFeedback) return;
+        this.vmFormFeedback.textContent = '';
+        this.vmFormFeedback.className = 'vm-form-feedback hidden';
+    }
+
     openDeleteVMModal(name) {
         this.pendingDeleteVmName = name;
-        this.deleteVmNameEl.textContent = name;
+        if (this.deleteVmNameEl) {
+            this.deleteVmNameEl.textContent = name;
+        }
+        if (this.deleteVmFeedback) {
+            this.deleteVmFeedback.textContent = '';
+            this.deleteVmFeedback.className = 'modal-feedback hidden';
+        }
+        this.setDeleteModalLoading(false);
+
         if (!this.deleteVmModal) return;
         this.deleteVmModal.classList.remove('hidden');
         this.deleteVmModal.setAttribute('aria-hidden', 'false');
@@ -382,207 +714,228 @@ class TerminalApp {
         this.deleteVmModal.classList.add('hidden');
         this.deleteVmModal.setAttribute('aria-hidden', 'true');
         this.pendingDeleteVmName = null;
+        this.setDeleteModalLoading(false);
     }
 
-    setDeleteLoadingCard(id, isDeleting) {
-        if (!this.vmListEl) return;
-        const card = Array.from(this.vmListEl.querySelectorAll('.vm-card')).find((item) => {
-            const button = item.querySelector('[data-id]');
-            return button && button.dataset.id === id;
-        });
-        if (!card) return;
+    setDeleteModalLoading(loading) {
+        if (!this.confirmDeleteVmBtn) return;
+        const spinner = this.confirmDeleteVmBtn.querySelector('.btn-spinner');
+        const text = this.confirmDeleteVmBtn.querySelector('.btn-text');
 
-        const loader = card.querySelector('.vm-card-delete-loader');
-        const deleteBtn = card.querySelector('.delete-vm');
-        const viewBtn = card.querySelector('.view-vm');
+        this.confirmDeleteVmBtn.disabled = loading;
+        if (this.cancelDeleteVmBtn) this.cancelDeleteVmBtn.disabled = loading;
+        if (this.closeDeleteVmModalBtn) this.closeDeleteVmModalBtn.disabled = loading;
 
-        card.classList.toggle('vm-card-deleting', isDeleting);
-        if (loader) loader.classList.toggle('hidden', !isDeleting);
-        if (deleteBtn) {
-            deleteBtn.disabled = isDeleting;
-            deleteBtn.textContent = isDeleting ? 'Eliminando...' : 'Eliminar';
-        }
-        if (viewBtn) {
-            viewBtn.disabled = isDeleting;
-        }
+        if (spinner) spinner.classList.toggle('hidden', !loading);
+        if (text) text.textContent = loading ? 'Eliminando...' : 'Sí, eliminar';
     }
 
-    deleteVirtualMachine(id) {
-        this.openDeleteVMModal(id);
-    }
+    async executeDeleteVirtualMachine(name) {
+        this.setDeleteModalLoading(true);
 
-    async executeDeleteVirtualMachine(id) {
-        const card = Array.from(this.vmListEl.querySelectorAll('.vm-card')).find((item) => {
-            const button = item.querySelector('[data-id]');
-            return button && button.dataset.id === id;
-        });
-
-        if (!card) {
-            this.closeDeleteModal();
-            return;
+        const card = document.getElementById(`vm-card-${name}`);
+        if (card) {
+            card.classList.add('vm-card-deleting');
+            const cardLoader = card.querySelector('.vm-card-delete-loader');
+            if (cardLoader) cardLoader.classList.remove('hidden');
+            card.querySelectorAll('button').forEach((b) => b.disabled = true);
         }
-
-        this.setDeleteLoadingCard(id, true);
-        this.closeDeleteModal();
 
         try {
-            const res = await fetch(`/api/vms/${encodeURIComponent(id)}`, { method: 'DELETE' });
-            if (!res.ok) {
-                const text = await res.text();
-                const errMsg = this.parseApiError(text);
-                this.appendErrorLine(`[Eliminar VM] ${errMsg}`);
-                this.showVMCreateFeedback(`[Eliminar VM] ${errMsg}`, 'error');
-                this.setDeleteLoadingCard(id, false);
-                return;
-            }
-
-            this.appendInfoLine(`[Eliminar VM] ${id} eliminada correctamente.`);
-            this.showVMCreateFeedback(`[Eliminar VM] ${id} eliminada correctamente.`, 'success');
-            await this.loadVirtualMachines();
-        } catch (e) {
-            console.warn('No se pudo eliminar la VM:', e);
-            this.appendErrorLine('[Eliminar VM] No se pudo eliminar la máquina virtual.');
-            this.showVMCreateFeedback('[Eliminar VM] No se pudo eliminar la máquina virtual.', 'error');
-            this.setDeleteLoadingCard(id, false);
-        }
-    }
-
-    async viewVirtualMachine(id) {
-        try {
-            const res = await fetch(`/api/vms/${encodeURIComponent(id)}`);
-            if (!res.ok) {
-                const text = await res.text();
-                this.appendErrorLine(`[Ver VM] ${this.parseApiError(text)}`);
-                return;
-            }
-            const vm = await res.json();
-            this.appendInfoLine(`[Ver VM] ${vm.name}: SO ${vm.os}, ISO ${vm.iso}, CPU ${vm.cores}, RAM ${vm.memoryMB} MB, Disco ${vm.diskGB} GB`);
-        } catch (e) {
-            console.warn('No se pudo ver la VM:', e);
-            this.appendErrorLine('[Ver VM] No se pudo consultar la máquina virtual.');
-        }
-    }
-
-    async deleteVirtualMachine(id) {
-        try {
-            const res = await fetch(`/api/vms/${encodeURIComponent(id)}`, { method: 'DELETE' });
-            if (!res.ok) {
-                const text = await res.text();
-                this.appendErrorLine(`[Eliminar VM] ${this.parseApiError(text)}`);
-                return;
-            }
-            this.appendInfoLine(`[Eliminar VM] ${id} solicitado.`);
-            await this.loadVirtualMachines();
-        } catch (e) {
-            console.warn('No se pudo eliminar la VM:', e);
-            this.appendErrorLine('[Eliminar VM] No se pudo eliminar la máquina virtual.');
-        }
-    }
-
-    setCreateLoading(isBusy) {
-        this.vmCreateInProgress = isBusy;
-        this.vmFormWrap.classList.toggle('creating', isBusy);
-        this.vmFormLoader.classList.toggle('hidden', !isBusy);
-
-        this.vmSubmitBtn.disabled = isBusy;
-        this.cancelVmFormBtn.disabled = isBusy;
-        this.vmSubmitBtn.classList.toggle('btn-busy', isBusy);
-        this.cancelVmFormBtn.classList.toggle('btn-busy', isBusy);
-        this.vmSubmitBtn.textContent = isBusy ? 'Creando...' : 'Crear';
-        this.cancelVmFormBtn.textContent = isBusy ? 'Cancelando...' : 'Cancelar';
-
-        Array.from(this.vmForm.elements).forEach((el) => {
-            if (el !== this.vmSubmitBtn && el !== this.cancelVmFormBtn) {
-                el.disabled = isBusy;
-            }
-        });
-    }
-
-    showVMCreateFeedback(text, type = 'error') {
-        if (!this.vmFormFeedback) return;
-        this.vmFormFeedback.textContent = text;
-        this.vmFormFeedback.className = `vm-form-feedback ${type}`;
-        this.vmFormFeedback.classList.remove('hidden');
-    }
-
-    hideVMFeedback() {
-        if (!this.vmFormFeedback) return;
-        this.vmFormFeedback.textContent = '';
-        this.vmFormFeedback.className = 'vm-form-feedback hidden';
-    }
-
-    parseApiError(text) {
-        try {
-            const payload = JSON.parse(text);
-            if (payload && payload.error) return payload.error;
-        } catch (_) {
-            // El backend puede responder con una cadena libre.
-        }
-        return text || 'No se pudo crear la máquina virtual.';
-    }
-
-    async handleVMCreate(e) {
-        e.preventDefault();
-        if (this.vmCreateInProgress) return;
-
-        const payload = {
-            name: this.vmNameInput.value.trim(),
-            iso: this.vmISOSelect.value,
-            cores: parseInt(this.vmCoresInput.value, 10) || 1,
-            memoryMB: parseInt(this.vmMemoryInput.value, 10) || 1024,
-            diskGB: parseInt(this.vmDiskInput.value, 10) || 10,
-        };
-
-        if (!payload.name) {
-            this.showVMCreateFeedback('El nombre de la VM es obligatorio.', 'error');
-            this.vmNameInput.focus();
-            return;
-        }
-
-        if (!payload.iso) {
-            this.showVMCreateFeedback('Debe elegir una ISO.', 'error');
-            this.vmISOSelect.focus();
-            return;
-        }
-
-        this.hideVMFeedback();
-        this.setCreateLoading(true);
-
-        try {
-            const res = await fetch('/api/vms', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+            const res = await fetch(`/api/vms/${encodeURIComponent(name)}`, {
+                method: 'DELETE'
             });
+
             if (!res.ok) {
                 const text = await res.text();
                 const errMsg = this.parseApiError(text);
-                this.appendErrorLine(`[Crear VM] ${errMsg}`);
-                this.vmFormWrap.classList.add('hidden');
-                this.vmForm.reset();
-                this.hideVMFeedback();
+                if (this.deleteVmFeedback) {
+                    this.deleteVmFeedback.textContent = `Error: ${errMsg}`;
+                    this.deleteVmFeedback.className = 'modal-feedback error';
+                }
+                this.appendErrorLine(`[Eliminar VM] Error al eliminar '${name}': ${errMsg}`);
+                this.setDeleteModalLoading(false);
+                if (card) {
+                    card.classList.remove('vm-card-deleting');
+                    const cardLoader = card.querySelector('.vm-card-delete-loader');
+                    if (cardLoader) cardLoader.classList.add('hidden');
+                    card.querySelectorAll('button').forEach((b) => b.disabled = false);
+                }
                 return;
             }
 
-            const vm = await res.json();
-            this.vmForm.reset();
-            this.vmFormWrap.classList.add('hidden');
-            this.hideVMFeedback();
+            this.appendInfoLine(`[Eliminar VM] '${name}' eliminada correctamente vía SSH.`);
+            this.closeDeleteModal();
             await this.loadVirtualMachines();
-            this.appendInfoLine(`[Crear VM] ${vm.name || payload.name} creada correctamente.`);
-        } catch (err) {
-            console.warn('No se pudo crear la máquina virtual:', err);
-            this.vmFormWrap.classList.add('hidden');
-            this.vmForm.reset();
-            this.hideVMFeedback();
-            this.appendErrorLine(`[Crear VM] ${err && err.message ? err.message : 'No se pudo crear la máquina virtual.'}`);
-        } finally {
-            this.setCreateLoading(false);
+            await this.loadKeys();
+        } catch (e) {
+            console.warn('Error al eliminar VM:', e);
+            if (this.deleteVmFeedback) {
+                this.deleteVmFeedback.textContent = 'No se pudo conectar al servidor para eliminar la MV.';
+                this.deleteVmFeedback.className = 'modal-feedback error';
+            }
+            this.appendErrorLine(`[Eliminar VM] No se pudo eliminar la máquina virtual '${name}'.`);
+            this.setDeleteModalLoading(false);
+            if (card) {
+                card.classList.remove('vm-card-deleting');
+                const cardLoader = card.querySelector('.vm-card-delete-loader');
+                if (cardLoader) cardLoader.classList.add('hidden');
+                card.querySelectorAll('button').forEach((b) => b.disabled = false);
+            }
         }
     }
 
+    // =========================================================================
+    // Módulo de Llaves SSH (Listado, Descarga de Pública/Privada, Eliminación)
+    // =========================================================================
+    async loadKeys() {
+        if (!this.keysListEl) return;
+        this.keysListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando llaves SSH...</div>`;
+
+        try {
+            const res = await fetch('/api/keys');
+            if (!res.ok) {
+                this.keysListEl.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">Error al consultar llaves.</div>`;
+                return;
+            }
+            const keys = await res.json();
+            this.renderKeysList(keys);
+        } catch (e) {
+            console.warn('Error al cargar llaves:', e);
+            this.keysListEl.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">No se pudo conectar para listar las llaves.</div>`;
+        }
+    }
+
+    renderKeysList(keys) {
+        if (!this.keysListEl) return;
+        const count = Array.isArray(keys) ? keys.length : 0;
+        if (this.keysCountPill) {
+            this.keysCountPill.textContent = `${count} ${count === 1 ? 'Llave' : 'Llaves'}`;
+        }
+
+        if (!Array.isArray(keys) || keys.length === 0) {
+            this.keysListEl.innerHTML = `<div class="empty-vm-list">No hay llaves SSH generadas. Al crear una máquina virtual, se generará su llave automáticamente.</div>`;
+            return;
+        }
+
+        this.keysListEl.innerHTML = keys.map((key) => `
+            <div class="key-card" id="key-card-${this.escapeAttr(key.id)}">
+                <div class="key-card-header">
+                    <span class="key-name">
+                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+                        </svg>
+                        ${this.escapeHTML(key.name || key.id)}
+                    </span>
+                    <span class="key-vm-badge" title="Máquina Virtual asociada">
+                        🖥️ ${this.escapeHTML(key.vmName || 'General')}
+                    </span>
+                </div>
+                <div class="key-card-details">
+                    <span><strong>Algoritmo:</strong> ${this.escapeHTML(key.algorithm || 'RSA 2048')}</span>
+                    <span class="key-fingerprint"><strong>Huella:</strong> ${this.escapeHTML(key.fingerprint || '-')}</span>
+                </div>
+                <div class="key-card-actions">
+                    <a href="/api/keys/${encodeURIComponent(key.id)}/private" class="btn btn-primary" download title="Descargar clave privada .pem">
+                        ⬇ Privada (.pem)
+                    </a>
+                    <a href="/api/keys/${encodeURIComponent(key.id)}/public" class="btn btn-secondary" download title="Descargar clave pública .pub">
+                        ⬇ Pública (.pub)
+                    </a>
+                    <button class="btn btn-danger delete-key-btn" data-id="${this.escapeAttr(key.id)}" data-name="${this.escapeAttr(key.name || key.id)}">
+                        Eliminar
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+        this.keysListEl.querySelectorAll('.delete-key-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.id;
+                const name = btn.dataset.name;
+                this.openDeleteKeyModal(id, name);
+            });
+        });
+    }
+
+    openDeleteKeyModal(id, name) {
+        this.pendingDeleteKeyId = id;
+        if (this.deleteKeyNameEl) {
+            this.deleteKeyNameEl.textContent = name;
+        }
+        if (this.deleteKeyFeedback) {
+            this.deleteKeyFeedback.textContent = '';
+            this.deleteKeyFeedback.className = 'modal-feedback hidden';
+        }
+        this.setDeleteKeyModalLoading(false);
+
+        if (!this.deleteKeyModal) return;
+        this.deleteKeyModal.classList.remove('hidden');
+        this.deleteKeyModal.setAttribute('aria-hidden', 'false');
+    }
+
+    closeDeleteKeyModal() {
+        if (!this.deleteKeyModal) return;
+        this.deleteKeyModal.classList.add('hidden');
+        this.deleteKeyModal.setAttribute('aria-hidden', 'true');
+        this.pendingDeleteKeyId = null;
+        this.setDeleteKeyModalLoading(false);
+    }
+
+    setDeleteKeyModalLoading(loading) {
+        if (!this.confirmDeleteKeyBtn) return;
+        const spinner = this.confirmDeleteKeyBtn.querySelector('.btn-spinner');
+        const text = this.confirmDeleteKeyBtn.querySelector('.btn-text');
+
+        this.confirmDeleteKeyBtn.disabled = loading;
+        if (this.cancelDeleteKeyBtn) this.cancelDeleteKeyBtn.disabled = loading;
+        if (this.closeDeleteKeyModalBtn) this.closeDeleteKeyModalBtn.disabled = loading;
+
+        if (spinner) spinner.classList.toggle('hidden', !loading);
+        if (text) text.textContent = loading ? 'Eliminando...' : 'Sí, eliminar';
+    }
+
+    async executeDeleteKey(id) {
+        this.setDeleteKeyModalLoading(true);
+
+        try {
+            const res = await fetch(`/api/keys/${encodeURIComponent(id)}`, {
+                method: 'DELETE'
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                const errMsg = this.parseApiError(text);
+                if (this.deleteKeyFeedback) {
+                    this.deleteKeyFeedback.textContent = `Error: ${errMsg}`;
+                    this.deleteKeyFeedback.className = 'modal-feedback error';
+                }
+                this.setDeleteKeyModalLoading(false);
+                return;
+            }
+
+            this.appendInfoLine(`[Llaves SSH] Llave '${id}' eliminada correctamente.`);
+            this.closeDeleteKeyModal();
+            await this.loadKeys();
+        } catch (e) {
+            console.warn('Error al eliminar llave:', e);
+            if (this.deleteKeyFeedback) {
+                this.deleteKeyFeedback.textContent = 'No se pudo conectar al servidor para eliminar la llave.';
+                this.deleteKeyFeedback.className = 'modal-feedback error';
+            }
+            this.setDeleteKeyModalLoading(false);
+        }
+    }
+
+    // =========================================================================
+    // Modal de Configuración
+    // =========================================================================
     isModalOpen() {
-        return this.modalEl && !this.modalEl.classList.contains('hidden');
+        const isCfg = this.modalEl && !this.modalEl.classList.contains('hidden');
+        const isDel = this.deleteVmModal && !this.deleteVmModal.classList.contains('hidden');
+        const isDelKey = this.deleteKeyModal && !this.deleteKeyModal.classList.contains('hidden');
+        const isDet = this.vmDetailsModal && !this.vmDetailsModal.classList.contains('hidden');
+        return isCfg || isDel || isDelKey || isDet;
     }
 
     openModal() {
@@ -634,12 +987,6 @@ class TerminalApp {
             return;
         }
 
-        if (!keyPath) {
-            this.showModalFeedback('La ubicación de la llave privada es obligatoria.', 'error');
-            this.cfgKeyPath.focus();
-            return;
-        }
-
         const newConfig = {
             sshHost: host,
             sshPort: port,
@@ -649,7 +996,6 @@ class TerminalApp {
             sshKeyPath: keyPath,
         };
 
-        // Guardar configuracion en backend (persistencia en config.properties)
         try {
             await fetch('/api/config', {
                 method: 'POST',
@@ -663,7 +1009,7 @@ class TerminalApp {
         this.currentConfig = { ...newConfig };
         this.updateTargetPill(this.currentConfig);
         this.updateSidebarConfig(this.currentConfig);
-        this.updateCurrentPath(this.currentConfig.sshStartPath || '~');
+        this.updateCurrentPath(startPath || '~');
 
         this.closeModal();
 
@@ -673,6 +1019,9 @@ class TerminalApp {
         this.connectCurrent();
     }
 
+    // =========================================================================
+    // Terminal y Manejo de Comandos
+    // =========================================================================
     handleKeyDown(e) {
         switch (e.key) {
             case 'Enter':
@@ -714,6 +1063,7 @@ class TerminalApp {
 
         if (cmdLower === 'cls' || cmdLower === 'clear') {
             this.clearOutput();
+            this.isClearingScreen = true;
             this.ws.sendInput(cmdTrimmed + '\r\n');
             this.inputEl.value = '';
             this.autoScroll = true;
@@ -721,6 +1071,18 @@ class TerminalApp {
         }
 
         this.autoScroll = true;
+
+        // Si tenemos una línea activa con el prompt en pantalla, completarla con el comando en amarillo
+        if (this.currentLineEl) {
+            const promptText = AnsiParser.stripAnsi(this.pendingText || this.currentLineEl.textContent || '').trim();
+            if (promptText && (promptText.endsWith('>') || promptText.endsWith('$') || promptText.endsWith('#'))) {
+                this.currentLineEl.innerHTML = AnsiParser.renderPromptAndCommand(promptText, cmdTrimmed);
+                this.finishLine();
+            } else {
+                this.finishLine();
+            }
+        }
+
         this.ws.sendInput(command + '\r\n');
         this.inputEl.value = '';
         this.scrollToBottom();
@@ -753,17 +1115,23 @@ class TerminalApp {
                     return;
                 }
             } catch (e) {
-                // No es JSON, continuar como flujo ANSI regular
+                // No es JSON, continuar como flujo regular
             }
         }
 
-        rawData = this.takeCompleteEscapeSequences(rawData);
-        if (!rawData) return;
-
         if (AnsiParser.hasClearScreen(rawData)) {
             this.clearOutput();
+            this.isClearingScreen = false;
             rawData = AnsiParser.removeClearScreen(rawData);
-            if (!rawData) return;
+            if (!rawData || !rawData.trim()) return;
+        }
+
+        if (this.isClearingScreen) {
+            const stripped = AnsiParser.stripAnsi(rawData).trim().toLowerCase();
+            if (stripped === 'cls' || stripped === 'clear' || stripped === '') {
+                return;
+            }
+            this.isClearingScreen = false;
         }
 
         const detectedPath = AnsiParser.extractPath(rawData);
@@ -772,25 +1140,6 @@ class TerminalApp {
         }
 
         this.processText(rawData);
-    }
-
-    takeCompleteEscapeSequences(text) {
-        const combined = this.pendingEscapeSequence + text;
-        this.pendingEscapeSequence = '';
-
-        const lastEscape = combined.lastIndexOf('\x1b');
-        if (lastEscape === -1) return combined;
-
-        const tail = combined.slice(lastEscape);
-        const isBrokenCSI = tail.startsWith('\x1b[') && !/\x1b\[[0-?]*[ -/]*[@-~]$/.test(tail);
-        const isBrokenOSC = tail.startsWith('\x1b]') && !/(?:\x07|\x1b\\)$/.test(tail);
-
-        if (isBrokenCSI || isBrokenOSC) {
-            this.pendingEscapeSequence = tail;
-            return combined.slice(0, lastEscape);
-        }
-
-        return combined;
     }
 
     removeBackspaces(str) {
@@ -812,38 +1161,23 @@ class TerminalApp {
     processText(text) {
         if (!text) return;
 
-        const processed = this.removeBackspaces(AnsiParser.sanitizeText(text));
-        const normalized = processed.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-        const lines = normalized.split('\n');
+        const processed = this.removeBackspaces(text);
+        // Manejar retornos de carro y secuencias de control de borrado de línea (VT100)
+        const tokens = processed.split(/(\r\n|\r|\n|\x1b\[2K|\x1b\[1K|\x1b\[0?K|\x1b\[1G)/);
 
-        for (const rawLine of lines) {
-            const line = rawLine.replace(/\s+$/g, '');
-            const plain = line.trim();
-            if (!plain) {
-                continue;
-            }
+        for (const token of tokens) {
+            if (token === '') continue;
 
-            // Filtra el ruido de la PTY de PowerShell: líneas de prompt, “P”, “>>”
-            // y el artefacto “PPS C:\...>” que se empalma con el texto del comando.
-            if (plain === 'P' || plain === '>>' || plain === '>' || /^PPS\s+[A-Za-z]:\\/.test(plain)) {
-                continue;
-            }
-
-            if (/^PS\s+[A-Za-z]:\\[^>]*>\s*$/.test(plain)) {
-                const path = AnsiParser.extractPath(line);
-                if (path) {
-                    this.updateCurrentPath(path);
+            if (token === '\r\n' || token === '\n') {
+                this.finishLine();
+            } else if (token === '\r' || token === '\x1b[2K' || token === '\x1b[1K' || token === '\x1b[0K' || token === '\x1b[K' || token === '\x1b[1G') {
+                this.pendingText = '';
+                if (this.currentLineEl) {
+                    this.currentLineEl.innerHTML = '';
                 }
-                continue;
+            } else {
+                this.appendToCurrentLine(token);
             }
-
-            if (/^PS\s+[A-Za-z]:\\[^>]*>\s+/.test(plain)) {
-                continue;
-            }
-
-            // Render line-by-line; avoid nested run of the same prompt fragments.
-            this.appendToCurrentLine(line);
-            this.finishLine();
         }
 
         this.scrollToBottom();
@@ -853,16 +1187,9 @@ class TerminalApp {
         if (!this.currentLineEl) {
             this.currentLineEl = this.createLineElement();
             this.outputEl.appendChild(this.currentLineEl);
-            this.hiddenRemotePrompt = false;
-            this.remotePromptCandidate = false;
         }
 
         this.pendingText += text;
-        const detectedPath = AnsiParser.extractPath(this.pendingText);
-        if (detectedPath) {
-            this.updateCurrentPath(detectedPath);
-        }
-
         const result = AnsiParser.renderToHTML(this.pendingText, []);
         this.activeClasses = result.classes;
         this.currentLineEl.innerHTML = result.html;
@@ -870,24 +1197,35 @@ class TerminalApp {
 
     finishLine() {
         if (this.currentLineEl) {
-            if (this.remotePromptCandidate && !this.hiddenRemotePrompt) {
-                const result = AnsiParser.renderToHTML(this.pendingText, []);
-                this.currentLineEl.innerHTML = result.html;
-            }
             const textContent = this.currentLineEl.textContent.trim();
-            if (this.hiddenRemotePrompt) {
-                this.currentLineEl.remove();
-            } else if (textContent === '') {
+            if (textContent === '') {
                 const prev = this.currentLineEl.previousElementSibling;
                 if (!prev || prev.textContent.trim() === '') {
                     this.currentLineEl.remove();
+                }
+            } else {
+                const prev = this.currentLineEl.previousElementSibling;
+                if (prev) {
+                    const prevText = prev.textContent.trim();
+                    // 1. Eliminar duplicados exactos consecutivos (ecos repetidos de ConPTY)
+                    if (prevText === textContent) {
+                        this.currentLineEl.remove();
+                    }
+                    // 2. Si la línea previa era solo un prompt y la actual es ese mismo prompt con el comando
+                    else if (textContent.startsWith(prevText) && (prevText.endsWith('>') || prevText.endsWith('$') || prevText.endsWith('#'))) {
+                        prev.remove();
+                    }
+                    // 3. Si la línea previa era prompt + comando y la actual es solo el eco del mismo comando sin prompt
+                    else if (prevText.endsWith('> ' + textContent) || prevText.endsWith('>' + textContent) ||
+                             prevText.endsWith('$ ' + textContent) || prevText.endsWith('$' + textContent) ||
+                             prevText.endsWith('# ' + textContent) || prevText.endsWith('#' + textContent)) {
+                        this.currentLineEl.remove();
+                    }
                 }
             }
         }
         this.currentLineEl = null;
         this.pendingText = '';
-        this.hiddenRemotePrompt = false;
-        this.remotePromptCandidate = false;
     }
 
     appendErrorLine(text) {
@@ -919,10 +1257,8 @@ class TerminalApp {
         this.outputEl.innerHTML = '';
         this.currentLineEl = null;
         this.pendingText = '';
-        this.hiddenRemotePrompt = false;
-        this.remotePromptCandidate = false;
         this.activeClasses = [];
-        this.pendingEscapeSequence = '';
+        this.ignoreEchoCommand = null;
     }
 
     scrollToBottom() {
@@ -950,14 +1286,39 @@ class TerminalApp {
         };
         this.statusEl.textContent = labels[status] || status;
 
-        // La ruta es parte del estado de la sesión, no de la salida visual. Se
-        // conserva mientras el WebSocket se reconecta o se limpia la terminal.
+        if (status === 'disconnected') {
+            if (this.promptPathEl) {
+                this.promptPathEl.textContent = '~';
+            }
+        }
     }
 
     handleResize() {
         const cols = Math.max(40, Math.floor(this.outputEl.clientWidth / 8.5));
         const rows = Math.max(10, Math.floor(this.outputEl.clientHeight / 18));
         this.ws.sendResize(cols, rows);
+    }
+
+    parseApiError(raw) {
+        try {
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed.error) return parsed.error;
+        } catch (e) {}
+        return raw || 'Error desconocido';
+    }
+
+    escapeHTML(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    escapeAttr(str) {
+        if (!str) return '';
+        return String(str).replace(/["'<>]/g, '');
     }
 }
 

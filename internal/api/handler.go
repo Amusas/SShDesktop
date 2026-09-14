@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,23 +35,20 @@ var upgrader = websocket.Upgrader{
 
 // Handler gestiona las peticiones HTTP, el endpoint de configuracion y la conexion WebSocket
 type Handler struct {
-	cfgMu   sync.RWMutex
-	cfg     *config.Config
-	log     *slog.Logger
-	static  http.Handler
-	vmStore *vmFileStore
-	vmSvc   *vm.Service
+	cfgMu sync.RWMutex
+	cfg   *config.Config
+	log   *slog.Logger
+	static http.Handler
+	vmSvc *vm.Service
 }
 
 // NewHandler inicializa el enrutador para archivos estaticos, configuracion y el endpoint WebSocket
 func NewHandler(cfg *config.Config, log *slog.Logger, staticDir string) *Handler {
-	vmStore := newVMFileStore(filepath.Join(".", "vms.json"))
 	return &Handler{
-		cfg:     cfg,
-		log:     log,
-		static:  http.FileServer(http.Dir(staticDir)),
-		vmStore: vmStore,
-		vmSvc:   vm.NewService(cfg, log),
+		cfg:    cfg,
+		log:    log,
+		static: http.FileServer(http.Dir(staticDir)),
+		vmSvc:  vm.NewService(cfg, log),
 	}
 }
 
@@ -73,6 +68,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case strings.HasPrefix(r.URL.Path, "/api/vms/"):
 		h.handleVirtualMachineByID(w, r)
+		return
+	case r.URL.Path == "/api/keys":
+		h.handleKeys(w, r)
+		return
+	case strings.HasPrefix(r.URL.Path, "/api/keys/"):
+		h.handleKeyByID(w, r)
 		return
 	}
 
@@ -141,7 +142,6 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 			h.cfg.SSHKeyPath = req.SSHKeyPath
 		}
 
-		// Persistir cambios en config.properties
 		if err := config.SaveProperties("config.properties", h.cfg); err != nil {
 			h.log.Warn("no se pudo guardar config.properties", "error", err)
 		} else {
@@ -172,31 +172,15 @@ func (h *Handler) handleISOs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isos := []string{}
-	isoFile := filepath.Join(".", "isos.json")
-	data, err := os.ReadFile(isoFile)
-	if err == nil {
-		var payload struct {
-			ISOs []struct {
-				Name string `json:"name"`
-				URL  string `json:"url"`
-			} `json:"isos"`
-		}
-		if json.Unmarshal(data, &payload) == nil {
-			for _, item := range payload.ISOs {
-				if strings.TrimSpace(item.Name) != "" {
-					isos = append(isos, item.Name)
-				}
-			}
-		}
+	entries := vm.Catalog()
+	names := []string{}
+	for _, e := range entries {
+		names = append(names, e.ISOFilename)
 	}
-	if len(isos) == 0 {
-		isos = []string{
-			"ubuntu-24.04.5-live-server-amd64.iso",
-			"debian-13.5.0-amd64-netinst.iso",
-		}
-	}
-	json.NewEncoder(w).Encode(map[string][]string{"isos": isos})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"isos":  names,
+		"items": entries,
+	})
 }
 
 func (h *Handler) handleVirtualMachines(w http.ResponseWriter, r *http.Request) {
@@ -206,7 +190,7 @@ func (h *Handler) handleVirtualMachines(w http.ResponseWriter, r *http.Request) 
 	case http.MethodGet:
 		vms, err := h.vmSvc.List()
 		if err != nil {
-			h.log.Warn("no se pudo listar maquinas virtuales por SSH", "error", err)
+			h.log.Warn("no se pudo listar maquinas virtuales", "error", err)
 			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 			return
 		}
@@ -219,15 +203,15 @@ func (h *Handler) handleVirtualMachines(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		vm, err := h.vmSvc.Create(req)
+		createdVM, err := h.vmSvc.Create(req)
 		if err != nil {
-			h.log.Warn("no se pudo crear maquina virtual por SSH", "error", err)
+			h.log.Warn("no se pudo crear maquina virtual", "error", err)
 			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
 			return
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(vm)
+		json.NewEncoder(w).Encode(createdVM)
 
 	default:
 		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
@@ -248,24 +232,94 @@ func (h *Handler) handleVirtualMachineByID(w http.ResponseWriter, r *http.Reques
 		decodedID = id
 	}
 	decodedID = strings.TrimSpace(decodedID)
-	if decodedID == "" {
-		http.Error(w, `{"error":"id requerido"}`, http.StatusBadRequest)
-		return
-	}
 
 	switch r.Method {
 	case http.MethodGet:
-		vm, err := h.vmSvc.Get(decodedID)
+		vmData, err := h.vmSvc.Get(decodedID)
 		if err != nil {
 			h.log.Warn("no se pudo consultar detalle de maquina virtual", "error", err)
 			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusNotFound)
 			return
 		}
-		json.NewEncoder(w).Encode(vm)
+		json.NewEncoder(w).Encode(vmData)
 
 	case http.MethodDelete:
 		if err := h.vmSvc.Delete(decodedID); err != nil {
-			h.log.Warn("no se pudo eliminar maquina virtual por SSH", "error", err)
+			h.log.Warn("no se pudo eliminar maquina virtual", "error", err)
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": decodedID})
+
+	default:
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleKeys(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"metodo no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	keyList, err := h.vmSvc.KeyStore().List()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(keyList)
+}
+
+func (h *Handler) handleKeyByID(w http.ResponseWriter, r *http.Request) {
+	relPath := strings.TrimPrefix(r.URL.Path, "/api/keys/")
+	relPath = strings.TrimSpace(relPath)
+
+	if strings.HasSuffix(relPath, "/private") {
+		id := strings.TrimSuffix(relPath, "/private")
+		id = strings.TrimSpace(id)
+		key, err := h.vmSvc.KeyStore().Get(id)
+		if err != nil {
+			http.Error(w, "Llave no encontrada", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.pem\"", key.Name))
+		w.Header().Set("Content-Type", "application/x-pem-file")
+		w.Write([]byte(key.PrivateKey))
+		return
+	}
+
+	if strings.HasSuffix(relPath, "/public") {
+		id := strings.TrimSuffix(relPath, "/public")
+		id = strings.TrimSpace(id)
+		key, err := h.vmSvc.KeyStore().Get(id)
+		if err != nil {
+			http.Error(w, "Llave no encontrada", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.pub\"", key.Name))
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write([]byte(key.PublicKey))
+		return
+	}
+
+	decodedID, err := url.PathUnescape(relPath)
+	if err != nil {
+		decodedID = relPath
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet:
+		key, err := h.vmSvc.KeyStore().Get(decodedID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(key)
+
+	case http.MethodDelete:
+		if err := h.vmSvc.KeyStore().Delete(decodedID); err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 			return
 		}
@@ -283,7 +337,6 @@ type wsMessage struct {
 	Rows int    `json:"rows,omitempty"`
 }
 
-// handleWebSocket establece la sesion SSH y conecta los flujos bidireccionales con el navegador
 func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -296,7 +349,6 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// Obtener parametros de conexion desde query params con fallback a configuracion
 	q := r.URL.Query()
 
 	h.cfgMu.RLock()
@@ -331,14 +383,13 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if keyPath == "" {
 		keyPath = h.cfg.SSHKeyPath
 	}
-
 	h.cfgMu.RUnlock()
 
 	if host == "" || user == "" {
 		h.log.Warn("intento de conexion con host o usuario vacio")
 		conn.WriteJSON(wsMessage{
 			Type: "error",
-			Data: "Host o usuario no configurados. Abre el menú de configuración (⚙) en la esquina superior izquierda para ingresar los datos de conexión.",
+			Data: "Host o usuario no configurados. Abre el menú de configuración en la esquina superior izquierda para ingresar los datos de conexión.",
 		})
 		conn.Close()
 		return
@@ -362,7 +413,6 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	var writeMu sync.Mutex
 
-	// Reenvio inmediato de salida SSH hacia el canal WebSocket
 	session.SetOutputHandler(func(data []byte) {
 		writeMu.Lock()
 		defer writeMu.Unlock()
@@ -383,7 +433,6 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	var wg sync.WaitGroup
 
-	// Goroutine para envio periodico de paquetes Ping para mantener viva la conexion
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -393,7 +442,6 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		for {
 			select {
 			case <-ctx.Done():
-				h.log.Debug("goroutine de ping detenida")
 				return
 			case <-ticker.C:
 				writeMu.Lock()
@@ -401,7 +449,6 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				err := conn.WriteMessage(websocket.PingMessage, nil)
 				writeMu.Unlock()
 				if err != nil {
-					h.log.Debug("fallo en ping, cerrando conexion", "error", err)
 					cancel()
 					return
 				}
@@ -409,7 +456,6 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Lectura de mensajes de entrada y eventos de redimensionamiento desde el cliente
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -418,11 +464,6 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		for {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-					h.log.Warn("error de lectura en websocket", "error", err)
-				} else {
-					h.log.Info("cliente websocket desconectado")
-				}
 				return
 			}
 
@@ -431,7 +472,6 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			var msg wsMessage
 			if err := json.Unmarshal(message, &msg); err != nil {
 				if err := session.Write(message); err != nil {
-					h.log.Error("error al escribir en stdin de SSH", "error", err)
 					return
 				}
 				continue
@@ -440,13 +480,10 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			switch msg.Type {
 			case "input":
 				if err := session.Write([]byte(msg.Data)); err != nil {
-					h.log.Error("error al enviar entrada a SSH", "error", err)
 					return
 				}
 			case "resize":
-				if err := session.Resize(msg.Cols, msg.Rows); err != nil {
-					h.log.Warn("error al redimensionar PTY", "error", err)
-				}
+				_ = session.Resize(msg.Cols, msg.Rows)
 			}
 		}
 	}()
@@ -457,6 +494,4 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 	conn.Close()
 	writeMu.Unlock()
-
-	h.log.Info("sesion websocket finalizada y liberada", "remoto", r.RemoteAddr)
 }
