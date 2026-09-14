@@ -66,7 +66,7 @@ func Load() (*Config, error) {
 		LogLevel:     getVal([]string{"LOG_LEVEL", "log.level"}, "info"),
 		SSHHost:      getVal([]string{"SSH_HOST", "ssh.host", "host"}, ""),
 		SSHPort:      port,
-		SSHUser:      getVal([]string{"SSH_USER", "ssh.user", "user"}, ""),
+		SSHUser:      getVal([]string{"SSH_USER", "ssh.user", "user"}, "HP 245 RYZEN 3"),
 		SSHKeyPath:   normalizePath(getVal([]string{"SSH_KEY_PATH", "ssh.key_path", "key_path"}, "")),
 		SSHShell:     strings.ToLower(getVal([]string{"SSH_SHELL", "ssh.shell", "shell"}, "powershell")),
 		SSHStartPath: getVal([]string{"SSH_START_PATH", "ssh.start_path", "start_path", "start.path"}, "C:/Users/andres.HP245G7"),
