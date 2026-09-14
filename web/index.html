@@ -136,6 +136,32 @@
         </section>
     </aside>
 
+    <div id="delete-vm-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog delete-modal-dialog" role="dialog" aria-labelledby="delete-vm-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M3 6h18M8 6V4h8v2M6 10l1 10h10l1-10" />
+                        </svg>
+                    </div>
+                    <h2 id="delete-vm-title">Eliminar máquina virtual</h2>
+                </div>
+                <button id="close-delete-vm-modal" class="modal-close-btn" aria-label="Cerrar ventana">×</button>
+            </div>
+            <div class="modal-body delete-modal-body">
+                <div class="delete-confirm-copy">
+                    <span>¿Estás seguro que quieres eliminar la máquina virtual?</span>
+                    <strong id="delete-vm-name">VM</strong>
+                </div>
+                <div class="delete-confirm-actions">
+                    <button type="button" id="cancel-delete-vm" class="btn btn-secondary">Cancelar</button>
+                    <button type="button" id="confirm-delete-vm" class="btn btn-danger">Sí, eliminar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal de Configuración -->
     <div id="config-modal" class="modal-backdrop hidden" aria-hidden="true">
         <div class="modal-dialog" role="dialog" aria-labelledby="modal-title">

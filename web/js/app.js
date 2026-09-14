@@ -40,6 +40,14 @@ class TerminalApp {
         this.vmDiskInput = document.getElementById('vm-disk');
         this.vmCreateInProgress = false;
 
+        // VM delete confirmation modal
+        this.deleteVmModal = document.getElementById('delete-vm-modal');
+        this.closeDeleteVmModalBtn = document.getElementById('close-delete-vm-modal');
+        this.cancelDeleteVmBtn = document.getElementById('cancel-delete-vm');
+        this.confirmDeleteVmBtn = document.getElementById('confirm-delete-vm');
+        this.deleteVmNameEl = document.getElementById('delete-vm-name');
+        this.pendingDeleteVmName = null;
+
         // Elementos del modal de configuracion
         this.modalEl = document.getElementById('config-modal');
         this.closeModalBtn = document.getElementById('close-modal-btn');
@@ -228,6 +236,13 @@ class TerminalApp {
             this.setCreateLoading(false);
         });
 
+        this.closeDeleteVmModalBtn.addEventListener('click', () => this.closeDeleteModal());
+        this.cancelDeleteVmBtn.addEventListener('click', () => this.closeDeleteModal());
+        this.confirmDeleteVmBtn.addEventListener('click', () => {
+            if (!this.pendingDeleteVmName) return;
+            this.executeDeleteVirtualMachine(this.pendingDeleteVmName);
+        });
+
         this.vmForm.addEventListener('submit', (e) => this.handleVMCreate(e));
 
         // Boton de reconexion directa
@@ -331,6 +346,10 @@ class TerminalApp {
                     <span>RAM: ${vm.memoryMB || 0} MB</span>
                     <span>Disco: ${vm.diskGB || 0} GB</span>
                 </div>
+                <div class="vm-card-delete-loader hidden">
+                    <span class="vm-card-spinner"></span>
+                    <span>Eliminando...</span>
+                </div>
                 <div class="vm-card-actions">
                     <button class="btn btn-secondary view-vm" data-id="${vm.name}">Ver</button>
                     <button class="btn btn-danger delete-vm" data-id="${vm.name}">Eliminar</button>
@@ -342,12 +361,90 @@ class TerminalApp {
             btn.addEventListener('click', async (event) => {
                 const id = event.currentTarget.dataset.id;
                 if (event.currentTarget.classList.contains('delete-vm')) {
-                    await this.deleteVirtualMachine(id);
+                    this.deleteVirtualMachine(id);
                     return;
                 }
                 await this.viewVirtualMachine(id);
             });
         });
+    }
+
+    openDeleteVMModal(name) {
+        this.pendingDeleteVmName = name;
+        this.deleteVmNameEl.textContent = name;
+        if (!this.deleteVmModal) return;
+        this.deleteVmModal.classList.remove('hidden');
+        this.deleteVmModal.setAttribute('aria-hidden', 'false');
+    }
+
+    closeDeleteModal() {
+        if (!this.deleteVmModal) return;
+        this.deleteVmModal.classList.add('hidden');
+        this.deleteVmModal.setAttribute('aria-hidden', 'true');
+        this.pendingDeleteVmName = null;
+    }
+
+    setDeleteLoadingCard(id, isDeleting) {
+        if (!this.vmListEl) return;
+        const card = Array.from(this.vmListEl.querySelectorAll('.vm-card')).find((item) => {
+            const button = item.querySelector('[data-id]');
+            return button && button.dataset.id === id;
+        });
+        if (!card) return;
+
+        const loader = card.querySelector('.vm-card-delete-loader');
+        const deleteBtn = card.querySelector('.delete-vm');
+        const viewBtn = card.querySelector('.view-vm');
+
+        card.classList.toggle('vm-card-deleting', isDeleting);
+        if (loader) loader.classList.toggle('hidden', !isDeleting);
+        if (deleteBtn) {
+            deleteBtn.disabled = isDeleting;
+            deleteBtn.textContent = isDeleting ? 'Eliminando...' : 'Eliminar';
+        }
+        if (viewBtn) {
+            viewBtn.disabled = isDeleting;
+        }
+    }
+
+    deleteVirtualMachine(id) {
+        this.openDeleteVMModal(id);
+    }
+
+    async executeDeleteVirtualMachine(id) {
+        const card = Array.from(this.vmListEl.querySelectorAll('.vm-card')).find((item) => {
+            const button = item.querySelector('[data-id]');
+            return button && button.dataset.id === id;
+        });
+
+        if (!card) {
+            this.closeDeleteModal();
+            return;
+        }
+
+        this.setDeleteLoadingCard(id, true);
+        this.closeDeleteModal();
+
+        try {
+            const res = await fetch(`/api/vms/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const text = await res.text();
+                const errMsg = this.parseApiError(text);
+                this.appendErrorLine(`[Eliminar VM] ${errMsg}`);
+                this.showVMCreateFeedback(`[Eliminar VM] ${errMsg}`, 'error');
+                this.setDeleteLoadingCard(id, false);
+                return;
+            }
+
+            this.appendInfoLine(`[Eliminar VM] ${id} eliminada correctamente.`);
+            this.showVMCreateFeedback(`[Eliminar VM] ${id} eliminada correctamente.`, 'success');
+            await this.loadVirtualMachines();
+        } catch (e) {
+            console.warn('No se pudo eliminar la VM:', e);
+            this.appendErrorLine('[Eliminar VM] No se pudo eliminar la máquina virtual.');
+            this.showVMCreateFeedback('[Eliminar VM] No se pudo eliminar la máquina virtual.', 'error');
+            this.setDeleteLoadingCard(id, false);
+        }
     }
 
     async viewVirtualMachine(id) {

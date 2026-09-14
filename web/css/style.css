@@ -269,6 +269,29 @@ body {
     margin-top: 12px;
 }
 
+.vm-card-delete-loader {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--accent-yellow);
+    font-size: 11px;
+    margin-top: 10px;
+}
+
+.vm-card-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(245, 158, 11, 0.5);
+    border-top-color: var(--accent-yellow);
+    animation: spin 600ms linear infinite;
+}
+
+.vm-card-deleting {
+    border-color: var(--accent-yellow);
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.5) inset;
+}
+
 .btn {
     font-family: var(--font-mono);
     padding: 7px 12px;
@@ -306,6 +329,11 @@ body {
     background: rgba(239, 68, 68, 0.15);
     color: var(--accent-red);
     border-color: rgba(239,68,68,0.45);
+}
+
+.btn-danger:hover {
+    background: rgba(239, 68, 68, 0.25);
+    color: #fecaca;
 }
 
 .vm-form-wrap {
@@ -852,6 +880,32 @@ body {
 }
 
 /* Mensaje de retroalimentación en modal */
+.delete-confirm-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 4px;
+    color: var(--text-primary);
+}
+
+.delete-confirm-copy strong {
+    color: var(--accent-yellow);
+}
+
+.delete-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.delete-modal-dialog {
+    max-width: 420px;
+}
+
+.delete-modal-body {
+    background: var(--bg-secondary);
+}
+
 .modal-feedback {
     padding: 8px 12px;
     border-radius: 6px;
