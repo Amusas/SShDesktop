@@ -20,9 +20,17 @@ type Config struct {
 	SSHKeyPath   string `json:"sshKeyPath"`
 	SSHShell     string `json:"sshShell"`     // "powershell", "cmd", o "default"
 	SSHStartPath string `json:"sshStartPath"` // Ruta predeterminada de inicio
+
+	// Configuracion centralizada para el Administrador de VMs y Plantillas
+	TemplateRoot     string `json:"templateRoot"`     // ej: C:\VMManager\Templates
+	VMRoot           string `json:"vmRoot"`           // ej: C:\VMManager\VMs
+	SSHRoot          string `json:"sshRoot"`          // ej: C:\VMManager\SSH
+	BootstrapKeyPath string `json:"bootstrapKeyPath"` // ej: C:\VMManager\SSH\bootstrap_id_ed25519
+	BasePort         int    `json:"basePort"`         // ej: 22000
 }
 
-// Load carga y combina la configuracion desde config.properties, .env y variables de entorno del sistema
+// Load carga la configuracion desde archivos locales. El .env es la fuente inicial,
+// sin depender de variables de entorno del proceso.
 func Load() (*Config, error) {
 	vars := make(map[string]string)
 
@@ -40,13 +48,8 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// Helper para resolver clave considerando variables de entorno del sistema y alternativas
+	// Helper para resolver claves entre los archivos locales y sus alternativas
 	getVal := func(keys []string, fallback string) string {
-		for _, k := range keys {
-			if sysVal := os.Getenv(k); sysVal != "" {
-				return sysVal
-			}
-		}
 		for _, k := range keys {
 			if v, ok := vars[k]; ok && v != "" {
 				return v
@@ -61,15 +64,39 @@ func Load() (*Config, error) {
 		port = 22
 	}
 
+	basePortStr := getVal([]string{"VM_BASE_PORT", "vm.base_port", "base_port"}, "22000")
+	basePort, err := strconv.Atoi(basePortStr)
+	if err != nil || basePort <= 0 {
+		basePort = 22000
+	}
+
+	bootstrapKey := normalizePath(getVal([]string{"VM_BOOTSTRAP_KEY_PATH", "vm.bootstrap_key_path", "bootstrap_key_path"}, ""))
+	if bootstrapKey == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			candidate := filepath.Join(home, ".ssh", "vm-bootstrap")
+			if _, err := os.Stat(candidate); err == nil {
+				bootstrapKey = candidate
+			}
+		}
+		if bootstrapKey == "" {
+			bootstrapKey = `C:\VMManager\SSH\bootstrap_id_ed25519`
+		}
+	}
+
 	cfg := &Config{
-		ServerAddr:   getVal([]string{"SERVER_ADDR", "server.addr"}, ":8080"),
-		LogLevel:     getVal([]string{"LOG_LEVEL", "log.level"}, "info"),
-		SSHHost:      getVal([]string{"SSH_HOST", "ssh.host", "host"}, ""),
-		SSHPort:      port,
-		SSHUser:      getVal([]string{"SSH_USER", "ssh.user", "user"}, "HP 245 RYZEN 3"),
-		SSHKeyPath:   normalizePath(getVal([]string{"SSH_KEY_PATH", "ssh.key_path", "key_path"}, "")),
-		SSHShell:     strings.ToLower(getVal([]string{"SSH_SHELL", "ssh.shell", "shell"}, "powershell")),
-		SSHStartPath: getVal([]string{"SSH_START_PATH", "ssh.start_path", "start_path", "start.path"}, "C:/Users/andres.HP245G7"),
+		ServerAddr:       getVal([]string{"SERVER_ADDR", "server.addr"}, ":8080"),
+		LogLevel:         getVal([]string{"LOG_LEVEL", "log.level"}, "info"),
+		SSHHost:          getVal([]string{"SSH_HOST", "ssh.host", "host"}, ""),
+		SSHPort:          port,
+		SSHUser:          getVal([]string{"SSH_USER", "ssh.user", "user"}, "HP 245 RYZEN 3"),
+		SSHKeyPath:       normalizePath(getVal([]string{"SSH_KEY_PATH", "ssh.key_path", "key_path"}, "")),
+		SSHShell:         strings.ToLower(getVal([]string{"SSH_SHELL", "ssh.shell", "shell"}, "powershell")),
+		SSHStartPath:     getVal([]string{"SSH_START_PATH", "ssh.start_path", "start_path", "start.path"}, "C:/Users/andres.HP245G7"),
+		TemplateRoot:     getVal([]string{"VM_TEMPLATE_ROOT", "vm.template_root", "template_root"}, `C:\VMManager\Templates`),
+		VMRoot:           getVal([]string{"VM_VM_ROOT", "vm.vm_root", "vm_root"}, `C:\VMManager\VMs`),
+		SSHRoot:          getVal([]string{"VM_SSH_ROOT", "vm.ssh_root", "ssh_root"}, `C:\VMManager\SSH`),
+		BootstrapKeyPath: bootstrapKey,
+		BasePort:         basePort,
 	}
 
 	return cfg, nil
@@ -89,7 +116,14 @@ func SaveProperties(path string, cfg *Config) error {
 	fmt.Fprintf(&b, "ssh.start_path=%s\n", cfg.SSHStartPath)
 	fmt.Fprintf(&b, "ssh.key_path=%s\n", cfg.SSHKeyPath)
 	fmt.Fprintf(&b, "server.addr=%s\n", cfg.ServerAddr)
-	fmt.Fprintf(&b, "log.level=%s\n", cfg.LogLevel)
+	fmt.Fprintf(&b, "log.level=%s\n\n", cfg.LogLevel)
+
+	fmt.Fprintf(&b, "# Rutas centralizadas de virtualizacion\n")
+	fmt.Fprintf(&b, "vm.template_root=%s\n", cfg.TemplateRoot)
+	fmt.Fprintf(&b, "vm.vm_root=%s\n", cfg.VMRoot)
+	fmt.Fprintf(&b, "vm.ssh_root=%s\n", cfg.SSHRoot)
+	fmt.Fprintf(&b, "vm.bootstrap_key_path=%s\n", cfg.BootstrapKeyPath)
+	fmt.Fprintf(&b, "vm.base_port=%d\n", cfg.BasePort)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }

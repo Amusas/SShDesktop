@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-ssh-web
+/ssh-web
 
 # Environment
 .env

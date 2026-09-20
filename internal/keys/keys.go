@@ -93,6 +93,27 @@ func (s *Store) GenerateKeyPairForVM(vmName string) (SSHKey, error) {
 	return key, nil
 }
 
+// Add guarda una llave en el store asegurando persistencia en disco
+func (s *Store) Add(key SSHKey) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	keys, _ := s.loadUnlocked()
+	// Si ya existia con el mismo ID o VMName, actualizar
+	updated := false
+	for i, k := range keys {
+		if k.ID == key.ID || (k.VMName != "" && k.VMName == key.VMName) {
+			keys[i] = key
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		keys = append(keys, key)
+	}
+	return s.saveUnlocked(keys)
+}
+
 func (s *Store) List() ([]SSHKey, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -125,7 +146,7 @@ func (s *Store) Delete(id string) error {
 	filtered := make([]SSHKey, 0, len(keys))
 	found := false
 	for _, k := range keys {
-		if k.ID == id || k.VMName == id {
+		if k.ID == id || strings.EqualFold(k.VMName, id) || k.Name == id {
 			found = true
 			continue
 		}
@@ -166,6 +187,10 @@ func (s *Store) saveUnlocked(keys []SSHKey) error {
 		return err
 	}
 	return os.WriteFile(s.path, data, 0644)
+}
+
+func SanitizeName(name string) string {
+	return sanitizeName(name)
 }
 
 func sanitizeName(name string) string {

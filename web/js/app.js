@@ -22,6 +22,7 @@ class TerminalApp {
         this.sidePort = document.getElementById('side-port');
         this.sideUser = document.getElementById('side-user');
         this.sideShell = document.getElementById('side-shell');
+        this.hostListEl = document.getElementById('host-list');
         this.sideViews = Array.from(document.querySelectorAll('.sidebar-view'));
         this.sideLinks = Array.from(document.querySelectorAll('.sidebar-link'));
 
@@ -36,12 +37,10 @@ class TerminalApp {
         this.vmSubmitBtn = document.getElementById('vm-submit');
         this.vmForm = document.getElementById('vm-form');
         this.vmNameInput = document.getElementById('vm-name');
-        this.vmOSSelect = document.getElementById('vm-os');
-        this.vmISOSelect = document.getElementById('vm-iso');
+        this.vmTemplateSelect = document.getElementById('vm-template');
         this.vmCoresInput = document.getElementById('vm-cores');
         this.vmMemoryInput = document.getElementById('vm-memory');
-        this.vmDiskInput = document.getElementById('vm-disk');
-        this.rawISOItems = [];
+        this.templates = [];
 
         // VM details modal
         this.vmDetailsModal = document.getElementById('vm-details-modal');
@@ -77,6 +76,7 @@ class TerminalApp {
         this.resetDefaultsBtn = document.getElementById('btn-reset-defaults');
         this.configForm = document.getElementById('config-form');
         this.modalFeedback = document.getElementById('modal-feedback');
+        this.cfgName = document.getElementById('cfg-name');
 
         // Inputs del formulario de configuracion
         this.cfgHost = document.getElementById('cfg-host');
@@ -99,6 +99,9 @@ class TerminalApp {
         // Configuracion por defecto y activa
         this.defaultConfig = null;
         this.currentConfig = {};
+        this.hosts = [];
+        this.activeHostId = '';
+        this.editingHostId = null;
 
         this.ws = new TerminalWebSocket('/ws', {
             onStatusChange: (status) => this.setStatus(status),
@@ -111,7 +114,7 @@ class TerminalApp {
 
         this.bindEvents();
         this.loadInitialConfig();
-        this.loadISOs();
+        this.loadTemplates();
         this.loadVirtualMachines();
         this.loadKeys();
     }
@@ -128,9 +131,10 @@ class TerminalApp {
                 this.updateTargetPill(this.currentConfig);
                 this.updateSidebarConfig(this.currentConfig);
                 this.updateCurrentPath(this.currentConfig.sshStartPath || '~');
+                await this.loadHosts();
 
                 if (!this.currentConfig.sshHost || !this.currentConfig.sshUser) {
-                    this.openModal();
+                    this.openHostModal();
                     this.showModalFeedback('Por favor configura el host y usuario para conectarte.', 'error');
                 } else {
                     this.connectCurrent();
@@ -146,6 +150,7 @@ class TerminalApp {
 
     populateForm(cfg) {
         if (!cfg) return;
+        this.cfgName.value = cfg.name || `${cfg.sshUser || 'usuario'}@${cfg.sshHost || 'host'}`;
         this.cfgHost.value = cfg.sshHost || '';
         this.cfgPort.value = cfg.sshPort || 22;
         this.cfgUser.value = cfg.sshUser || '';
@@ -190,7 +195,110 @@ class TerminalApp {
         if (this.sideShell) this.sideShell.textContent = (cfg.sshShell || 'powershell').toLowerCase();
     }
 
+    async loadHosts() {
+        try {
+            const res = await fetch('/api/hosts');
+            if (!res.ok) return;
+            const data = await res.json();
+            this.hosts = Array.isArray(data.hosts) ? data.hosts : [];
+            this.activeHostId = data.activeHostId || '';
+            this.renderHostList();
+        } catch (e) {
+            console.warn('No se pudo cargar la lista de hosts:', e);
+        }
+    }
+
+    renderHostList() {
+        if (!this.hostListEl) return;
+        this.hostListEl.replaceChildren();
+        if (this.hosts.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'empty-vm-list';
+            empty.textContent = 'No hay hosts guardados';
+            this.hostListEl.appendChild(empty);
+            return;
+        }
+
+        this.hosts.forEach((host) => {
+            const card = document.createElement('div');
+            card.className = `host-card${host.id === this.activeHostId ? ' active' : ''}`;
+            const details = document.createElement('div');
+            details.className = 'host-card-details';
+            const name = document.createElement('strong');
+            name.textContent = `${host.sshUser || 'usuario'}@${host.sshHost || 'host'}`;
+            const target = document.createElement('span');
+            target.textContent = `${host.sshUser}@${host.sshHost}:${host.sshPort} · ${(host.sshShell || 'powershell').toUpperCase()}`;
+            details.append(name, target);
+
+            const actions = document.createElement('div');
+            actions.className = 'host-card-actions';
+            const useButton = document.createElement('button');
+            useButton.className = 'btn btn-primary';
+            useButton.type = 'button';
+            useButton.textContent = host.id === this.activeHostId ? 'Activo' : 'Usar';
+            useButton.disabled = host.id === this.activeHostId;
+            useButton.addEventListener('click', () => this.activateHost(host.id));
+            const editButton = document.createElement('button');
+            editButton.className = 'btn btn-secondary';
+            editButton.type = 'button';
+            editButton.textContent = 'Editar';
+            editButton.addEventListener('click', () => this.openHostModal(host));
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'btn btn-danger';
+            deleteButton.type = 'button';
+            deleteButton.textContent = 'Eliminar';
+            deleteButton.disabled = this.hosts.length <= 1;
+            deleteButton.addEventListener('click', () => this.deleteHost(host));
+
+            actions.append(useButton, editButton, deleteButton);
+            card.append(details, actions);
+            this.hostListEl.appendChild(card);
+        });
+    }
+
+    async activateHost(id) {
+        try {
+            const res = await fetch(`/api/hosts/${encodeURIComponent(id)}/activate`, { method: 'POST' });
+            if (!res.ok) {
+                this.appendErrorLine(`[Hosts] ${this.parseApiError(await res.text())}`);
+                return;
+            }
+            const host = await res.json();
+            this.currentConfig = { ...host };
+            this.updateTargetPill(host);
+            this.updateSidebarConfig(host);
+            this.updateCurrentPath(host.sshStartPath || '~');
+            this.activeHostId = id;
+            this.renderHostList();
+            this.clearOutput();
+            this.appendInfoLine(`[Iniciando sesión SSH a ${host.sshUser}@${host.sshHost}:${host.sshPort} (${host.sshShell})...]`);
+            this.connectCurrent();
+        } catch (e) {
+            console.warn('No se pudo activar el host:', e);
+        }
+    }
+
+    async deleteHost(host) {
+        if (!window.confirm(`¿Eliminar el host "${host.name}"?`)) return;
+        try {
+            const res = await fetch(`/api/hosts/${encodeURIComponent(host.id)}`, { method: 'DELETE' });
+            if (!res.ok) {
+                this.appendErrorLine(`[Hosts] ${this.parseApiError(await res.text())}`);
+                return;
+            }
+            await this.loadHosts();
+        } catch (e) {
+            console.warn('No se pudo eliminar el host:', e);
+        }
+    }
+
     connectCurrent() {
+        this.currentVM = null;
+        this.updateTargetPill(this.currentConfig);
+        const promptChar = document.querySelector('.prompt-char');
+        if (promptChar) {
+            promptChar.textContent = '>';
+        }
         const shell = this.currentConfig.sshShell || 'powershell';
         const params = {
             host: this.currentConfig.sshHost || '',
@@ -258,7 +366,7 @@ class TerminalApp {
         // Abrir modal de configuración desde el sidebar
         this.openConfigModalBtn.addEventListener('click', () => {
             this.toggleSidebar(false);
-            this.openModal();
+            this.openHostModal();
         });
 
         // Control del formulario de creación de VM
@@ -266,7 +374,7 @@ class TerminalApp {
             this.hideVMFeedback();
             this.vmFormWrap.classList.toggle('hidden');
             if (!this.vmFormWrap.classList.contains('hidden')) {
-                this.filterISOsBySelectedOS();
+                this.loadTemplates();
                 setTimeout(() => this.vmNameInput.focus(), 50);
             }
         });
@@ -292,13 +400,6 @@ class TerminalApp {
         if (this.refreshKeysBtn) {
             this.refreshKeysBtn.addEventListener('click', () => {
                 this.loadKeys();
-            });
-        }
-
-        // Cambio de SO en el formulario -> filtrar ISOs en tiempo real
-        if (this.vmOSSelect) {
-            this.vmOSSelect.addEventListener('change', () => {
-                this.filterISOsBySelectedOS();
             });
         }
 
@@ -421,49 +522,41 @@ class TerminalApp {
     }
 
     // =========================================================================
-    // Filtrado de ISOs según el SO seleccionado
+    // Carga de Plantillas (Templates) desde C:\VMManager\Templates
     // =========================================================================
-    async loadISOs() {
+    async loadTemplates() {
+        if (!this.vmTemplateSelect) return;
+        this.vmTemplateSelect.innerHTML = `<option value="" disabled selected>Cargando plantillas disponibles...</option>`;
         try {
-            const res = await fetch('/api/isos');
-            if (!res.ok) return;
+            const res = await fetch('/api/templates');
+            if (!res.ok) {
+                this.vmTemplateSelect.innerHTML = `<option value="" disabled selected>Error al cargar plantillas</option>`;
+                return;
+            }
             const data = await res.json();
-            this.rawISOItems = data.items || [];
-            this.filterISOsBySelectedOS();
+            this.templates = Array.isArray(data) ? data : [];
+            this.renderTemplateSelect();
         } catch (e) {
-            console.warn('No se pudieron cargar los ISOs:', e);
+            console.warn('No se pudieron cargar las plantillas:', e);
+            this.vmTemplateSelect.innerHTML = `<option value="" disabled selected>No se pudieron cargar las plantillas</option>`;
         }
     }
 
-    filterISOsBySelectedOS() {
-        if (!this.vmISOSelect || !this.vmOSSelect) return;
-        const selectedOS = this.vmOSSelect.value || 'Ubuntu 24.04 LTS';
-        const osLower = selectedOS.toLowerCase();
-
-        let filtered = this.rawISOItems.filter((item) => {
-            const itemOS = (item.os || '').toLowerCase();
-            const itemName = (item.isoFilename || item.name || '').toLowerCase();
-
-            if (osLower.includes('ubuntu')) return itemOS.includes('ubuntu') || itemName.includes('ubuntu');
-            if (osLower.includes('debian')) return itemOS.includes('debian') || itemName.includes('debian');
-            if (osLower.includes('windows 11')) return itemName.includes('win11') || itemOS.includes('11');
-            if (osLower.includes('windows 10')) return itemName.includes('win10') || itemOS.includes('10');
-            if (osLower.includes('server')) return itemName.includes('server') || itemOS.includes('server');
-            if (osLower.includes('centos') || osLower.includes('redhat')) return itemOS.includes('centos') || itemName.includes('centos') || itemName.includes('rhel');
-            if (osLower.includes('alpine')) return itemOS.includes('alpine') || itemName.includes('alpine');
-            if (osLower.includes('arch')) return itemOS.includes('arch') || itemName.includes('arch');
-
-            return true;
-        });
-
-        if (filtered.length === 0) {
-            filtered = this.rawISOItems;
+    renderTemplateSelect() {
+        if (!this.vmTemplateSelect) return;
+        if (!this.templates || this.templates.length === 0) {
+            this.vmTemplateSelect.innerHTML = `<option value="" disabled selected>No hay plantillas disponibles en C:\\VMManager\\Templates</option>`;
+            return;
         }
 
-        this.vmISOSelect.innerHTML = filtered.map((item) => {
-            const filename = item.isoFilename || item.name;
-            return `<option value="${filename}">${filename}</option>`;
-        }).join('');
+        this.vmTemplateSelect.innerHTML = `
+            <option value="" disabled selected>Selecciona una plantilla...</option>
+            ${this.templates.map((t) => `
+                <option value="${this.escapeAttr(t.id)}">
+                    ${this.escapeHTML(t.name || t.id)} (${this.escapeHTML(t.osType || 'Linux')})
+                </option>
+            `).join('')}
+        `;
     }
 
     // =========================================================================
@@ -494,33 +587,81 @@ class TerminalApp {
             return;
         }
 
-        this.vmListEl.innerHTML = vms.map((vm) => `
+        this.vmListEl.innerHTML = vms.map((vm) => {
+            const stateLower = (vm.state || '').toLowerCase();
+            const isRunning = stateLower === 'running' || stateLower === 'ejecutando';
+            const isStopped = !isRunning;
+            const stateColor = isRunning ? 'var(--accent-green)' : stateLower === 'poweroff' ? 'var(--accent-red)' : 'var(--accent-yellow)';
+            const templateLabel = vm.templateName || vm.os || 'Plantilla Base';
+
+            return `
             <div class="vm-card" id="vm-card-${this.escapeAttr(vm.name)}">
                 <div class="vm-card-header">
                     <span class="vm-name">${this.escapeHTML(vm.name)}</span>
-                    <span class="vm-os">${this.escapeHTML(vm.os || 'Linux')}</span>
+                    <span class="vm-os">${this.escapeHTML(templateLabel)}</span>
                 </div>
                 <div class="vm-card-details">
                     <span><strong>CPU:</strong> ${vm.cores || 2} Cores</span>
-                    <span><strong>RAM:</strong> ${vm.memoryMB || 2048} MB</span>
-                    <span><strong>Disco:</strong> ${vm.diskGB || 40} GB</span>
-                    <span><strong>Estado:</strong> ${this.escapeHTML(vm.state || 'Creada')}</span>
+                    <span><strong>RAM:</strong> ${vm.memoryMB || 4096} MB</span>
+                    <span><strong>Usuario SSH:</strong> ${this.escapeHTML(vm.sshUser || 'bootstrap')}</span>
+                    <span><strong>SSH Port:</strong> ${vm.hostPort ? `${vm.host || ''}:${vm.hostPort}` : 'NAT'}</span>
+                    <span><strong>Estado:</strong> <span style="color:${stateColor}">${this.escapeHTML(vm.state || 'Creada')}</span></span>
                 </div>
                 <div class="vm-card-delete-loader hidden">
                     <span class="vm-card-spinner"></span>
-                    <span>Eliminando máquina virtual...</span>
+                    <span>Procesando...</span>
                 </div>
                 <div class="vm-card-actions">
                     <button class="btn btn-secondary view-vm" data-id="${this.escapeAttr(vm.name)}">Ver</button>
+                    ${isStopped ? `<button class="btn btn-success start-vm" data-id="${this.escapeAttr(vm.name)}" title="Iniciar máquina virtual">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">▶ Iniciar</span>
+                    </button>` : ''}
+                    ${isRunning ? `
+                    <button class="btn btn-primary terminal-vm" data-id="${this.escapeAttr(vm.name)}" title="Abrir terminal SSH interactivo a esta VM">
+                        &gt;_ Terminal
+                    </button>
+                    <button class="btn btn-warning stop-vm" data-id="${this.escapeAttr(vm.name)}" title="Apagado limpio ACPI">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">⏹ Apagar</span>
+                    </button>
+                    <button class="btn btn-danger-outline poweroff-vm" data-id="${this.escapeAttr(vm.name)}" title="Apagado forzado inmediato">
+                        ⚡ Poweroff
+                    </button>` : ''}
                     <button class="btn btn-danger delete-vm" data-id="${this.escapeAttr(vm.name)}">Eliminar</button>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
 
         this.vmListEl.querySelectorAll('.view-vm').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const id = btn.dataset.id;
                 this.viewVirtualMachine(id);
+            });
+        });
+
+        this.vmListEl.querySelectorAll('.start-vm').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                this.startVM(btn.dataset.id, btn);
+            });
+        });
+
+        this.vmListEl.querySelectorAll('.terminal-vm').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                this.connectTerminalToVM(btn.dataset.id);
+            });
+        });
+
+        this.vmListEl.querySelectorAll('.stop-vm').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                this.stopVM(btn.dataset.id, btn);
+            });
+        });
+
+        this.vmListEl.querySelectorAll('.poweroff-vm').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                this.forcePoweroffVM(btn.dataset.id, btn);
             });
         });
 
@@ -548,9 +689,8 @@ class TerminalApp {
             const vm = await res.json();
 
             const cores = vm.cores > 0 ? vm.cores : 2;
-            const memoryMB = vm.memoryMB > 0 ? vm.memoryMB : 2048;
-            const diskGB = vm.diskGB > 0 ? vm.diskGB : 40;
-            const os = vm.os && vm.os !== '' ? vm.os : 'Linux';
+            const memoryMB = vm.memoryMB > 0 ? vm.memoryMB : 4096;
+            const templateName = vm.templateName || vm.os || 'Plantilla Base';
 
             this.vmDetailsContent.innerHTML = `
                 <div class="vm-detail-item">
@@ -558,8 +698,8 @@ class TerminalApp {
                     <span class="vm-detail-val">${this.escapeHTML(vm.name)}</span>
                 </div>
                 <div class="vm-detail-item">
-                    <span class="vm-detail-key">Sistema Operativo</span>
-                    <span class="vm-detail-val" style="color:var(--accent-green)">${this.escapeHTML(os)}</span>
+                    <span class="vm-detail-key">Plantilla Base</span>
+                    <span class="vm-detail-val" style="color:var(--accent-green)">${this.escapeHTML(templateName)}</span>
                 </div>
                 <div class="vm-detail-item">
                     <span class="vm-detail-key">CPU (Cores)</span>
@@ -570,32 +710,26 @@ class TerminalApp {
                     <span class="vm-detail-val">${memoryMB} MB (${(memoryMB/1024).toFixed(1)} GB)</span>
                 </div>
                 <div class="vm-detail-item">
-                    <span class="vm-detail-key">Almacenamiento (Disco)</span>
-                    <span class="vm-detail-val">${diskGB} GB</span>
+                    <span class="vm-detail-key">Usuario SSH Dedicado</span>
+                    <span class="vm-detail-val" style="color:var(--accent-yellow)">${this.escapeHTML(vm.sshUser || 'bootstrap')}</span>
                 </div>
                 <div class="vm-detail-item">
+                    <span class="vm-detail-key">Puerto SSH (NAT)</span>
+                    <span class="vm-detail-val">${vm.hostPort ? `${vm.host || 'Host'}:${vm.hostPort}` : 'NAT :22'}</span>
+                </div>
+                <div class="vm-detail-item full-width">
                     <span class="vm-detail-key">Estado Actual</span>
                     <span class="vm-detail-val" style="color:var(--accent)">${this.escapeHTML(vm.state || 'Creada')}</span>
                 </div>
-                ${vm.iso ? `
-                <div class="vm-detail-item full-width">
-                    <span class="vm-detail-key">Imagen ISO</span>
-                    <span class="vm-detail-val">${this.escapeHTML(vm.iso)}</span>
-                </div>` : ''}
-                ${vm.keyName || vm.keyId ? `
-                <div class="vm-detail-item full-width">
-                    <span class="vm-detail-key">Llave SSH Asignada</span>
-                    <span class="vm-detail-val" style="color:var(--accent-yellow)">🔑 ${this.escapeHTML(vm.keyName || vm.keyId)}</span>
-                </div>` : ''}
-                ${vm.network ? `
-                <div class="vm-detail-item full-width">
-                    <span class="vm-detail-key">Adaptador de Red</span>
-                    <span class="vm-detail-val">${this.escapeHTML(vm.network)}</span>
-                </div>` : ''}
                 ${vm.diskPath ? `
                 <div class="vm-detail-item full-width">
-                    <span class="vm-detail-key">Ruta del Disco Virtual</span>
-                    <span class="vm-detail-val">${this.escapeHTML(vm.diskPath)}</span>
+                    <span class="vm-detail-key">Disco Base (Multiattach)</span>
+                    <span class="vm-detail-val" style="font-size:12px">${this.escapeHTML(vm.diskPath)}</span>
+                </div>` : ''}
+                ${vm.publicKey ? `
+                <div class="vm-detail-item full-width">
+                    <span class="vm-detail-key">Clave Pública Ed25519</span>
+                    <span class="vm-detail-val" style="font-size:11px;word-break:break-all">${this.escapeHTML(vm.publicKey)}</span>
                 </div>` : ''}
             `;
         } catch (e) {
@@ -613,12 +747,14 @@ class TerminalApp {
     async handleVMCreate(e) {
         e.preventDefault();
 
+        if (this.isCreatingVM) {
+            return;
+        }
+
         const name = this.vmNameInput.value.trim();
-        const os = this.vmOSSelect.value || 'Ubuntu 24.04 LTS';
-        const iso = this.vmISOSelect.value || '';
+        const templateId = this.vmTemplateSelect ? this.vmTemplateSelect.value : '';
         const cores = parseInt(this.vmCoresInput.value, 10) || 2;
-        const memoryMB = parseInt(this.vmMemoryInput.value, 10) || 2048;
-        const diskGB = parseInt(this.vmDiskInput.value, 10) || 40;
+        const memoryMB = parseInt(this.vmMemoryInput.value, 10) || 4096;
 
         if (!name) {
             this.showVMCreateFeedback('El nombre de la máquina es obligatorio.', 'error');
@@ -626,16 +762,17 @@ class TerminalApp {
             return;
         }
 
-        if (!iso) {
-            this.showVMCreateFeedback('Debes seleccionar una imagen ISO.', 'error');
+        if (!templateId) {
+            this.showVMCreateFeedback('Debes seleccionar una plantilla base.', 'error');
             return;
         }
 
+        this.isCreatingVM = true;
         this.setCreateVMLoading(true);
-        this.hideVMFeedback();
+        this.showVMCreateFeedback('Aprovisionando máquina virtual en VirtualBox y configurando acceso SSH... Por favor espera (~1-2 min).', 'info');
 
         try {
-            const payload = { name, os, iso, cores, memoryMB, diskGB };
+            const payload = { name, templateId, cores, memoryMB };
             const res = await fetch('/api/vms', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -646,18 +783,17 @@ class TerminalApp {
                 const text = await res.text();
                 const errMsg = this.parseApiError(text);
                 this.showVMCreateFeedback(`Error al crear VM: ${errMsg}`, 'error');
-                this.setCreateVMLoading(false);
                 return;
             }
 
-            this.showVMCreateFeedback(`¡Máquina virtual '${name}' y su llave SSH creadas exitosamente!`, 'success');
-            this.appendInfoLine(`[Crear VM] Máquina virtual '${name}' creada exitosamente con par de llaves SSH.`);
+            const created = await res.json();
+            this.showVMCreateFeedback(`¡Máquina virtual '${name}' creada y aprovisionada con éxito!`, 'success');
+            this.appendInfoLine(`[Crear VM] '${name}' creada exitosamente con plantilla '${created.templateName || templateId}'. Usuario: ${created.sshUser || 'propio'}, Puerto SSH: ${created.hostPort || 'NAT'}`);
 
             setTimeout(() => {
                 this.vmFormWrap.classList.add('hidden');
                 this.vmForm.reset();
                 this.hideVMFeedback();
-                this.setCreateVMLoading(false);
             }, 1200);
 
             await this.loadVirtualMachines();
@@ -665,6 +801,8 @@ class TerminalApp {
         } catch (err) {
             console.warn('Error al crear VM:', err);
             this.showVMCreateFeedback('No se pudo conectar al servidor para crear la MV.', 'error');
+        } finally {
+            this.isCreatingVM = false;
             this.setCreateVMLoading(false);
         }
     }
@@ -676,9 +814,13 @@ class TerminalApp {
 
         this.vmSubmitBtn.disabled = loading;
         if (this.cancelVmFormBtn) this.cancelVmFormBtn.disabled = loading;
+        if (this.vmNameInput) this.vmNameInput.disabled = loading;
+        if (this.vmTemplateSelect) this.vmTemplateSelect.disabled = loading;
+        if (this.vmCoresInput) this.vmCoresInput.disabled = loading;
+        if (this.vmMemoryInput) this.vmMemoryInput.disabled = loading;
 
         if (spinner) spinner.classList.toggle('hidden', !loading);
-        if (text) text.textContent = loading ? 'Creando Máquina...' : 'Crear Máquina';
+        if (text) text.textContent = loading ? 'Aprovisionando (~1-2 min)...' : 'Crear Máquina';
     }
 
     showVMCreateFeedback(text, type = 'error') {
@@ -786,8 +928,107 @@ class TerminalApp {
     }
 
     // =========================================================================
+    // Acciones de Inicio, Apagado y Terminal de Máquinas Virtuales
+    // =========================================================================
+    async startVM(name, btn) {
+        const spinner = btn ? btn.querySelector('.btn-spinner') : null;
+        const text = btn ? btn.querySelector('.btn-text') : null;
+
+        if (btn) btn.disabled = true;
+        if (spinner) spinner.classList.remove('hidden');
+        if (text) text.textContent = 'Iniciando...';
+
+        try {
+            const res = await fetch(`/api/vms/${encodeURIComponent(name)}/start`, { method: 'POST' });
+            if (!res.ok) {
+                const errText = await res.text();
+                this.appendErrorLine(`[Iniciar VM] Error al iniciar '${name}': ${this.parseApiError(errText)}`);
+            } else {
+                this.appendInfoLine(`[Iniciar VM] '${name}' iniciada correctamente.`);
+            }
+        } catch (e) {
+            this.appendErrorLine(`[Iniciar VM] No se pudo conectar al servidor para iniciar '${name}'.`);
+        } finally {
+            if (btn) btn.disabled = false;
+            if (spinner) spinner.classList.add('hidden');
+            if (text) text.textContent = '▶ Iniciar';
+            await this.loadVirtualMachines();
+        }
+    }
+
+    async stopVM(name, btn) {
+        const spinner = btn ? btn.querySelector('.btn-spinner') : null;
+        const text = btn ? btn.querySelector('.btn-text') : null;
+
+        if (btn) btn.disabled = true;
+        if (spinner) spinner.classList.remove('hidden');
+        if (text) text.textContent = 'Apagando...';
+
+        try {
+            const res = await fetch(`/api/vms/${encodeURIComponent(name)}/stop`, { method: 'POST' });
+            if (!res.ok) {
+                const errText = await res.text();
+                this.appendErrorLine(`[Apagar VM] Error al apagar '${name}': ${this.parseApiError(errText)}`);
+            } else {
+                this.appendInfoLine(`[Apagar VM] '${name}' apagada limpiamente (ACPI).`);
+            }
+        } catch (e) {
+            this.appendErrorLine(`[Apagar VM] No se pudo conectar al servidor para apagar '${name}'.`);
+        } finally {
+            if (btn) btn.disabled = false;
+            if (spinner) spinner.classList.add('hidden');
+            if (text) text.textContent = '⏹ Apagar';
+            await this.loadVirtualMachines();
+        }
+    }
+
+    async forcePoweroffVM(name, btn) {
+        if (!confirm(`¿Estás seguro de forzar el apagado inmediato (Poweroff) de la máquina virtual '${name}'?`)) {
+            return;
+        }
+
+        if (btn) btn.disabled = true;
+
+        try {
+            const res = await fetch(`/api/vms/${encodeURIComponent(name)}/poweroff`, { method: 'POST' });
+            if (!res.ok) {
+                const errText = await res.text();
+                this.appendErrorLine(`[Poweroff VM] Error al forzar apagado de '${name}': ${this.parseApiError(errText)}`);
+            } else {
+                this.appendInfoLine(`[Poweroff VM] '${name}' apagada forzadamente.`);
+            }
+        } catch (e) {
+            this.appendErrorLine(`[Poweroff VM] No se pudo conectar al servidor para forzar apagado de '${name}'.`);
+        } finally {
+            if (btn) btn.disabled = false;
+            await this.loadVirtualMachines();
+        }
+    }
+
+    connectTerminalToVM(name) {
+        this.clearOutput();
+        this.appendInfoLine(`[Terminal VM] Conectando terminal SSH interactivo a '${name}'...`);
+        this.toggleSidebar(false);
+        this.currentVM = name;
+        if (this.targetUserHostEl) {
+            this.targetUserHostEl.textContent = `[VM] ${name}`;
+            this.targetUserHostEl.title = `Conectado a la máquina virtual ${name}`;
+        }
+        if (this.targetShellBadgeEl) {
+            this.targetShellBadgeEl.textContent = 'bash';
+            this.targetShellBadgeEl.className = 'badge-shell bash';
+        }
+        const promptChar = document.querySelector('.prompt-char');
+        if (promptChar) {
+            promptChar.textContent = '$';
+        }
+        this.ws.reconnectWith({ vm: name });
+    }
+
+    // =========================================================================
     // Módulo de Llaves SSH (Listado, Descarga de Pública/Privada, Eliminación)
     // =========================================================================
+
     async loadKeys() {
         if (!this.keysListEl) return;
         this.keysListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando llaves SSH...</div>`;
@@ -938,12 +1179,17 @@ class TerminalApp {
         return isCfg || isDel || isDelKey || isDet;
     }
 
-    openModal() {
-        this.populateForm(this.currentConfig);
+    openHostModal(host = null) {
+        this.editingHostId = host ? host.id : null;
+        this.populateForm(host || this.currentConfig);
         this.clearModalFeedback();
         this.modalEl.classList.remove('hidden');
         this.modalEl.setAttribute('aria-hidden', 'false');
         setTimeout(() => this.cfgHost.focus(), 50);
+    }
+
+    openModal() {
+        this.openHostModal();
     }
 
     closeModal() {
@@ -968,12 +1214,19 @@ class TerminalApp {
     async handleConfigSubmit(e) {
         e.preventDefault();
 
+        const name = this.cfgName.value.trim();
         const host = this.cfgHost.value.trim();
         const port = parseInt(this.cfgPort.value.trim(), 10) || 22;
         const user = this.cfgUser.value.trim();
         const shell = this.getSelectedShell();
         const startPath = this.cfgStartPath.value.trim();
         const keyPath = this.cfgKeyPath.value.trim();
+
+        if (!name) {
+            this.showModalFeedback('El nombre del host es obligatorio.', 'error');
+            this.cfgName.focus();
+            return;
+        }
 
         if (!host) {
             this.showModalFeedback('El host o IP del servidor es obligatorio.', 'error');
@@ -988,6 +1241,7 @@ class TerminalApp {
         }
 
         const newConfig = {
+            name,
             sshHost: host,
             sshPort: port,
             sshUser: user,
@@ -997,26 +1251,34 @@ class TerminalApp {
         };
 
         try {
-            await fetch('/api/config', {
-                method: 'POST',
+            const endpoint = this.editingHostId
+                ? `/api/hosts/${encodeURIComponent(this.editingHostId)}`
+                : '/api/hosts';
+            const res = await fetch(endpoint, {
+                method: this.editingHostId ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newConfig),
             });
+            if (!res.ok) {
+                this.showModalFeedback(this.parseApiError(await res.text()), 'error');
+                return;
+            }
+            const savedHost = await res.json();
+            if (this.editingHostId && this.editingHostId === this.activeHostId) {
+                this.currentConfig = { ...savedHost };
+                this.updateTargetPill(savedHost);
+                this.updateSidebarConfig(savedHost);
+                this.updateCurrentPath(savedHost.sshStartPath || '~');
+                this.connectCurrent();
+            }
+            await this.loadHosts();
+            this.closeModal();
+            return;
         } catch (err) {
-            console.warn('No se pudo guardar la configuracion en el backend:', err);
+            this.showModalFeedback('No se pudo guardar el host.', 'error');
+            console.warn('No se pudo guardar el host en el backend:', err);
+            return;
         }
-
-        this.currentConfig = { ...newConfig };
-        this.updateTargetPill(this.currentConfig);
-        this.updateSidebarConfig(this.currentConfig);
-        this.updateCurrentPath(startPath || '~');
-
-        this.closeModal();
-
-        this.clearOutput();
-        this.appendInfoLine(`[Iniciando sesión SSH a ${user}@${host}:${port} (${shell})...]`);
-
-        this.connectCurrent();
     }
 
     // =========================================================================

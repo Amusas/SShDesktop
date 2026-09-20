@@ -132,6 +132,12 @@ body {
     border-color: rgba(245, 158, 11, 0.4);
 }
 
+.badge-shell.bash {
+    background: rgba(34, 197, 94, 0.2);
+    color: var(--accent-green);
+    border-color: rgba(34, 197, 94, 0.4);
+}
+
 .badge-shell.default {
     background: rgba(148, 163, 184, 0.2);
     color: #cbd5e1;
@@ -340,6 +346,62 @@ body {
     gap: 8px;
 }
 
+.host-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 42vh;
+    overflow-y: auto;
+}
+
+.host-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.host-card.active {
+    border-color: var(--accent-green);
+    box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.25) inset;
+}
+
+.host-card-details {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.host-card-details strong {
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.host-card-details span {
+    color: var(--text-muted);
+    font-size: 11px;
+    overflow-wrap: anywhere;
+}
+
+.host-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.host-card-actions .btn {
+    flex: 1;
+    min-width: 70px;
+    padding: 6px 8px;
+    font-size: 11px;
+}
+
 .sidebar-config-item {
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -464,6 +526,12 @@ body {
     background: rgba(34, 197, 94, 0.15);
     border: 1px solid rgba(34, 197, 94, 0.3);
     color: #86efac;
+}
+
+.vm-form-feedback.info {
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    color: #7dd3fc;
 }
 
 .form-actions {
@@ -1053,6 +1121,42 @@ body {
     box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
 }
 
+.btn-danger-outline {
+    background: transparent;
+    color: var(--accent-red);
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
+.btn-danger-outline:hover {
+    background: rgba(239, 68, 68, 0.25);
+    color: #ffffff;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+}
+
+.btn-success {
+    background: rgba(34, 197, 94, 0.18);
+    color: var(--accent-green);
+    border-color: rgba(34, 197, 94, 0.4);
+}
+
+.btn-success:hover {
+    background: rgba(34, 197, 94, 0.32);
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(34, 197, 94, 0.3);
+}
+
+.btn-warning {
+    background: rgba(245, 158, 11, 0.18);
+    color: var(--accent-yellow);
+    border-color: rgba(245, 158, 11, 0.4);
+}
+
+.btn-warning:hover {
+    background: rgba(245, 158, 11, 0.32);
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
 .btn-ghost {
     background: transparent;
     color: var(--text-muted);
@@ -1120,6 +1224,25 @@ body {
 #output .line-prompt {
     color: var(--accent);
     font-weight: 600;
+}
+
+#output .line-prompt .prompt-user {
+    color: var(--accent-green);
+    font-weight: 700;
+}
+
+#output .line-prompt .prompt-sep {
+    color: var(--text-muted);
+}
+
+#output .line-prompt .prompt-dir {
+    color: var(--accent);
+    font-weight: 700;
+}
+
+#output .line-prompt .prompt-char {
+    color: var(--accent-yellow);
+    font-weight: 700;
 }
 
 #output .line-command {

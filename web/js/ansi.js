@@ -15,7 +15,7 @@ const AnsiParser = (() => {
     ];
 
     // Comandos de sistema operativo (títulos de ventana: \x1b]0;titulo\x07)
-    const OSC_REGEX = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|\r|\n)/g;
+    const OSC_REGEX = /\x1b\](?:[0-9;]*[^\x07\x1b\r\n]*)?(?:\x07|\x1b\\|\r|\n)?/g;
 
     // Secuencias de modo privado DEC (control de cursor: \x1b[?25h, \x1b[?25l, bracketed paste \x1b[?2004h)
     const DEC_REGEX = /\x1b\[\?[0-9;]*[a-zA-Z]/g;
@@ -23,8 +23,8 @@ const AnsiParser = (() => {
     // Secuencias de control CSI que no sean estilo/color (movimiento de cursor, borrado de línea, etc.)
     const NON_SGR_CSI_REGEX = /\x1b\[[0-9;]*[A-LN-Za-ln-z]/g;
 
-    // Patrón global para remover todas las secuencias ANSI
-    const ALL_ANSI_REGEX = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\|\r|\n))/g;
+    // Patrón global para remover todas las secuencias ANSI (OSC y CSI primero, luego escapes Fe sin romper corchetes)
+    const ALL_ANSI_REGEX = /\x1b(?:\](?:[0-9;]*[^\x07\x1b\r\n]*)?(?:\x07|\x1b\\)?|\[[0-?]*[ -/]*[@-~]|[@-XZ\\_])/g;
 
     function parseSGR(params, classes) {
         if (!params || params === '0') {
@@ -75,7 +75,10 @@ const AnsiParser = (() => {
 
     function stripAnsi(text) {
         if (!text) return '';
-        return text.replace(ALL_ANSI_REGEX, '');
+        let s = text.replace(ALL_ANSI_REGEX, '').replace(/\x07/g, '');
+        s = s.replace(/0;[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:[^$#\r\n]*(?=[a-zA-Z0-9_.-]+@)/g, '');
+        s = s.replace(/^0;[a-zA-Z0-9_.-]+@[^:\r\n]+:[^\r\n~]*~/g, '');
+        return s;
     }
 
     // Detectar secuencias ANSI de borrado de pantalla (cls / clear)
@@ -102,9 +105,10 @@ const AnsiParser = (() => {
             .replace(OSC_REGEX, '')
             .replace(DEC_REGEX, '')
             .replace(NON_SGR_CSI_REGEX, '')
-            .replace(/\x07/g, '')
-            .replace(/\x1b\]0;[^\x07\x1b\r\n]*(?:\x07|\x1b\\)/g, '')
-            .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
+            .replace(/\x07/g, '');
+
+        clean = clean.replace(/0;[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:[^$#\r\n]*(?=[a-zA-Z0-9_.-]+@)/g, '');
+        clean = clean.replace(/^0;[a-zA-Z0-9_.-]+@[^:\r\n]+:[^\r\n~]*~/g, '');
 
         clean = clean.replace(/PPS\s+([A-Za-z]:\\)/g, 'PS $1');
         clean = clean.replace(/^P\s+PS\s+/gm, 'PS ');
@@ -117,6 +121,8 @@ const AnsiParser = (() => {
     function renderPromptAndCommand(promptText, commandText) {
         const p = promptText ? promptText.trim() : '';
         const c = commandText ? commandText.trim() : '';
+        const formatted = formatPromptLine(p + (c ? ' ' + c : ''));
+        if (formatted) return formatted;
         let html = '';
         if (p) {
             html += `<span class="line-prompt">${escapeHTML(p, [])}</span>`;
@@ -161,10 +167,18 @@ const AnsiParser = (() => {
         if (unixMatch) {
             const promptPart = unixMatch[1];
             const cmdPart = unixMatch[2];
-            if (cmdPart && cmdPart.trim()) {
-                return `<span class="line-prompt">${escapeHTML(promptPart, [])}</span> <span class="line-command">${escapeHTML(cmdPart.trim(), [])}</span>`;
+            const sub = promptPart.match(/^(\s*)([a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+)(:)(~|[\\/][^$#\r\n]*)([$#])\s*$/);
+            let promptHtml = '';
+            if (sub) {
+                promptHtml = `${sub[1]}<span class="prompt-user">${escapeHTML(sub[2], [])}</span><span class="prompt-sep">${escapeHTML(sub[3], [])}</span><span class="prompt-dir">${escapeHTML(sub[4], [])}</span><span class="prompt-char">${escapeHTML(sub[5], [])}</span>`;
             } else {
-                return `<span class="line-prompt">${escapeHTML(promptPart, [])}</span>`;
+                promptHtml = `<span class="line-prompt">${escapeHTML(promptPart, [])}</span>`;
+            }
+
+            if (cmdPart && cmdPart.trim()) {
+                return `${promptHtml} <span class="line-command">${escapeHTML(cmdPart.trim(), [])}</span>`;
+            } else {
+                return promptHtml;
             }
         }
 

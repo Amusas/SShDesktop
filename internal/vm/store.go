@@ -11,19 +11,30 @@ import (
 )
 
 type VMRecord struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	OS        string `json:"os"`
-	ISO       string `json:"iso"`
-	Cores     int    `json:"cores"`
-	MemoryMB  int    `json:"memoryMB"`
-	DiskGB    int    `json:"diskGB"`
-	State     string `json:"state"`
-	KeyID     string `json:"keyId,omitempty"`
-	KeyName   string `json:"keyName,omitempty"`
-	DiskPath  string `json:"diskPath,omitempty"`
-	Network   string `json:"network,omitempty"`
-	CreatedAt string `json:"createdAt"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	TemplateID     string `json:"templateId,omitempty"`
+	TemplateName   string `json:"templateName,omitempty"`
+	OS             string `json:"os"`
+	ISO            string `json:"iso,omitempty"`
+	Cores          int    `json:"cores"`
+	MemoryMB       int    `json:"memoryMB"`
+	DiskGB         int    `json:"diskGB,omitempty"`
+	State          string `json:"state"`
+	SSHUser        string `json:"sshUser,omitempty"`        // Usuario unico Linux (ej: vm_otramv_a82f)
+	Host           string `json:"host,omitempty"`           // Host Windows (ej: 192.168.101.80)
+	HostPort       int    `json:"hostPort,omitempty"`       // Puerto NAT asignado (ej: 22001)
+	GuestPort      int    `json:"guestPort,omitempty"`      // Puerto guest interno (22)
+	PrivateKeyPath string `json:"privateKeyPath,omitempty"` // Ruta a id_ed25519 en el backend
+	PublicKey      string `json:"publicKey,omitempty"`      // Clave publica Ed25519
+	KeyID          string `json:"keyId,omitempty"`
+	KeyName        string `json:"keyName,omitempty"`
+	GuestUser      string `json:"guestUser,omitempty"`
+	DiskPath       string `json:"diskPath,omitempty"`       // Ruta al base.vdi
+	IP             string `json:"ip,omitempty"`
+	Network        string `json:"network,omitempty"`
+	FirstBoot      bool   `json:"firstBoot"`
+	CreatedAt      string `json:"createdAt"`
 }
 
 type Store struct {
@@ -112,6 +123,49 @@ func (s *Store) Delete(nameOrID string) error {
 		}
 	}
 	return s.saveUnlocked(filtered)
+}
+
+// UpdateState actualiza el estado y opcionalmente marca que ya arrancó por primera vez.
+func (s *Store) UpdateState(nameOrID, state string, markFirstBoot bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	vms, err := s.loadUnlocked()
+	if err != nil {
+		return err
+	}
+	found := false
+	for i := range vms {
+		if strings.EqualFold(vms[i].Name, nameOrID) || vms[i].ID == nameOrID {
+			vms[i].State = state
+			if markFirstBoot {
+				vms[i].FirstBoot = true
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("VM no encontrada para actualizar estado: %s", nameOrID)
+	}
+	return s.saveUnlocked(vms)
+}
+
+func (s *Store) UpdateConnection(nameOrID, ip string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	vms, err := s.loadUnlocked()
+	if err != nil {
+		return err
+	}
+	for i := range vms {
+		if strings.EqualFold(vms[i].Name, nameOrID) || vms[i].ID == nameOrID {
+			vms[i].IP = ip
+			return s.saveUnlocked(vms)
+		}
+	}
+	return fmt.Errorf("VM no encontrada para actualizar conexion: %s", nameOrID)
 }
 
 func (s *Store) loadUnlocked() ([]VMRecord, error) {

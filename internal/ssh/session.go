@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -41,6 +42,11 @@ func CreateVirtualMachine(ctx context.Context, cfg Config, vm interface {
 }
 
 func ExecuteCommand(cfg Config, command string, log *slog.Logger) (string, error) {
+	return ExecuteCommandContext(context.Background(), cfg, command, log)
+}
+
+// ExecuteCommandContext ejecuta un comando en el servidor SSH remoto con soporte de contexto y cancelacion
+func ExecuteCommandContext(ctx context.Context, cfg Config, command string, log *slog.Logger) (string, error) {
 	authMethods, err := buildAuthMethods(cfg)
 	if err != nil {
 		return "", fmt.Errorf("construyendo metodos de autenticacion: %w", err)
@@ -70,11 +76,23 @@ func ExecuteCommand(cfg Config, command string, log *slog.Logger) (string, error
 	session.Stdout = &stdout
 	session.Stderr = &stderr
 
-	if err := session.Run(command); err != nil {
-		if stderr.Len() > 0 {
-			return stdout.String(), fmt.Errorf("ejecutando comando remoto: %w: %s", err, strings.TrimSpace(stderr.String()))
+	// Soporte de cancelacion por contexto
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Run(command)
+	}()
+
+	select {
+	case <-ctx.Done():
+		_ = session.Signal(gossh.SIGKILL)
+		return "", ctx.Err()
+	case err := <-done:
+		if err != nil {
+			if stderr.Len() > 0 {
+				return stdout.String(), fmt.Errorf("ejecutando comando remoto: %w: %s", err, strings.TrimSpace(stderr.String()))
+			}
+			return stdout.String(), fmt.Errorf("ejecutando comando remoto: %w", err)
 		}
-		return stdout.String(), fmt.Errorf("ejecutando comando remoto: %w", err)
 	}
 
 	out := strings.TrimSpace(stdout.String())
@@ -91,13 +109,14 @@ const readBufferSize = 4096
 
 // Session encapsula la conexion SSH, el canal PTY y las tuberias de entrada/salida
 type Session struct {
-	client   *gossh.Client
-	session  *gossh.Session
-	stdin    io.WriteCloser
-	log      *slog.Logger
-	closed   atomic.Bool
-	wg       sync.WaitGroup
-	onOutput func([]byte)
+	client      *gossh.Client
+	proxyClient *gossh.Client
+	session     *gossh.Session
+	stdin       io.WriteCloser
+	log         *slog.Logger
+	closed      atomic.Bool
+	wg          sync.WaitGroup
+	onOutput    func([]byte)
 }
 
 // Config contiene las credenciales y parametros para establecer la sesion SSH
@@ -108,6 +127,25 @@ type Config struct {
 	KeyPath   string
 	Shell     string // "powershell", "cmd", o "default"
 	StartPath string // Directorio inicial predeterminado
+	ProxyHost *Config
+}
+
+// DialHost establece una conexion SSH con el servidor configurado
+func DialHost(cfg Config) (*gossh.Client, error) {
+	authMethods, err := buildAuthMethods(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("construyendo metodos de autenticacion: %w", err)
+	}
+
+	clientConfig := &gossh.ClientConfig{
+		User:            cfg.User,
+		Auth:            authMethods,
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		Timeout:         15 * time.Second,
+	}
+
+	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	return gossh.Dial("tcp", addr, clientConfig)
 }
 
 // NewSession establece la conexion TCP, autentica al usuario y solicita una PTY interactiva
@@ -123,12 +161,41 @@ func NewSession(ctx context.Context, cfg Config, log *slog.Logger) (*Session, er
 		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	log.Info("conectando al servidor SSH", "direccion", addr, "usuario", cfg.User, "shell", cfg.Shell)
+	var client *gossh.Client
+	var proxyClient *gossh.Client
 
-	client, err := gossh.Dial("tcp", addr, clientConfig)
-	if err != nil {
-		return nil, fmt.Errorf("conectando al servidor SSH: %w", err)
+	if cfg.ProxyHost != nil {
+		pClient, err := DialHost(*cfg.ProxyHost)
+		if err != nil {
+			return nil, fmt.Errorf("conectando al host intermedio: %w", err)
+		}
+		proxyClient = pClient
+
+		targetAddr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
+		log.Info("conectando a la VM mediante tunel SSH", "intermediario", cfg.ProxyHost.Host, "destino", targetAddr, "usuario", cfg.User)
+
+		netConn, err := proxyClient.Dial("tcp", targetAddr)
+		if err != nil {
+			proxyClient.Close()
+			return nil, fmt.Errorf("conectando a %s via tunel: %w", targetAddr, err)
+		}
+
+		sshConn, chans, reqs, err := gossh.NewClientConn(netConn, targetAddr, clientConfig)
+		if err != nil {
+			netConn.Close()
+			proxyClient.Close()
+			return nil, fmt.Errorf("autenticando SSH con la VM en %s: %w", targetAddr, err)
+		}
+		client = gossh.NewClient(sshConn, chans, reqs)
+	} else {
+		addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+		log.Info("conectando al servidor SSH", "direccion", addr, "usuario", cfg.User, "shell", cfg.Shell)
+
+		c, err := gossh.Dial("tcp", addr, clientConfig)
+		if err != nil {
+			return nil, fmt.Errorf("conectando al servidor SSH: %w", err)
+		}
+		client = c
 	}
 
 	session, err := client.NewSession()
@@ -202,18 +269,27 @@ func NewSession(ctx context.Context, cfg Config, log *slog.Logger) (*Session, er
 		stdin.Close()
 		session.Close()
 		client.Close()
+		if proxyClient != nil {
+			proxyClient.Close()
+		}
 		return nil, fmt.Errorf("iniciando shell (%s): %w", cfg.Shell, startErr)
 	}
 
 	s := &Session{
-		client:  client,
-		session: session,
-		stdin:   stdin,
-		log:     log,
+		client:      client,
+		proxyClient: proxyClient,
+		session:     session,
+		stdin:       stdin,
+		log:         log,
 	}
 
-	log.Info("sesion SSH establecida", "direccion", addr, "shell", cfg.Shell)
+	addrDisplay := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	if cfg.ProxyHost != nil {
+		addrDisplay = fmt.Sprintf("127.0.0.1:%d (via %s)", cfg.Port, cfg.ProxyHost.Host)
+	}
+	log.Info("sesion SSH establecida", "direccion", addrDisplay, "shell", cfg.Shell)
 
+	s.wg.Add(1)
 	go s.pumpOutput(ctx, stdout, "stdout")
 
 	go func() {
@@ -246,7 +322,6 @@ func (s *Session) Resize(cols, rows int) error {
 
 // pumpOutput lee fragmentos del flujo remoto y los entrega inmediatamente al manejador de salida
 func (s *Session) pumpOutput(ctx context.Context, reader io.Reader, stream string) {
-	s.wg.Add(1)
 	defer s.wg.Done()
 
 	buf := make([]byte, readBufferSize)
@@ -293,6 +368,9 @@ func (s *Session) Close() error {
 	}
 	if s.client != nil {
 		s.client.Close()
+	}
+	if s.proxyClient != nil {
+		s.proxyClient.Close()
 	}
 
 	s.wg.Wait()

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SSH Terminal</title>
-    <link rel="stylesheet" href="/css/style.css?v=12">
+    <link rel="stylesheet" href="/css/style.css?v=15">
 </head>
 <body>
     <div id="app">
@@ -63,10 +63,10 @@
         <nav class="sidebar-nav">
             <button class="sidebar-link active" data-menu="config">
                 <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                    <path d="M7 8h10M7 12h10M7 16h5"></path>
                 </svg>
-                <span>Configuración</span>
+                <span>Hosts</span>
             </button>
             <button class="sidebar-link" data-menu="vms">
                 <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
@@ -84,11 +84,10 @@
             </button>
         </nav>
 
-        <!-- Vista Sidebar: Configuración -->
+        <!-- Vista Sidebar: Hosts -->
         <section id="sidebar-config-view" class="sidebar-view active">
             <div class="sidebar-view-header">
-                <div class="sidebar-view-title">Configuración de Conexión</div>
-                <p class="sidebar-view-desc">Ajusta los parámetros del servidor SSH, usuario y tipo de shell.</p>
+                <div class="sidebar-view-title">Hosts</div>
             </div>
             <div class="sidebar-view-actions">
                 <button id="open-config-modal" class="btn btn-primary sidebar-open-config">
@@ -96,27 +95,10 @@
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
-                    <span>Editar Configuración</span>
+                    <span>Agregar host</span>
                 </button>
             </div>
-            <div class="sidebar-config-grid">
-                <div class="sidebar-config-item">
-                    <span class="sidebar-config-label">Host</span>
-                    <span id="side-host" class="sidebar-config-value">Sin host</span>
-                </div>
-                <div class="sidebar-config-item">
-                    <span class="sidebar-config-label">Puerto</span>
-                    <span id="side-port" class="sidebar-config-value">22</span>
-                </div>
-                <div class="sidebar-config-item">
-                    <span class="sidebar-config-label">Usuario</span>
-                    <span id="side-user" class="sidebar-config-value">Sin usuario</span>
-                </div>
-                <div class="sidebar-config-item">
-                    <span class="sidebar-config-label">Shell</span>
-                    <span id="side-shell" class="sidebar-config-value">powershell</span>
-                </div>
-            </div>
+            <div id="host-list" class="host-list"></div>
         </section>
 
         <!-- Vista Sidebar: Máquinas Virtuales -->
@@ -132,7 +114,7 @@
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
-                    <span>+ Crear MV</span>
+                    <span>Crear MV</span>
                 </button>
                 <button id="refresh-vms-btn" class="btn btn-secondary btn-icon" title="Refrescar lista">
                     <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
@@ -151,29 +133,13 @@
                 <form id="vm-form" class="vm-form">
                     <div class="form-field">
                         <label for="vm-name">Nombre de la MV <span class="req">*</span></label>
-                        <input type="text" id="vm-name" name="name" placeholder="ej. Ubuntu-Server-Dev" required autocomplete="off" />
+                        <input type="text" id="vm-name" name="name" placeholder="ej. otraMV" required autocomplete="off" />
                     </div>
 
                     <div class="form-field">
-                        <label for="vm-os">Sistema Operativo (SO) <span class="req">*</span></label>
-                        <select id="vm-os" name="os" required>
-                            <option value="Ubuntu 24.04 LTS">Ubuntu 24.04 LTS</option>
-                            <option value="Ubuntu 22.04 LTS">Ubuntu 22.04 LTS</option>
-                            <option value="Debian 13 (Trixie)">Debian 13 (Trixie)</option>
-                            <option value="Debian 12 (Bookworm)">Debian 12 (Bookworm)</option>
-                            <option value="Windows 11">Windows 11</option>
-                            <option value="Windows 10">Windows 10</option>
-                            <option value="Windows Server 2022">Windows Server 2022</option>
-                            <option value="CentOS Stream 9">CentOS Stream 9</option>
-                            <option value="Alpine Linux 3.19">Alpine Linux 3.19</option>
-                            <option value="Arch Linux">Arch Linux</option>
-                        </select>
-                    </div>
-
-                    <div class="form-field">
-                        <label for="vm-iso">Imagen ISO<span class="req">*</span></label>
-                        <select id="vm-iso" name="iso" required>
-                            <!-- Se llena y filtra automáticamente según el SO elegido -->
+                        <label for="vm-template">Plantilla Base (Disco Multiattach) <span class="req">*</span></label>
+                        <select id="vm-template" name="templateId" required>
+                            <option value="" disabled selected>Cargando plantillas disponibles...</option>
                         </select>
                     </div>
 
@@ -184,13 +150,8 @@
                         </div>
                         <div class="form-field">
                             <label for="vm-memory">Memoria RAM (MB)</label>
-                            <input type="number" id="vm-memory" name="memoryMB" min="512" max="131072" step="512" value="2048" required />
+                            <input type="number" id="vm-memory" name="memoryMB" min="512" max="131072" step="512" value="4096" required />
                         </div>
-                    </div>
-
-                    <div class="form-field">
-                        <label for="vm-disk">Disco (GB)</label>
-                        <input type="number" id="vm-disk" name="diskGB" min="5" max="2048" value="40" required />
                     </div>
 
                     <div class="form-actions">
@@ -330,26 +291,30 @@
         </div>
     </div>
 
-    <!-- Modal de Configuración -->
+    <!-- Modal de Host -->
     <div id="config-modal" class="modal-backdrop hidden" aria-hidden="true">
         <div class="modal-dialog" role="dialog" aria-labelledby="modal-title">
             <div class="modal-header">
                 <div class="modal-title-group">
                     <div class="modal-icon-wrap">
                         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
-                            <circle cx="12" cy="12" r="3"></circle>
-                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                            <path d="M7 8h10M7 12h10M7 16h5"></path>
                         </svg>
                     </div>
-                    <h2 id="modal-title">Configuración de Conexión</h2>
+                    <h2 id="modal-title">Host SSH</h2>
                 </div>
                 <button id="close-modal-btn" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
             </div>
 
             <form id="config-form" class="modal-body" novalidate>
+                <div class="form-field">
+                    <label for="cfg-name">Nombre del host<span class="req">*</span></label>
+                    <input type="text" id="cfg-name" name="name" placeholder="ej. Servidor de desarrollo" required autocomplete="off" />
+                </div>
                 <div class="form-row">
                     <div class="form-field flex-2">
-                        <label for="cfg-host">Host / Servidor IP <span class="req">*</span></label>
+                        <label for="cfg-host">Host<span class="req">*</span></label>
                         <input type="text" id="cfg-host" name="host" placeholder="ej. 192.168.101.80" required autocomplete="off" />
                     </div>
                     <div class="form-field flex-1">
@@ -364,7 +329,7 @@
                 </div>
 
                 <div class="form-field">
-                    <label>Terminal / Shell de Conexión</label>
+                    <label>Terminal</label>
                     <div class="shell-cards">
                         <label class="shell-card">
                             <input type="radio" name="shell" value="powershell" checked />
@@ -402,15 +367,15 @@
                 <div id="modal-feedback" class="modal-feedback hidden"></div>
 
                 <div class="modal-footer">
-                    <button type="button" id="btn-reset-defaults" class="btn btn-ghost" title="Restablecer a valores de entorno y config.properties">
-                        Valores por Defecto
+                    <button type="button" id="btn-reset-defaults" class="btn btn-ghost" title="Cargar los datos iniciales del archivo .env">
+                        Datos iniciales
                     </button>
                     <div class="modal-footer-actions">
                         <button type="button" id="btn-cancel-modal" class="btn btn-secondary">
                             Cancelar
                         </button>
                         <button type="submit" id="btn-save-connect" class="btn btn-primary">
-                            Guardar y Conectar
+                            Guardar host
                         </button>
                     </div>
                 </div>
@@ -418,8 +383,8 @@
         </div>
     </div>
 
-    <script src="/js/ansi.js?v=12"></script>
-    <script src="/js/websocket.js?v=12"></script>
-    <script src="/js/app.js?v=12"></script>
+    <script src="/js/ansi.js?v=15"></script>
+    <script src="/js/websocket.js?v=15"></script>
+    <script src="/js/app.js?v=15"></script>
 </body>
 </html>
