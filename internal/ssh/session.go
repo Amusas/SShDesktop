@@ -45,7 +45,7 @@ func ExecuteCommand(cfg Config, command string, log *slog.Logger) (string, error
 	return ExecuteCommandContext(context.Background(), cfg, command, log)
 }
 
-// ExecuteCommandContext ejecuta un comando en el servidor SSH remoto con soporte de contexto y cancelacion
+// ExecuteCommandContext ejecuta un comando en el servidor SSH remoto (o VM via ProxyHost) con soporte de contexto y cancelacion
 func ExecuteCommandContext(ctx context.Context, cfg Config, command string, log *slog.Logger) (string, error) {
 	authMethods, err := buildAuthMethods(cfg)
 	if err != nil {
@@ -56,12 +56,38 @@ func ExecuteCommandContext(ctx context.Context, cfg Config, command string, log 
 		User:            cfg.User,
 		Auth:            authMethods,
 		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		Timeout:         20 * time.Second,
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	client, err := gossh.Dial("tcp", addr, clientConfig)
-	if err != nil {
-		return "", fmt.Errorf("conectando al servidor SSH: %w", err)
+	var client *gossh.Client
+	var proxyClient *gossh.Client
+
+	if cfg.ProxyHost != nil {
+		pClient, err := DialHost(*cfg.ProxyHost)
+		if err != nil {
+			return "", fmt.Errorf("conectando al host intermedio: %w", err)
+		}
+		proxyClient = pClient
+		defer proxyClient.Close()
+
+		targetAddr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
+		netConn, err := proxyClient.Dial("tcp", targetAddr)
+		if err != nil {
+			return "", fmt.Errorf("conectando a %s via tunel: %w", targetAddr, err)
+		}
+		sshConn, chans, reqs, err := gossh.NewClientConn(netConn, targetAddr, clientConfig)
+		if err != nil {
+			netConn.Close()
+			return "", fmt.Errorf("autenticando SSH con destino %s: %w", targetAddr, err)
+		}
+		client = gossh.NewClient(sshConn, chans, reqs)
+	} else {
+		addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+		c, err := gossh.Dial("tcp", addr, clientConfig)
+		if err != nil {
+			return "", fmt.Errorf("conectando al servidor SSH: %w", err)
+		}
+		client = c
 	}
 	defer client.Close()
 
@@ -121,13 +147,14 @@ type Session struct {
 
 // Config contiene las credenciales y parametros para establecer la sesion SSH
 type Config struct {
-	Host      string
-	Port      int
-	User      string
-	KeyPath   string
-	Shell     string // "powershell", "cmd", o "default"
-	StartPath string // Directorio inicial predeterminado
-	ProxyHost *Config
+	Host        string
+	Port        int
+	User        string
+	KeyPath     string
+	Shell       string // "powershell", "cmd", o "default"
+	StartPath   string // Directorio inicial predeterminado
+	ProxyHost   *Config
+	ExecCommand string // Si no esta vacio, se ejecuta este comando interactivo en la PTY en lugar de una shell
 }
 
 // DialHost establece una conexion SSH con el servidor configurado
@@ -234,34 +261,39 @@ func NewSession(ctx context.Context, cfg Config, log *slog.Logger) (*Session, er
 	shellType := strings.ToLower(strings.TrimSpace(cfg.Shell))
 	var startErr error
 
-	switch shellType {
-	case "cmd", "cmd.exe":
-		cmdStr := "cmd.exe"
-		if cfg.StartPath != "" {
-			cmdStr = fmt.Sprintf(`cmd.exe /k "cd /d %s"`, cfg.StartPath)
-		}
-		log.Info("iniciando shell CMD", "comando", cmdStr)
-		startErr = session.Start(cmdStr)
-
-	case "powershell", "powershell.exe", "pwsh":
-		cmdStr := "powershell.exe -NoExit"
-		if cfg.StartPath != "" {
-			cmdStr = fmt.Sprintf(`powershell.exe -NoExit -Command "Set-Location -LiteralPath '%s'"`, cfg.StartPath)
-		}
-		log.Info("iniciando shell PowerShell", "comando", cmdStr)
-		startErr = session.Start(cmdStr)
-
-	default:
-		if cfg.StartPath != "" {
-			cmdStr := fmt.Sprintf(`cmd.exe /k "cd /d %s"`, cfg.StartPath)
-			log.Info("iniciando shell por defecto con ruta", "comando", cmdStr)
+	if strings.TrimSpace(cfg.ExecCommand) != "" {
+		log.Info("iniciando comando interactivo directo en PTY", "comando", cfg.ExecCommand)
+		startErr = session.Start(cfg.ExecCommand)
+	} else {
+		switch shellType {
+		case "cmd", "cmd.exe":
+			cmdStr := "cmd.exe"
+			if cfg.StartPath != "" {
+				cmdStr = fmt.Sprintf(`cmd.exe /k "cd /d %s"`, cfg.StartPath)
+			}
+			log.Info("iniciando shell CMD", "comando", cmdStr)
 			startErr = session.Start(cmdStr)
-			if startErr != nil {
+
+		case "powershell", "powershell.exe", "pwsh":
+			cmdStr := "powershell.exe -NoExit"
+			if cfg.StartPath != "" {
+				cmdStr = fmt.Sprintf(`powershell.exe -NoExit -Command "Set-Location -LiteralPath '%s'"`, cfg.StartPath)
+			}
+			log.Info("iniciando shell PowerShell", "comando", cmdStr)
+			startErr = session.Start(cmdStr)
+
+		default:
+			if cfg.StartPath != "" {
+				cmdStr := fmt.Sprintf(`cmd.exe /k "cd /d %s"`, cfg.StartPath)
+				log.Info("iniciando shell por defecto con ruta", "comando", cmdStr)
+				startErr = session.Start(cmdStr)
+				if startErr != nil {
+					startErr = session.Shell()
+				}
+			} else {
+				log.Info("iniciando shell interactiva por defecto")
 				startErr = session.Shell()
 			}
-		} else {
-			log.Info("iniciando shell interactiva por defecto")
-			startErr = session.Shell()
 		}
 	}
 

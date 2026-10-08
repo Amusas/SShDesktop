@@ -1,1 +1,12 @@
-[]
+[
+  {
+    "id": "key-pruebavm1-1791202589",
+    "vmName": "pruebaVM1",
+    "name": "id_ed25519_pruebavm1",
+    "algorithm": "Ed25519",
+    "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF2K72A8fmL/yNq+2agxCJUy2Xc5iH6scnx916hhJOle vm_pruebavm1_8816@sshdesktop",
+    "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtz\nc2gtZWQyNTUxOQAAACBdiu9gPH5i/8javtmoMQiVMtl3OYh+rHJ8fdeoYSTpXgAA\nAIhzHatycx2rcgAAAAtzc2gtZWQyNTUxOQAAACBdiu9gPH5i/8javtmoMQiVMtl3\nOYh+rHJ8fdeoYSTpXgAAAEDPP6mK67Ue4YhDwfaO2HOETWzZDfOEX2D7SA4Z7MdI\nd12K72A8fmL/yNq+2agxCJUy2Xc5iH6scnx916hhJOleAAAAAAECAwQF\n-----END OPENSSH PRIVATE KEY-----\n",
+    "fingerprint": "SHA256:0YA1u1l3F/jL8zx5sF0URb4Ydp6n6lRUElQ51GfEBLE",
+    "createdAt": "2026-10-05T12:16:29Z"
+  }
+]

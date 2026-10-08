@@ -1,0 +1,514 @@
+package docker
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
+)
+
+// CommandRunner define la función para ejecutar comandos de forma remota en una VM
+type CommandRunner func(ctx context.Context, vmName string, command string) (string, error)
+
+// Service gestiona el ciclo de vida y operaciones de contenedores Docker en VMs Linux
+type Service struct {
+	runner CommandRunner
+	log    *slog.Logger
+}
+
+// NewService crea una nueva instancia del servicio Docker
+func NewService(runner CommandRunner, log *slog.Logger) *Service {
+	return &Service{
+		runner: runner,
+		log:    log,
+	}
+}
+
+// CheckDockerStatus comprueba si el daemon de Docker está activo y obtiene métricas en la VM
+func (s *Service) CheckDockerStatus(ctx context.Context, vmName string) (*DockerStatus, error) {
+	if strings.TrimSpace(vmName) == "" {
+		return nil, fmt.Errorf("el nombre de la VM no puede estar vacío")
+	}
+
+	cmd := "sudo docker info --format '{{json .}}' 2>/dev/null"
+	out, err := s.runner(ctx, vmName, cmd)
+	if err != nil || strings.TrimSpace(out) == "" {
+		// Fallback simple comprobando versión
+		vCmd := "sudo docker version --format '{{.Server.Version}}' 2>/dev/null"
+		vOut, vErr := s.runner(ctx, vmName, vCmd)
+		if vErr != nil || strings.TrimSpace(vOut) == "" {
+			return &DockerStatus{
+				Available: false,
+				Error:     "Docker no está disponible o el servicio docker.service está detenido en esta VM",
+			}, nil
+		}
+		return &DockerStatus{
+			Available: true,
+			Version:   strings.TrimSpace(vOut),
+		}, nil
+	}
+
+	var raw struct {
+		ServerVersion string `json:"ServerVersion"`
+		Containers    int    `json:"Containers"`
+		ContainersRunning int `json:"ContainersRunning"`
+		Images        int    `json:"Images"`
+	}
+
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &raw); err != nil {
+		return &DockerStatus{
+			Available: true,
+			Version:   "Detectado",
+		}, nil
+	}
+
+	return &DockerStatus{
+		Available:         true,
+		Version:           raw.ServerVersion,
+		ContainersRunning: raw.ContainersRunning,
+		ContainersTotal:   raw.Containers,
+		ImagesTotal:       raw.Images,
+	}, nil
+}
+
+// ListContainers obtiene la lista de contenedores en una VM específica
+func (s *Service) ListContainers(ctx context.Context, vmName string) ([]Container, error) {
+	if strings.TrimSpace(vmName) == "" {
+		return nil, fmt.Errorf("el nombre de la VM no puede estar vacío")
+	}
+
+	format := `{"id":{{json .ID}},"name":{{json .Names}},"image":{{json .Image}},"command":{{json .Command}},"createdAt":{{json .CreatedAt}},"state":{{json .State}},"status":{{json .Status}},"ports":{{json .Ports}}}`
+	cmd := fmt.Sprintf("sudo docker ps -a --format '%s'", format)
+
+	out, err := s.runner(ctx, vmName, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("listando contenedores en VM '%s': %w", vmName, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var containers []Container
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var c Container
+		if err := json.Unmarshal([]byte(line), &c); err == nil {
+			c.VMName = vmName
+			// Normalizar nombre de contenedor quitando prefijo '/'
+			c.Name = strings.TrimPrefix(c.Name, "/")
+			containers = append(containers, c)
+		}
+	}
+
+	return containers, nil
+}
+
+// InspectContainer obtiene todos los detalles de configuración y estado de un contenedor
+func (s *Service) InspectContainer(ctx context.Context, vmName string, containerID string) (*ContainerInspect, error) {
+	if err := ValidateContainerName(containerID); err != nil {
+		// Puede ser un ID hexadecimal
+		if len(containerID) < 6 || strings.ContainsAny(containerID, " ;&|`$") {
+			return nil, fmt.Errorf("identificador de contenedor no válido: %s", containerID)
+		}
+	}
+
+	cmd := fmt.Sprintf("sudo docker inspect %s", EscapeShellArg(containerID))
+	out, err := s.runner(ctx, vmName, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("inspeccionando contenedor '%s' en VM '%s': %w", containerID, vmName, err)
+	}
+
+	type dockerInspectItem struct {
+		Id      string `json:"Id"`
+		Name    string `json:"Name"`
+		Created string `json:"Created"`
+		State   struct {
+			Status     string `json:"Status"`
+			Running    bool   `json:"Running"`
+			Paused     bool   `json:"Paused"`
+			Restarting bool   `json:"Restarting"`
+			ExitCode   int    `json:"ExitCode"`
+			StartedAt  string `json:"StartedAt"`
+			FinishedAt string `json:"FinishedAt"`
+			Error      string `json:"Error"`
+		} `json:"State"`
+		Config struct {
+			Image  string            `json:"Image"`
+			Env    []string          `json:"Env"`
+			Labels map[string]string `json:"Labels"`
+		} `json:"Config"`
+		HostConfig struct {
+			RestartPolicy struct {
+				Name string `json:"Name"`
+			} `json:"RestartPolicy"`
+			PortBindings map[string][]struct {
+				HostPort string `json:"HostPort"`
+			} `json:"PortBindings"`
+			Binds []string `json:"Binds"`
+		} `json:"HostConfig"`
+		NetworkSettings struct {
+			IPAddress string `json:"IPAddress"`
+			Ports     map[string][]struct {
+				HostPort string `json:"HostPort"`
+			} `json:"Ports"`
+		} `json:"NetworkSettings"`
+	}
+
+	var items []dockerInspectItem
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &items); err != nil || len(items) == 0 {
+		return nil, fmt.Errorf("fallo al parsear inspección de contenedor: %w", err)
+	}
+
+	item := items[0]
+	inspect := &ContainerInspect{
+		ID:            item.Id,
+		Name:          strings.TrimPrefix(item.Name, "/"),
+		VMName:        vmName,
+		Created:       item.Created,
+		Image:         item.Config.Image,
+		RestartPolicy: item.HostConfig.RestartPolicy.Name,
+		IPAddress:     item.NetworkSettings.IPAddress,
+		Env:           item.Config.Env,
+		Labels:        item.Config.Labels,
+		State: InspectState{
+			Status:     item.State.Status,
+			Running:    item.State.Running,
+			Paused:     item.State.Paused,
+			Restarting: item.State.Restarting,
+			ExitCode:   item.State.ExitCode,
+			StartedAt:  item.State.StartedAt,
+			FinishedAt: item.State.FinishedAt,
+			Error:      item.State.Error,
+		},
+	}
+
+	// Mapear puertos
+	portsMap := item.NetworkSettings.Ports
+	if len(portsMap) == 0 {
+		portsMap = item.HostConfig.PortBindings
+	}
+	for cPortKey, bindings := range portsMap {
+		var cPort int
+		var proto string = "tcp"
+		parts := strings.Split(cPortKey, "/")
+		fmt.Sscanf(parts[0], "%d", &cPort)
+		if len(parts) > 1 {
+			proto = parts[1]
+		}
+		for _, b := range bindings {
+			var hPort int
+			fmt.Sscanf(b.HostPort, "%d", &hPort)
+			inspect.Ports = append(inspect.Ports, PortMapping{
+				HostPort:      hPort,
+				ContainerPort: cPort,
+				Protocol:      proto,
+			})
+		}
+	}
+
+	// Mapear montajes
+	for _, bind := range item.HostConfig.Binds {
+		parts := strings.Split(bind, ":")
+		if len(parts) >= 2 {
+			ro := len(parts) >= 3 && parts[2] == "ro"
+			inspect.Mounts = append(inspect.Mounts, VolumeMount{
+				HostPath:      parts[0],
+				ContainerPath: parts[1],
+				ReadOnly:      ro,
+			})
+		}
+	}
+
+	return inspect, nil
+}
+
+// CreateContainer valida y lanza un nuevo contenedor en la VM especificada
+func (s *Service) CreateContainer(ctx context.Context, req CreateContainerRequest) (*Container, error) {
+	if strings.TrimSpace(req.VMName) == "" {
+		return nil, fmt.Errorf("el nombre de la máquina virtual (VM) es obligatorio")
+	}
+	if err := ValidateContainerName(req.Name); err != nil {
+		return nil, err
+	}
+	if err := ValidateImageName(req.Image); err != nil {
+		return nil, err
+	}
+	if err := ValidateRestartPolicy(req.RestartPolicy); err != nil {
+		return nil, err
+	}
+
+	var args []string
+	args = append(args, "sudo", "docker", "run", "-d", "--name", EscapeShellArg(req.Name))
+
+	policy := req.RestartPolicy
+	if policy == "" {
+		policy = "unless-stopped"
+	}
+	args = append(args, "--restart", EscapeShellArg(policy))
+
+	for _, p := range req.Ports {
+		if err := ValidatePort(p.HostPort); err != nil {
+			return nil, fmt.Errorf("puerto host inválido: %w", err)
+		}
+		if err := ValidatePort(p.ContainerPort); err != nil {
+			return nil, fmt.Errorf("puerto contenedor inválido: %w", err)
+		}
+		proto := strings.ToLower(strings.TrimSpace(p.Protocol))
+		if proto == "" {
+			proto = "tcp"
+		}
+		if proto != "tcp" && proto != "udp" {
+			return nil, fmt.Errorf("protocolo no soportado (debe ser tcp o udp): %s", proto)
+		}
+		args = append(args, "-p", EscapeShellArg(fmt.Sprintf("%d:%d/%s", p.HostPort, p.ContainerPort, proto)))
+	}
+
+	for _, v := range req.Volumes {
+		if err := ValidateVolumePath(v.HostPath); err != nil {
+			return nil, fmt.Errorf("ruta host de volumen inválida: %w", err)
+		}
+		if err := ValidateVolumePath(v.ContainerPath); err != nil {
+			return nil, fmt.Errorf("ruta en contenedor de volumen inválida: %w", err)
+		}
+		mode := "rw"
+		if v.ReadOnly {
+			mode = "ro"
+		}
+		args = append(args, "-v", EscapeShellArg(fmt.Sprintf("%s:%s:%s", v.HostPath, v.ContainerPath, mode)))
+	}
+
+	for _, e := range req.Env {
+		if strings.TrimSpace(e.Key) == "" {
+			continue
+		}
+		if err := ValidateEnvKey(e.Key); err != nil {
+			return nil, fmt.Errorf("variable de entorno inválida: %w", err)
+		}
+		args = append(args, "-e", EscapeShellArg(fmt.Sprintf("%s=%s", e.Key, e.Value)))
+	}
+
+	args = append(args, EscapeShellArg(req.Image))
+
+	if strings.TrimSpace(req.Command) != "" {
+		// Validar que el comando no contenga metacaracteres peligrosos directos
+		args = append(args, EscapeShellArg(req.Command))
+	}
+
+	runCmd := strings.Join(args, " ")
+	s.log.Info("creando contenedor Docker en VM", "vm", req.VMName, "name", req.Name, "image", req.Image)
+
+	out, err := s.runner(ctx, req.VMName, runCmd)
+	if err != nil {
+		return nil, fmt.Errorf("creando contenedor '%s' en VM '%s': %w", req.Name, req.VMName, err)
+	}
+
+	cid := strings.TrimSpace(out)
+	if len(cid) > 12 {
+		cid = cid[:12]
+	}
+
+	return &Container{
+		ID:        cid,
+		Name:      req.Name,
+		Image:     req.Image,
+		State:     "running",
+		Status:    "Up Less than a second",
+		CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
+		VMName:    req.VMName,
+	}, nil
+}
+
+// StartContainer arranca un contenedor detenido en la VM
+func (s *Service) StartContainer(ctx context.Context, vmName string, containerID string) error {
+	if err := ValidateContainerName(containerID); err != nil {
+		if len(containerID) < 6 || strings.ContainsAny(containerID, " ;&|`$") {
+			return fmt.Errorf("identificador de contenedor no válido: %s", containerID)
+		}
+	}
+	cmd := fmt.Sprintf("sudo docker start %s", EscapeShellArg(containerID))
+	_, err := s.runner(ctx, vmName, cmd)
+	return err
+}
+
+// StopContainer detiene un contenedor en ejecución de forma ordenada
+func (s *Service) StopContainer(ctx context.Context, vmName string, containerID string) error {
+	if err := ValidateContainerName(containerID); err != nil {
+		if len(containerID) < 6 || strings.ContainsAny(containerID, " ;&|`$") {
+			return fmt.Errorf("identificador de contenedor no válido: %s", containerID)
+		}
+	}
+	cmd := fmt.Sprintf("sudo docker stop -t 10 %s", EscapeShellArg(containerID))
+	_, err := s.runner(ctx, vmName, cmd)
+	return err
+}
+
+// RestartContainer reinicia un contenedor en la VM
+func (s *Service) RestartContainer(ctx context.Context, vmName string, containerID string) error {
+	if err := ValidateContainerName(containerID); err != nil {
+		if len(containerID) < 6 || strings.ContainsAny(containerID, " ;&|`$") {
+			return fmt.Errorf("identificador de contenedor no válido: %s", containerID)
+		}
+	}
+	cmd := fmt.Sprintf("sudo docker restart -t 10 %s", EscapeShellArg(containerID))
+	_, err := s.runner(ctx, vmName, cmd)
+	return err
+}
+
+// DeleteContainer elimina un contenedor en la VM (con opción de forzado)
+func (s *Service) DeleteContainer(ctx context.Context, vmName string, containerID string, force bool) error {
+	if err := ValidateContainerName(containerID); err != nil {
+		if len(containerID) < 6 || strings.ContainsAny(containerID, " ;&|`$") {
+			return fmt.Errorf("identificador de contenedor no válido: %s", containerID)
+		}
+	}
+	forceFlag := ""
+	if force {
+		forceFlag = "-f "
+	}
+	cmd := fmt.Sprintf("sudo docker rm %s%s", forceFlag, EscapeShellArg(containerID))
+	_, err := s.runner(ctx, vmName, cmd)
+	return err
+}
+
+// GetLogs obtiene los registros de un contenedor
+func (s *Service) GetLogs(ctx context.Context, vmName string, containerID string, tail int) (string, error) {
+	if err := ValidateContainerName(containerID); err != nil {
+		if len(containerID) < 6 || strings.ContainsAny(containerID, " ;&|`$") {
+			return "", fmt.Errorf("identificador de contenedor no válido: %s", containerID)
+		}
+	}
+	if tail <= 0 || tail > 2000 {
+		tail = 200
+	}
+	cmd := fmt.Sprintf("sudo docker logs --tail %d --timestamps %s 2>&1", tail, EscapeShellArg(containerID))
+	out, err := s.runner(ctx, vmName, cmd)
+	if err != nil && strings.TrimSpace(out) == "" {
+		return "", fmt.Errorf("obteniendo logs de contenedor '%s': %w", containerID, err)
+	}
+	return out, nil
+}
+
+// ListImages obtiene la lista de imágenes Docker disponibles en una VM
+func (s *Service) ListImages(ctx context.Context, vmName string) ([]Image, error) {
+	if strings.TrimSpace(vmName) == "" {
+		return nil, fmt.Errorf("el nombre de la VM no puede estar vacío")
+	}
+
+	format := `{"id":{{json .ID}},"repository":{{json .Repository}},"tag":{{json .Tag}},"size":{{json .Size}},"createdAt":{{json .CreatedAt}}}`
+	cmd := fmt.Sprintf("sudo docker image ls --format '%s'", format)
+
+	out, err := s.runner(ctx, vmName, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("listando imágenes en VM '%s': %w", vmName, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var images []Image
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var img Image
+		if err := json.Unmarshal([]byte(line), &img); err == nil {
+			img.VMName = vmName
+			images = append(images, img)
+		}
+	}
+
+	return images, nil
+}
+
+// BuildImage crea una imagen a partir de un Dockerfile dentro de la VM Linux
+func (s *Service) BuildImage(ctx context.Context, req BuildImageRequest) (*BuildImageResponse, error) {
+	if strings.TrimSpace(req.VMName) == "" {
+		return nil, fmt.Errorf("el nombre de la máquina virtual (VM) es obligatorio")
+	}
+	if err := ValidateImageRepository(req.ImageName); err != nil {
+		return nil, err
+	}
+	tag := strings.TrimSpace(req.Tag)
+	if tag == "" {
+		tag = "latest"
+	}
+	if err := ValidateImageTag(tag); err != nil {
+		return nil, err
+	}
+	if err := ValidateDockerfile(req.Dockerfile); err != nil {
+		return nil, err
+	}
+
+	fullTag := fmt.Sprintf("%s:%s", strings.TrimSpace(req.ImageName), tag)
+
+	// Crear directorio temporal seguro en la VM
+	buildID := fmt.Sprintf("docker-build-%d", time.Now().UnixNano())
+	buildDir := fmt.Sprintf("/tmp/%s", buildID)
+
+	// Garantizar limpieza del directorio temporal al finalizar
+	defer func() {
+		cleanupCmd := fmt.Sprintf("rm -rf %s", EscapeShellArg(buildDir))
+		_, _ = s.runner(context.Background(), req.VMName, cleanupCmd)
+	}()
+
+	// Escribir el Dockerfile usando base64 para evitar inyección o corrupción de caracteres
+	b64Content := base64.StdEncoding.EncodeToString([]byte(req.Dockerfile))
+	writeCmd := fmt.Sprintf("mkdir -p %s && echo %s | base64 -d > %s/Dockerfile",
+		EscapeShellArg(buildDir),
+		EscapeShellArg(b64Content),
+		EscapeShellArg(buildDir),
+	)
+
+	if _, err := s.runner(ctx, req.VMName, writeCmd); err != nil {
+		return nil, fmt.Errorf("preparando contexto de compilación en VM '%s': %w", req.VMName, err)
+	}
+
+	// Ejecutar docker build
+	buildCmd := fmt.Sprintf("sudo docker build -t %s %s 2>&1", EscapeShellArg(fullTag), EscapeShellArg(buildDir))
+	s.log.Info("construyendo imagen Docker en VM", "vm", req.VMName, "tag", fullTag)
+
+	out, err := s.runner(ctx, req.VMName, buildCmd)
+	if err != nil {
+		return &BuildImageResponse{
+			Success: false,
+			Image:   fullTag,
+			Output:  out,
+		}, fmt.Errorf("error compilando imagen '%s': %s", fullTag, strings.TrimSpace(out))
+	}
+
+	return &BuildImageResponse{
+		Success: true,
+		Image:   fullTag,
+		Output:  out,
+	}, nil
+}
+
+// DeleteImage elimina una imagen Docker en la VM (con opción de forzado)
+func (s *Service) DeleteImage(ctx context.Context, vmName string, imageRef string, force bool) error {
+	imageRef = strings.TrimSpace(imageRef)
+	if imageRef == "" {
+		return fmt.Errorf("identificador de imagen no puede estar vacío")
+	}
+	if dangerousCharsRegex.MatchString(imageRef) {
+		return fmt.Errorf("identificador de imagen contiene caracteres inválidos: %s", imageRef)
+	}
+
+	forceFlag := ""
+	if force {
+		forceFlag = "-f "
+	}
+	cmd := fmt.Sprintf("sudo docker rmi %s%s 2>&1", forceFlag, EscapeShellArg(imageRef))
+	out, err := s.runner(ctx, vmName, cmd)
+	if err != nil {
+		outTrim := strings.TrimSpace(out)
+		if outTrim != "" {
+			return fmt.Errorf("%s", outTrim)
+		}
+		return err
+	}
+	return nil
+}
+

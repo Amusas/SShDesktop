@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/feliren/ssh-web/internal/config"
+	"github.com/feliren/ssh-web/internal/docker"
 	"github.com/feliren/ssh-web/internal/ssh"
 	"github.com/feliren/ssh-web/internal/template"
 	"github.com/feliren/ssh-web/internal/vm"
@@ -44,6 +45,7 @@ type Handler struct {
 	static    http.Handler
 	vmSvc     *vm.Service
 	tplSvc    *template.Service
+	dockerSvc *docker.Service
 	hostsPath string
 	hosts     hostsFile
 }
@@ -70,6 +72,7 @@ func NewHandler(cfg *config.Config, log *slog.Logger, staticDir string) *Handler
 		hostsPath: hostsPath,
 		hosts:     hosts,
 	}
+	handler.dockerSvc = docker.NewService(handler.executeVMCommand, log)
 	if _, err := os.Stat(hostsPath); os.IsNotExist(err) {
 		if err := saveHosts(hostsPath, hosts); err != nil {
 			log.Warn("no se pudo crear hosts.json", "error", err)
@@ -112,6 +115,30 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case strings.HasSuffix(r.URL.Path, "/poweroff") && strings.HasPrefix(r.URL.Path, "/api/vms/"):
 		h.handleVMAction(w, r, "poweroff")
+		return
+	case r.URL.Path == "/api/docker/catalog":
+		h.handleDockerCatalog(w, r)
+		return
+	case strings.HasSuffix(r.URL.Path, "/docker/status") && strings.HasPrefix(r.URL.Path, "/api/vms/"):
+		h.handleVMStatusDocker(w, r)
+		return
+	case strings.HasSuffix(r.URL.Path, "/images") && strings.HasPrefix(r.URL.Path, "/api/vms/"):
+		h.handleVMImages(w, r)
+		return
+	case r.URL.Path == "/api/containers":
+		h.handleContainers(w, r)
+		return
+	case strings.HasPrefix(r.URL.Path, "/api/containers/"):
+		h.handleContainerItem(w, r)
+		return
+	case r.URL.Path == "/api/images":
+		h.handleImages(w, r)
+		return
+	case r.URL.Path == "/api/images/build":
+		h.handleImageBuild(w, r)
+		return
+	case strings.HasPrefix(r.URL.Path, "/api/images/"):
+		h.handleImageItem(w, r)
 		return
 	case strings.HasPrefix(r.URL.Path, "/api/vms/"):
 		h.handleVirtualMachineByID(w, r)
@@ -649,6 +676,7 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	vmTarget := strings.TrimSpace(q.Get("vm"))
+	containerTarget := strings.TrimSpace(q.Get("container"))
 
 	var host, user, shell, startPath, keyPath string
 	var port int
@@ -759,6 +787,12 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			KeyPath: h.cfg.SSHKeyPath,
 		}
 		h.cfgMu.RUnlock()
+
+		if containerTarget != "" {
+			if err := docker.ValidateContainerName(containerTarget); err == nil || len(containerTarget) >= 6 {
+				sshTargetCfg.ExecCommand = fmt.Sprintf("sudo docker exec -it %s /bin/sh -c 'if [ -x /bin/bash ]; then exec /bin/bash; else exec /bin/sh; fi'", docker.EscapeShellArg(containerTarget))
+			}
+		}
 	}
 
 	session, err := ssh.NewSession(ctx, sshTargetCfg, h.log)
@@ -854,3 +888,358 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn.Close()
 	writeMu.Unlock()
 }
+
+func (h *Handler) executeVMCommand(ctx context.Context, vmName string, command string) (string, error) {
+	vmRec, err := h.vmSvc.Get(vmName)
+	if err != nil {
+		return "", fmt.Errorf("máquina virtual '%s' no encontrada: %w", vmName, err)
+	}
+	if vmRec.HostPort <= 0 {
+		return "", fmt.Errorf("la máquina virtual '%s' no tiene puerto NAT asignado", vmName)
+	}
+
+	h.cfgMu.RLock()
+	hostCfg := ssh.Config{
+		Host:    h.cfg.SSHHost,
+		Port:    h.cfg.SSHPort,
+		User:    h.cfg.SSHUser,
+		KeyPath: h.cfg.SSHKeyPath,
+	}
+	sshRoot := h.cfg.SSHRoot
+	h.cfgMu.RUnlock()
+
+	keyPath := vmRec.PrivateKeyPath
+	if keyPath == "" {
+		keyPath = filepath.Join(sshRoot, "vms", vmRec.Name, "id_ed25519")
+	}
+
+	if _, statErr := os.Stat(keyPath); os.IsNotExist(statErr) {
+		if kRec, kErr := h.vmSvc.KeyStore().Get(vmRec.Name); kErr == nil && strings.TrimSpace(kRec.PrivateKey) != "" {
+			_ = os.MkdirAll(filepath.Dir(keyPath), 0700)
+			_ = os.WriteFile(keyPath, []byte(kRec.PrivateKey), 0600)
+			if kRec.PublicKey != "" {
+				_ = os.WriteFile(keyPath+".pub", []byte(kRec.PublicKey), 0644)
+			}
+		}
+	}
+
+	user := vmRec.SSHUser
+	if user == "" {
+		user = "bootstrap"
+	}
+
+	vmTargetCfg := ssh.Config{
+		Host:      "127.0.0.1",
+		Port:      vmRec.HostPort,
+		User:      user,
+		KeyPath:   keyPath,
+		ProxyHost: &hostCfg,
+	}
+
+	return ssh.ExecuteCommandContext(ctx, vmTargetCfg, command, h.log)
+}
+
+func (h *Handler) handleDockerCatalog(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
+		return
+	}
+	json.NewEncoder(w).Encode(docker.GetDefaultCatalog())
+}
+
+func (h *Handler) handleVMStatusDocker(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 4 {
+		http.Error(w, "ruta no válida", http.StatusBadRequest)
+		return
+	}
+	vmName := parts[2]
+	status, err := h.dockerSvc.CheckDockerStatus(r.Context(), vmName)
+	if err != nil {
+		json.NewEncoder(w).Encode(docker.DockerStatus{
+			Available: false,
+			Error:     err.Error(),
+		})
+		return
+	}
+	json.NewEncoder(w).Encode(status)
+}
+
+func (h *Handler) handleContainers(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		vmTarget := strings.TrimSpace(r.URL.Query().Get("vm"))
+		if vmTarget != "" {
+			containers, err := h.dockerSvc.ListContainers(r.Context(), vmTarget)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Error listando contenedores: %s", err), http.StatusInternalServerError)
+				return
+			}
+			if containers == nil {
+				containers = []docker.Container{}
+			}
+			json.NewEncoder(w).Encode(containers)
+			return
+		}
+
+		vms, err := h.vmSvc.List()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error listando VMs: %s", err), http.StatusInternalServerError)
+			return
+		}
+
+		var allContainers []docker.Container
+		for _, v := range vms {
+			conts, err := h.dockerSvc.ListContainers(r.Context(), v.Name)
+			if err == nil && len(conts) > 0 {
+				allContainers = append(allContainers, conts...)
+			}
+		}
+		if allContainers == nil {
+			allContainers = []docker.Container{}
+		}
+		json.NewEncoder(w).Encode(allContainers)
+
+	case http.MethodPost:
+		var req docker.CreateContainerRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, fmt.Sprintf("JSON inválido: %s", err), http.StatusBadRequest)
+			return
+		}
+
+		created, err := h.dockerSvc.CreateContainer(r.Context(), req)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error creando contenedor: %s", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(created)
+
+	default:
+		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleContainerItem(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 4 {
+		http.Error(w, "ruta de contenedor inválida", http.StatusBadRequest)
+		return
+	}
+	vmName := parts[2]
+	containerID := parts[3]
+
+	if len(parts) == 4 {
+		switch r.Method {
+		case http.MethodGet:
+			inspect, err := h.dockerSvc.InspectContainer(r.Context(), vmName, containerID)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Error inspeccionando contenedor: %s", err), http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(inspect)
+
+		case http.MethodDelete:
+			force := r.URL.Query().Get("force") == "true"
+			if err := h.dockerSvc.DeleteContainer(r.Context(), vmName, containerID, force); err != nil {
+				http.Error(w, fmt.Sprintf("Error eliminando contenedor: %s", err), http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Contenedor eliminado"})
+
+		default:
+			http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	action := parts[4]
+	if r.Method == http.MethodPost {
+		switch action {
+		case "start":
+			if err := h.dockerSvc.StartContainer(r.Context(), vmName, containerID); err != nil {
+				http.Error(w, fmt.Sprintf("Error iniciando contenedor: %s", err), http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Contenedor iniciado"})
+		case "stop":
+			if err := h.dockerSvc.StopContainer(r.Context(), vmName, containerID); err != nil {
+				http.Error(w, fmt.Sprintf("Error deteniendo contenedor: %s", err), http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Contenedor detenido"})
+		case "restart":
+			if err := h.dockerSvc.RestartContainer(r.Context(), vmName, containerID); err != nil {
+				http.Error(w, fmt.Sprintf("Error reiniciando contenedor: %s", err), http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Contenedor reiniciado"})
+		default:
+			http.Error(w, "acción no soportada", http.StatusBadRequest)
+		}
+		return
+	}
+
+	if r.Method == http.MethodGet && action == "logs" {
+		tail := 200
+		if tStr := r.URL.Query().Get("tail"); tStr != "" {
+			if t, err := strconv.Atoi(tStr); err == nil && t > 0 {
+				tail = t
+			}
+		}
+		logs, err := h.dockerSvc.GetLogs(r.Context(), vmName, containerID, tail)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error obteniendo logs: %s", err), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"logs": logs})
+		return
+	}
+
+	http.Error(w, "método o acción no permitida", http.StatusMethodNotAllowed)
+}
+
+func (h *Handler) handleVMImages(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
+		return
+	}
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 4 {
+		http.Error(w, "ruta de VM inválida", http.StatusBadRequest)
+		return
+	}
+	vmName := parts[2]
+	images, err := h.dockerSvc.ListImages(r.Context(), vmName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error listando imágenes en VM '%s': %s", vmName, err), http.StatusInternalServerError)
+		return
+	}
+	if images == nil {
+		images = []docker.Image{}
+	}
+	json.NewEncoder(w).Encode(images)
+}
+
+func (h *Handler) handleImages(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		vmTarget := strings.TrimSpace(r.URL.Query().Get("vm"))
+		if vmTarget != "" {
+			images, err := h.dockerSvc.ListImages(r.Context(), vmTarget)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Error listando imágenes: %s", err), http.StatusInternalServerError)
+				return
+			}
+			if images == nil {
+				images = []docker.Image{}
+			}
+			json.NewEncoder(w).Encode(images)
+			return
+		}
+
+		vms, err := h.vmSvc.List()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error listando VMs: %s", err), http.StatusInternalServerError)
+			return
+		}
+
+		var allImages []docker.Image
+		for _, v := range vms {
+			imgs, err := h.dockerSvc.ListImages(r.Context(), v.Name)
+			if err == nil && len(imgs) > 0 {
+				allImages = append(allImages, imgs...)
+			}
+		}
+		if allImages == nil {
+			allImages = []docker.Image{}
+		}
+		json.NewEncoder(w).Encode(allImages)
+
+	case http.MethodPost:
+		h.handleImageBuild(w, r)
+
+	case http.MethodDelete:
+		vmTarget := strings.TrimSpace(r.URL.Query().Get("vm"))
+		imageRef := strings.TrimSpace(r.URL.Query().Get("image"))
+		force := r.URL.Query().Get("force") == "true"
+		if vmTarget == "" || imageRef == "" {
+			http.Error(w, "Parámetros 'vm' e 'image' son obligatorios para eliminar", http.StatusBadRequest)
+			return
+		}
+		if err := h.dockerSvc.DeleteImage(r.Context(), vmTarget, imageRef, force); err != nil {
+			http.Error(w, fmt.Sprintf("Error eliminando imagen: %s", err), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Imagen eliminada"})
+
+	default:
+		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleImageBuild(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req docker.BuildImageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("JSON inválido: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	res, err := h.dockerSvc.BuildImage(r.Context(), req)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		outStr := ""
+		if res != nil {
+			outStr = res.Output
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":  err.Error(),
+			"output": outStr,
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(res)
+}
+
+func (h *Handler) handleImageItem(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	prefix := "/api/images/"
+	sub := strings.TrimPrefix(r.URL.Path, prefix)
+	parts := strings.SplitN(sub, "/", 2)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		http.Error(w, "ruta de imagen inválida (se espera /api/images/{vm}/{imageRef})", http.StatusBadRequest)
+		return
+	}
+	vmName := parts[0]
+	imageRef := parts[1]
+
+	switch r.Method {
+	case http.MethodDelete:
+		force := r.URL.Query().Get("force") == "true"
+		if err := h.dockerSvc.DeleteImage(r.Context(), vmName, imageRef, force); err != nil {
+			http.Error(w, fmt.Sprintf("Error eliminando imagen: %s", err), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Imagen eliminada"})
+	default:
+		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
+	}
+}
+

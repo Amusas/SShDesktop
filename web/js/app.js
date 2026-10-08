@@ -1,4 +1,4 @@
-// Gestor de la interfaz de terminal web, menú lateral, gestión de VMs, Llaves SSH y conexión WebSocket
+﻿// Gestor de la interfaz de terminal web, menú lateral, gestión de VMs, Llaves SSH y conexión WebSocket
 class TerminalApp {
     constructor() {
         // Elementos principales de la terminal
@@ -69,6 +69,125 @@ class TerminalApp {
         this.deleteKeyFeedback = document.getElementById('delete-key-feedback');
         this.pendingDeleteKeyId = null;
 
+        // Elementos de Contenedores Docker
+        this.containersListEl = document.getElementById('containers-list');
+        this.containersVmFilter = document.getElementById('containers-vm-filter');
+        this.dockerStatusPill = document.getElementById('docker-status-pill');
+        this.openCreateContainerBtn = document.getElementById('open-create-container-btn');
+        this.refreshContainersBtn = document.getElementById('refresh-containers-btn');
+        this.containers = [];
+        this.dockerCatalog = [];
+
+        // Asistente Wizard de creación
+        this.wizardModal = document.getElementById('container-wizard-modal');
+        this.closeWizardBtn = document.getElementById('close-container-wizard-btn');
+        this.wizCancelBtn = document.getElementById('wiz-cancel-btn');
+        this.wizPrevBtn = document.getElementById('wiz-prev-btn');
+        this.wizNextBtn = document.getElementById('wiz-next-btn');
+        this.wizSubmitBtn = document.getElementById('wiz-submit-btn');
+        this.wizStepPills = Array.from(document.querySelectorAll('.wizard-step-pill'));
+        this.wizStepContents = Array.from(document.querySelectorAll('.wizard-step-content'));
+        this.wizVmSelect = document.getElementById('wiz-vm-select');
+        this.wizCategoriesGrid = document.getElementById('wiz-categories-grid');
+        this.wizCategorySelectedTitle = document.getElementById('wiz-category-selected-title');
+        this.wizAppsGrid = document.getElementById('wiz-apps-grid');
+        this.wizNameInput = document.getElementById('wiz-name');
+        this.wizRestartSelect = document.getElementById('wiz-restart');
+        this.wizImageInput = document.getElementById('wiz-image');
+        this.wizPortsContainer = document.getElementById('wiz-ports-container');
+        this.wizEnvContainer = document.getElementById('wiz-env-container');
+        this.wizVolumesContainer = document.getElementById('wiz-volumes-container');
+        this.wizAddPortBtn = document.getElementById('wiz-add-port-btn');
+        this.wizAddEnvBtn = document.getElementById('wiz-add-env-btn');
+        this.wizAddVolumeBtn = document.getElementById('wiz-add-volume-btn');
+        this.wizSummaryCard = document.getElementById('wiz-summary-card');
+        this.wizFeedback = document.getElementById('wiz-feedback');
+        this.currentWizardStep = 1;
+        this.selectedCategory = null;
+        this.selectedTemplate = null;
+
+        // Subnavegación de Docker (Contenedores / Imágenes)
+        this.dockerSubnav = document.getElementById('docker-subnav');
+        this.dockerSubnavBtns = Array.from(document.querySelectorAll('.docker-subnav-btn'));
+        this.activeDockerSubnav = 'containers';
+
+        // Elementos de Gestión de Imágenes Docker
+        this.imagesListEl = document.getElementById('images-list');
+        this.imagesVmFilter = document.getElementById('images-vm-filter');
+        this.openCreateImageBtn = document.getElementById('open-create-image-btn');
+        this.refreshImagesBtn = document.getElementById('refresh-images-btn');
+        this.images = [];
+
+        // Modal de Creación / Compilación de Imagen
+        this.imageBuildModal = document.getElementById('image-build-modal');
+        this.closeImageBuildBtn = document.getElementById('close-image-build-btn');
+        this.cancelImageBuildBtn = document.getElementById('cancel-image-build-btn');
+        this.buildVmSelect = document.getElementById('build-vm-select');
+        this.buildImageName = document.getElementById('build-image-name');
+        this.buildImageTag = document.getElementById('build-image-tag');
+        this.dfTabs = Array.from(document.querySelectorAll('.df-tab'));
+        this.dfUploadPanel = document.getElementById('df-upload-panel');
+        this.dfPastePanel = document.getElementById('df-paste-panel');
+        this.dfFileInput = document.getElementById('df-file-input');
+        this.dfFileDropzone = document.getElementById('df-file-dropzone');
+        this.dfFileName = document.getElementById('df-file-name');
+        this.buildDockerfileContent = document.getElementById('build-dockerfile-content');
+        this.buildImageFeedback = document.getElementById('build-image-feedback');
+        this.buildLogContainer = document.getElementById('build-log-container');
+        this.buildLogOutput = document.getElementById('build-log-output');
+        this.submitImageBuildBtn = document.getElementById('submit-image-build-btn');
+        this.submitImageBuildRunBtn = document.getElementById('submit-image-build-run-btn');
+        this.activeDfTab = 'paste';
+
+        // Modal de Eliminación de Imagen
+        this.deleteImageModal = document.getElementById('delete-image-modal');
+        this.closeDeleteImageModalBtn = document.getElementById('close-delete-image-modal');
+        this.cancelDeleteImageBtn = document.getElementById('cancel-delete-image');
+        this.confirmDeleteImageBtn = document.getElementById('confirm-delete-image');
+        this.deleteImageNameEl = document.getElementById('delete-image-name');
+        this.deleteImageVmTag = document.getElementById('delete-image-vm-tag');
+        this.deleteImageForceCheckbox = document.getElementById('delete-image-force');
+        this.deleteImageFeedback = document.getElementById('delete-image-feedback');
+        this.pendingDeleteImage = null;
+
+        // Opciones de Origen en Wizard
+        this.wizSourceImages = document.getElementById('wiz-source-images');
+        this.wizSourceCatalog = document.getElementById('wiz-source-catalog');
+        this.wizImagesPanel = document.getElementById('wiz-images-panel');
+        this.wizCatalogPanel = document.getElementById('wiz-catalog-panel');
+        this.wizImagesGrid = document.getElementById('wiz-images-grid');
+        this.wizCreateNewImageBtn = document.getElementById('wiz-create-new-image-btn');
+        this.wizardSource = 'images';
+        this.selectedWizardImage = null;
+
+        // Modal de Logs de Contenedor
+        this.containerLogsModal = document.getElementById('container-logs-modal');
+        this.closeContainerLogsBtn = document.getElementById('close-container-logs-btn');
+        this.btnCloseContainerLogs = document.getElementById('btn-close-container-logs');
+        this.refreshContainerLogsBtn = document.getElementById('refresh-container-logs-btn');
+        this.containerLogsTail = document.getElementById('container-logs-tail');
+        this.containerLogsTitle = document.getElementById('container-logs-title');
+        this.containerLogsSubtitle = document.getElementById('container-logs-subtitle');
+        this.containerLogsOutput = document.getElementById('container-logs-output');
+        this.activeLogsTarget = null;
+
+        // Modal de Eliminación de Contenedor
+        this.deleteContainerModal = document.getElementById('delete-container-modal');
+        this.closeDeleteContainerModalBtn = document.getElementById('close-delete-container-modal');
+        this.cancelDeleteContainerBtn = document.getElementById('cancel-delete-container');
+        this.confirmDeleteContainerBtn = document.getElementById('confirm-delete-container');
+        this.deleteContainerNameEl = document.getElementById('delete-container-name');
+        this.deleteContainerVmTag = document.getElementById('delete-container-vm-tag');
+        this.deleteContainerForceCheckbox = document.getElementById('delete-container-force');
+        this.deleteContainerFeedback = document.getElementById('delete-container-feedback');
+        this.pendingDeleteContainer = null;
+
+        // Modal de Inspección / Detalles de Contenedor
+        this.containerDetailsModal = document.getElementById('container-details-modal');
+        this.closeContainerDetailsBtn = document.getElementById('close-container-details-btn');
+        this.btnCloseContainerDetails = document.getElementById('btn-close-container-details');
+        this.containerDetailsContent = document.getElementById('container-details-content');
+
         // Elementos del modal de configuracion
         this.modalEl = document.getElementById('config-modal');
         this.closeModalBtn = document.getElementById('close-modal-btn');
@@ -112,11 +231,13 @@ class TerminalApp {
             onClose: () => {},
         });
 
+        window.terminalApp = this;
         this.bindEvents();
         this.loadInitialConfig();
         this.loadTemplates();
         this.loadVirtualMachines();
         this.loadKeys();
+        this.loadDockerCatalog();
     }
 
     async loadInitialConfig() {
@@ -447,6 +568,173 @@ class TerminalApp {
         this.closeModalBtn.addEventListener('click', () => this.closeModal());
         this.cancelModalBtn.addEventListener('click', () => this.closeModal());
 
+        // Eventos de Contenedores y Asistente
+        if (this.openCreateContainerBtn) {
+            this.openCreateContainerBtn.addEventListener('click', () => {
+                this.openContainerWizard(this.containersVmFilter ? this.containersVmFilter.value : '');
+            });
+        }
+        if (this.refreshContainersBtn) {
+            this.refreshContainersBtn.addEventListener('click', () => {
+                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+            });
+        }
+        if (this.containersVmFilter) {
+            this.containersVmFilter.addEventListener('change', () => {
+                this.loadContainers(this.containersVmFilter.value);
+            });
+        }
+
+        // Eventos del Asistente Wizard
+        if (this.closeWizardBtn) {
+            this.closeWizardBtn.addEventListener('click', () => this.closeContainerWizard());
+        }
+        if (this.wizCancelBtn) {
+            this.wizCancelBtn.addEventListener('click', () => this.closeContainerWizard());
+        }
+        if (this.wizPrevBtn) {
+            this.wizPrevBtn.addEventListener('click', () => this.goToWizardStep(this.currentWizardStep - 1));
+        }
+        if (this.wizNextBtn) {
+            this.wizNextBtn.addEventListener('click', () => this.goToWizardStep(this.currentWizardStep + 1));
+        }
+        if (this.wizSubmitBtn) {
+            this.wizSubmitBtn.addEventListener('click', () => this.submitCreateContainer());
+        }
+        if (this.wizAddPortBtn) {
+            this.wizAddPortBtn.addEventListener('click', () => this.addWizPortRow());
+        }
+        if (this.wizAddEnvBtn) {
+            this.wizAddEnvBtn.addEventListener('click', () => this.addWizEnvRow());
+        }
+        if (this.wizAddVolumeBtn) {
+            this.wizAddVolumeBtn.addEventListener('click', () => this.addWizVolumeRow());
+        }
+
+        // Eventos de Logs de Contenedor
+        if (this.closeContainerLogsBtn) {
+            this.closeContainerLogsBtn.addEventListener('click', () => this.closeContainerLogs());
+        }
+        if (this.btnCloseContainerLogs) {
+            this.btnCloseContainerLogs.addEventListener('click', () => this.closeContainerLogs());
+        }
+        if (this.refreshContainerLogsBtn) {
+            this.refreshContainerLogsBtn.addEventListener('click', () => this.refreshContainerLogs());
+        }
+        if (this.containerLogsTail) {
+            this.containerLogsTail.addEventListener('change', () => this.refreshContainerLogs());
+        }
+
+        // Eventos de Eliminación de Contenedor
+        if (this.closeDeleteContainerModalBtn) {
+            this.closeDeleteContainerModalBtn.addEventListener('click', () => this.closeDeleteContainerModal());
+        }
+        if (this.cancelDeleteContainerBtn) {
+            this.cancelDeleteContainerBtn.addEventListener('click', () => this.closeDeleteContainerModal());
+        }
+        if (this.confirmDeleteContainerBtn) {
+            this.confirmDeleteContainerBtn.addEventListener('click', () => this.executeDeleteContainer());
+        }
+
+        // Eventos de Detalles de Contenedor
+        if (this.closeContainerDetailsBtn) {
+            this.closeContainerDetailsBtn.addEventListener('click', () => this.closeContainerDetails());
+        }
+        if (this.btnCloseContainerDetails) {
+            this.btnCloseContainerDetails.addEventListener('click', () => this.closeContainerDetails());
+        }
+
+        // Eventos de Subnavegación de Docker
+        if (this.dockerSubnavBtns) {
+            this.dockerSubnavBtns.forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    this.switchDockerSubview(btn.dataset.subview);
+                });
+            });
+        }
+
+        // Eventos de Gestión de Imágenes Docker
+        if (this.openCreateImageBtn) {
+            this.openCreateImageBtn.addEventListener('click', () => {
+                this.openBuildImageModal(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+            });
+        }
+        if (this.refreshImagesBtn) {
+            this.refreshImagesBtn.addEventListener('click', () => {
+                this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+            });
+        }
+        if (this.imagesVmFilter) {
+            this.imagesVmFilter.addEventListener('change', () => {
+                this.loadImages(this.imagesVmFilter.value);
+            });
+        }
+
+        // Eventos del Modal Crear Imagen
+        if (this.closeImageBuildBtn) {
+            this.closeImageBuildBtn.addEventListener('click', () => this.closeBuildImageModal());
+        }
+        if (this.cancelImageBuildBtn) {
+            this.cancelImageBuildBtn.addEventListener('click', () => this.closeBuildImageModal());
+        }
+        if (this.dfTabs) {
+            this.dfTabs.forEach((tab) => {
+                tab.addEventListener('click', () => {
+                    this.switchDfTab(tab.dataset.dftab);
+                });
+            });
+        }
+        if (this.dfFileDropzone && this.dfFileInput) {
+            this.dfFileDropzone.addEventListener('click', () => this.dfFileInput.click());
+            this.dfFileInput.addEventListener('change', (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (file) this.handleDockerfileUpload(file);
+            });
+            this.dfFileDropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                this.dfFileDropzone.classList.add('dragover');
+            });
+            this.dfFileDropzone.addEventListener('dragleave', () => {
+                this.dfFileDropzone.classList.remove('dragover');
+            });
+            this.dfFileDropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                this.dfFileDropzone.classList.remove('dragover');
+                const file = e.dataTransfer.files && e.dataTransfer.files[0];
+                if (file) this.handleDockerfileUpload(file);
+            });
+        }
+        if (this.submitImageBuildBtn) {
+            this.submitImageBuildBtn.addEventListener('click', () => this.submitBuildImage(false));
+        }
+        if (this.submitImageBuildRunBtn) {
+            this.submitImageBuildRunBtn.addEventListener('click', () => this.submitBuildImage(true));
+        }
+
+        // Eventos del Modal Eliminar Imagen
+        if (this.closeDeleteImageModalBtn) {
+            this.closeDeleteImageModalBtn.addEventListener('click', () => this.closeDeleteImageModal());
+        }
+        if (this.cancelDeleteImageBtn) {
+            this.cancelDeleteImageBtn.addEventListener('click', () => this.closeDeleteImageModal());
+        }
+        if (this.confirmDeleteImageBtn) {
+            this.confirmDeleteImageBtn.addEventListener('click', () => this.confirmDeleteImage());
+        }
+
+        // Eventos de Origen en Wizard
+        if (this.wizSourceImages) {
+            this.wizSourceImages.addEventListener('click', () => this.selectWizardSource('images'));
+        }
+        if (this.wizSourceCatalog) {
+            this.wizSourceCatalog.addEventListener('click', () => this.selectWizardSource('catalog'));
+        }
+        if (this.wizCreateNewImageBtn) {
+            this.wizCreateNewImageBtn.addEventListener('click', () => {
+                this.openBuildImageModal(this.wizVmSelect ? this.wizVmSelect.value : '');
+            });
+        }
+
         // Cierre con tecla Escape
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
@@ -455,6 +743,12 @@ class TerminalApp {
                     this.closeDeleteModal();
                     this.closeDeleteKeyModal();
                     this.closeDetailsModal();
+                    this.closeContainerWizard();
+                    this.closeContainerLogs();
+                    this.closeContainerDetails();
+                    this.closeDeleteContainerModal();
+                    this.closeBuildImageModal();
+                    this.closeDeleteImageModal();
                 } else if (this.isSidebarOpen()) {
                     this.toggleSidebar(false);
                 }
@@ -480,6 +774,36 @@ class TerminalApp {
                 if (e.target === this.vmDetailsModal) this.closeDetailsModal();
             });
         }
+        if (this.wizardModal) {
+            this.wizardModal.addEventListener('click', (e) => {
+                if (e.target === this.wizardModal) this.closeContainerWizard();
+            });
+        }
+        if (this.containerLogsModal) {
+            this.containerLogsModal.addEventListener('click', (e) => {
+                if (e.target === this.containerLogsModal) this.closeContainerLogs();
+            });
+        }
+        if (this.containerDetailsModal) {
+            this.containerDetailsModal.addEventListener('click', (e) => {
+                if (e.target === this.containerDetailsModal) this.closeContainerDetails();
+            });
+        }
+        if (this.deleteContainerModal) {
+            this.deleteContainerModal.addEventListener('click', (e) => {
+                if (e.target === this.deleteContainerModal) this.closeDeleteContainerModal();
+            });
+        }
+        if (this.imageBuildModal) {
+            this.imageBuildModal.addEventListener('click', (e) => {
+                if (e.target === this.imageBuildModal) this.closeBuildImageModal();
+            });
+        }
+        if (this.deleteImageModal) {
+            this.deleteImageModal.addEventListener('click', (e) => {
+                if (e.target === this.deleteImageModal) this.closeDeleteImageModal();
+            });
+        }
 
         // Boton de valores por defecto
         this.resetDefaultsBtn.addEventListener('click', () => {
@@ -491,6 +815,19 @@ class TerminalApp {
 
         // Envio del formulario de configuracion (Guardar y Conectar)
         this.configForm.addEventListener('submit', (e) => this.handleConfigSubmit(e));
+    }
+
+    isModalOpen() {
+        return (this.modalEl && !this.modalEl.classList.contains('hidden')) ||
+            (this.deleteVmModal && !this.deleteVmModal.classList.contains('hidden')) ||
+            (this.deleteKeyModal && !this.deleteKeyModal.classList.contains('hidden')) ||
+            (this.vmDetailsModal && !this.vmDetailsModal.classList.contains('hidden')) ||
+            (this.wizardModal && !this.wizardModal.classList.contains('hidden')) ||
+            (this.containerLogsModal && !this.containerLogsModal.classList.contains('hidden')) ||
+            (this.containerDetailsModal && !this.containerDetailsModal.classList.contains('hidden')) ||
+            (this.deleteContainerModal && !this.deleteContainerModal.classList.contains('hidden')) ||
+            (this.imageBuildModal && !this.imageBuildModal.classList.contains('hidden')) ||
+            (this.deleteImageModal && !this.deleteImageModal.classList.contains('hidden'));
     }
 
     isSidebarOpen() {
@@ -508,16 +845,66 @@ class TerminalApp {
             this.loadISOs();
             this.loadVirtualMachines();
             this.loadKeys();
+            this.updateContainersVmFilter();
+            this.updateImagesVmFilter();
         }
     }
 
     switchSidebarView(view) {
-        this.sideLinks.forEach((l) => l.classList.toggle('active', l.dataset.menu === view));
+        const isDocker = (view === 'docker' || view === 'containers' || view === 'images');
+
+        // Resaltar pestañas principales
+        this.sideLinks.forEach((l) => {
+            if (isDocker && l.dataset.menu === 'docker') {
+                l.classList.add('active');
+            } else if (!isDocker && l.dataset.menu === view) {
+                l.classList.add('active');
+            } else {
+                l.classList.remove('active');
+            }
+        });
+
+        // Mostrar/ocultar barra de subnavegación de Docker
+        if (this.dockerSubnav) {
+            this.dockerSubnav.classList.toggle('hidden', !isDocker);
+        }
+
+        if (isDocker) {
+            const subview = (view === 'images') ? 'images' : (this.activeDockerSubnav || 'containers');
+            this.switchDockerSubview(subview);
+            return;
+        }
+
         this.sideViews.forEach((s) => s.classList.toggle('active', s.id === `sidebar-${view}-view`));
         if (view === 'keys') {
             this.loadKeys();
         } else if (view === 'vms') {
             this.loadVirtualMachines();
+        }
+    }
+
+    switchDockerSubview(subview) {
+        this.activeDockerSubnav = subview;
+        if (this.dockerSubnavBtns) {
+            this.dockerSubnavBtns.forEach((b) => b.classList.toggle('active', b.dataset.subview === subview));
+        }
+
+        this.sideViews.forEach((s) => {
+            if (subview === 'containers') {
+                s.classList.toggle('active', s.id === 'sidebar-containers-view');
+            } else if (subview === 'images') {
+                s.classList.toggle('active', s.id === 'sidebar-images-view');
+            } else {
+                s.classList.remove('active');
+            }
+        });
+
+        if (subview === 'containers') {
+            this.updateContainersVmFilter();
+            this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+        } else if (subview === 'images') {
+            this.updateImagesVmFilter();
+            this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
         }
     }
 
@@ -615,18 +1002,18 @@ class TerminalApp {
                     <button class="btn btn-secondary view-vm" data-id="${this.escapeAttr(vm.name)}">Ver</button>
                     ${isStopped ? `<button class="btn btn-success start-vm" data-id="${this.escapeAttr(vm.name)}" title="Iniciar máquina virtual">
                         <span class="btn-spinner hidden" aria-hidden="true"></span>
-                        <span class="btn-text">▶ Iniciar</span>
+                        <span class="btn-text">Iniciar</span>
                     </button>` : ''}
                     ${isRunning ? `
                     <button class="btn btn-primary terminal-vm" data-id="${this.escapeAttr(vm.name)}" title="Abrir terminal SSH interactivo a esta VM">
-                        &gt;_ Terminal
+                        Terminal
                     </button>
                     <button class="btn btn-warning stop-vm" data-id="${this.escapeAttr(vm.name)}" title="Apagado limpio ACPI">
                         <span class="btn-spinner hidden" aria-hidden="true"></span>
-                        <span class="btn-text">⏹ Apagar</span>
+                        <span class="btn-text">Apagar</span>
                     </button>
                     <button class="btn btn-danger-outline poweroff-vm" data-id="${this.escapeAttr(vm.name)}" title="Apagado forzado inmediato">
-                        ⚡ Poweroff
+                        Forzar apagado
                     </button>` : ''}
                     <button class="btn btn-danger delete-vm" data-id="${this.escapeAttr(vm.name)}">Eliminar</button>
                 </div>
@@ -951,7 +1338,7 @@ class TerminalApp {
         } finally {
             if (btn) btn.disabled = false;
             if (spinner) spinner.classList.add('hidden');
-            if (text) text.textContent = '▶ Iniciar';
+            if (text) text.textContent = 'Iniciar';
             await this.loadVirtualMachines();
         }
     }
@@ -977,13 +1364,13 @@ class TerminalApp {
         } finally {
             if (btn) btn.disabled = false;
             if (spinner) spinner.classList.add('hidden');
-            if (text) text.textContent = '⏹ Apagar';
+            if (text) text.textContent = 'Apagar';
             await this.loadVirtualMachines();
         }
     }
 
     async forcePoweroffVM(name, btn) {
-        if (!confirm(`¿Estás seguro de forzar el apagado inmediato (Poweroff) de la máquina virtual '${name}'?`)) {
+        if (!confirm(`¿Estás seguro de forzar el apagado inmediato de la máquina virtual '${name}'?`)) {
             return;
         }
 
@@ -1069,7 +1456,7 @@ class TerminalApp {
                         ${this.escapeHTML(key.name || key.id)}
                     </span>
                     <span class="key-vm-badge" title="Máquina Virtual asociada">
-                        🖥️ ${this.escapeHTML(key.vmName || 'General')}
+                        VM: ${this.escapeHTML(key.vmName || 'General')}
                     </span>
                 </div>
                 <div class="key-card-details">
@@ -1078,10 +1465,10 @@ class TerminalApp {
                 </div>
                 <div class="key-card-actions">
                     <a href="/api/keys/${encodeURIComponent(key.id)}/private" class="btn btn-primary" download title="Descargar clave privada .pem">
-                        ⬇ Privada (.pem)
+                        Clave privada
                     </a>
                     <a href="/api/keys/${encodeURIComponent(key.id)}/public" class="btn btn-secondary" download title="Descargar clave pública .pub">
-                        ⬇ Pública (.pub)
+                        Clave pública
                     </a>
                     <button class="btn btn-danger delete-key-btn" data-id="${this.escapeAttr(key.id)}" data-name="${this.escapeAttr(key.name || key.id)}">
                         Eliminar
@@ -1171,13 +1558,6 @@ class TerminalApp {
     // =========================================================================
     // Modal de Configuración
     // =========================================================================
-    isModalOpen() {
-        const isCfg = this.modalEl && !this.modalEl.classList.contains('hidden');
-        const isDel = this.deleteVmModal && !this.deleteVmModal.classList.contains('hidden');
-        const isDelKey = this.deleteKeyModal && !this.deleteKeyModal.classList.contains('hidden');
-        const isDet = this.vmDetailsModal && !this.vmDetailsModal.classList.contains('hidden');
-        return isCfg || isDel || isDelKey || isDet;
-    }
 
     openHostModal(host = null) {
         this.editingHostId = host ? host.id : null;
@@ -1334,10 +1714,12 @@ class TerminalApp {
 
         this.autoScroll = true;
 
-        // Si tenemos una línea activa con el prompt en pantalla, completarla con el comando en amarillo
+        // Si tenemos una línea activa con el prompt en pantalla, completarla con el comando formateado
         if (this.currentLineEl) {
             const promptText = AnsiParser.stripAnsi(this.pendingText || this.currentLineEl.textContent || '').trim();
             if (promptText && (promptText.endsWith('>') || promptText.endsWith('$') || promptText.endsWith('#'))) {
+                this.lastSubmittedPrompt = promptText;
+                this.lastSubmittedCommand = cmdTrimmed;
                 this.currentLineEl.innerHTML = AnsiParser.renderPromptAndCommand(promptText, cmdTrimmed);
                 this.finishLine();
             } else {
@@ -1424,21 +1806,26 @@ class TerminalApp {
         if (!text) return;
 
         const processed = this.removeBackspaces(text);
-        // Manejar retornos de carro y secuencias de control de borrado de línea (VT100)
-        const tokens = processed.split(/(\r\n|\r|\n|\x1b\[2K|\x1b\[1K|\x1b\[0?K|\x1b\[1G)/);
 
-        for (const token of tokens) {
-            if (token === '') continue;
+        // Normalizar saltos de línea evitando borrar accidentalmente el contenido previo
+        const normalized = processed.replace(/\r+\n/g, '\n');
+        const lines = normalized.split('\n');
 
-            if (token === '\r\n' || token === '\n') {
-                this.finishLine();
-            } else if (token === '\r' || token === '\x1b[2K' || token === '\x1b[1K' || token === '\x1b[0K' || token === '\x1b[K' || token === '\x1b[1G') {
+        for (let i = 0; i < lines.length; i++) {
+            let linePart = lines[i];
+
+            if (linePart.includes('\r')) {
+                const subParts = linePart.split(/\r+/);
+                linePart = subParts[subParts.length - 1];
                 this.pendingText = '';
-                if (this.currentLineEl) {
-                    this.currentLineEl.innerHTML = '';
-                }
-            } else {
-                this.appendToCurrentLine(token);
+            }
+
+            if (linePart) {
+                this.appendToCurrentLine(linePart);
+            }
+
+            if (i < lines.length - 1) {
+                this.finishLine();
             }
         }
 
@@ -1457,10 +1844,22 @@ class TerminalApp {
         this.currentLineEl.innerHTML = result.html;
     }
 
+    normalizeLineForComparison(str) {
+        if (!str) return '';
+        let s = AnsiParser.stripAnsi(str);
+        s = s.replace(/\s+/g, ' ').trim();
+        s = s.replace(/\s*([>$#])\s*/g, '$1 ');
+        s = s.replace(/^P+\s*PS\s+/i, 'PS ');
+        s = s.replace(/^P(?=PS|[a-zA-Z]:[\\/]|dir|ls|cd)/i, '');
+        return s.trim();
+    }
+
     finishLine() {
         if (this.currentLineEl) {
-            const textContent = this.currentLineEl.textContent.trim();
-            if (textContent === '') {
+            const rawText = this.currentLineEl.textContent || '';
+            const trimmed = rawText.trim();
+
+            if (trimmed === '') {
                 const prev = this.currentLineEl.previousElementSibling;
                 if (!prev || prev.textContent.trim() === '') {
                     this.currentLineEl.remove();
@@ -1468,19 +1867,21 @@ class TerminalApp {
             } else {
                 const prev = this.currentLineEl.previousElementSibling;
                 if (prev) {
-                    const prevText = prev.textContent.trim();
-                    // 1. Eliminar duplicados exactos consecutivos (ecos repetidos de ConPTY)
-                    if (prevText === textContent) {
+                    const normPrev = this.normalizeLineForComparison(prev.textContent);
+                    const normCurr = this.normalizeLineForComparison(rawText);
+
+                    // 1. Eliminar duplicados exactos o normalizados consecutivos (ecos de ConPTY/PowerShell/CMD)
+                    if (normPrev === normCurr) {
                         this.currentLineEl.remove();
                     }
                     // 2. Si la línea previa era solo un prompt y la actual es ese mismo prompt con el comando
-                    else if (textContent.startsWith(prevText) && (prevText.endsWith('>') || prevText.endsWith('$') || prevText.endsWith('#'))) {
+                    else if (normCurr.startsWith(normPrev) && /[>$#]\s*$/.test(normPrev)) {
                         prev.remove();
                     }
                     // 3. Si la línea previa era prompt + comando y la actual es solo el eco del mismo comando sin prompt
-                    else if (prevText.endsWith('> ' + textContent) || prevText.endsWith('>' + textContent) ||
-                             prevText.endsWith('$ ' + textContent) || prevText.endsWith('$' + textContent) ||
-                             prevText.endsWith('# ' + textContent) || prevText.endsWith('#' + textContent)) {
+                    else if (normPrev.endsWith('> ' + normCurr) || normPrev.endsWith('>' + normCurr) ||
+                             normPrev.endsWith('$ ' + normCurr) || normPrev.endsWith('$' + normCurr) ||
+                             normPrev.endsWith('# ' + normCurr) || normPrev.endsWith('#' + normCurr)) {
                         this.currentLineEl.remove();
                     }
                 }
@@ -1576,6 +1977,1328 @@ class TerminalApp {
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;');
+    }
+
+    // =========================================================================
+    // Gestión de Contenedores Docker en VMs Linux
+    // =========================================================================
+    async loadDockerCatalog() {
+        try {
+            const res = await fetch('/api/docker/catalog');
+            if (res.ok) {
+                this.dockerCatalog = await res.json();
+            }
+        } catch (e) {
+            console.warn('No se pudo cargar el catálogo de Docker:', e);
+        }
+    }
+
+    async updateContainersVmFilter() {
+        if (!this.containersVmFilter && !this.wizVmSelect) return;
+        try {
+            const res = await fetch('/api/vms');
+            if (res.ok) {
+                const vms = await res.json();
+                this.vms = vms;
+
+                if (this.containersVmFilter) {
+                    const currentVal = this.containersVmFilter.value;
+                    let opts = ``;
+                    vms.forEach((v) => {
+                        const isRunning = (v.state || '').toLowerCase() === 'running';
+                        const label = `${v.name} (${isRunning ? 'En ejecución' : 'Apagada'})`;
+                        opts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(label)}</option>`;
+                    });
+                    this.containersVmFilter.innerHTML = opts;
+                    if (currentVal && vms.some((v) => v.name === currentVal)) {
+                        this.containersVmFilter.value = currentVal;
+                    }
+                }
+
+                if (this.wizVmSelect) {
+                    let wOpts = `<option value="" disabled selected>Selecciona una máquina...</option>`;
+                    vms.forEach((v) => {
+                        wOpts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(v.name)}</option>`;
+                    });
+                    this.wizVmSelect.innerHTML = wOpts;
+                }
+            }
+        } catch (e) {
+            console.warn('No se pudieron listar VMs para el filtro de contenedores:', e);
+        }
+    }
+
+    async updateImagesVmFilter() {
+        if (!this.imagesVmFilter && !this.buildVmSelect) return;
+        try {
+            const res = await fetch('/api/vms');
+            if (res.ok) {
+                const vms = await res.json();
+                this.vms = vms;
+
+                if (this.imagesVmFilter) {
+                    const currentVal = this.imagesVmFilter.value;
+                    let opts = ``;
+                    vms.forEach((v) => {
+                        const isRunning = (v.state || '').toLowerCase() === 'running';
+                        const label = `${v.name} (${isRunning ? 'En ejecución' : 'Apagada'})`;
+                        opts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(label)}</option>`;
+                    });
+                    this.imagesVmFilter.innerHTML = opts;
+                    if (currentVal && vms.some((v) => v.name === currentVal)) {
+                        this.imagesVmFilter.value = currentVal;
+                    }
+                }
+
+                if (this.buildVmSelect) {
+                    const currentBuild = this.buildVmSelect.value;
+                    let bOpts = `<option value="" disabled selected>Selecciona una máquina...</option>`;
+                    vms.forEach((v) => {
+                        bOpts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(v.name)}</option>`;
+                    });
+                    this.buildVmSelect.innerHTML = bOpts;
+                    if (currentBuild && vms.some((v) => v.name === currentBuild)) {
+                        this.buildVmSelect.value = currentBuild;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('No se pudieron listar VMs para el filtro de imágenes:', e);
+        }
+    }
+
+    async loadContainers(vmFilter) {
+        if (!this.containersListEl) return;
+        this.containersListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando contenedores...</div>`;
+
+        const filter = (vmFilter || '').trim();
+        const url = filter ? `/api/containers?vm=${encodeURIComponent(filter)}` : '/api/containers';
+
+        if (filter && this.dockerStatusPill) {
+            try {
+                fetch(`/api/vms/${encodeURIComponent(filter)}/docker/status`)
+                    .then((r) => r.json())
+                    .then((st) => {
+                        if (st && st.available) {
+                            this.dockerStatusPill.className = 'docker-status-pill';
+                            this.dockerStatusPill.textContent = `Docker Activo (${st.version || 'OK'})`;
+                            this.dockerStatusPill.classList.remove('hidden');
+                        } else {
+                            this.dockerStatusPill.className = 'docker-status-pill inactive';
+                            this.dockerStatusPill.textContent = 'Docker No disponible';
+                            this.dockerStatusPill.classList.remove('hidden');
+                        }
+                    })
+                    .catch(() => {
+                        this.dockerStatusPill.classList.add('hidden');
+                    });
+            } catch (e) {
+                this.dockerStatusPill.classList.add('hidden');
+            }
+        } else if (this.dockerStatusPill) {
+            this.dockerStatusPill.classList.add('hidden');
+        }
+
+        try {
+            const res = await fetch(url);
+            if (!res.ok) {
+                const text = await res.text();
+                this.containersListEl.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">Error al consultar contenedores: ${this.escapeHTML(this.parseApiError(text))}</div>`;
+                return;
+            }
+            const containers = await res.json();
+            this.containers = containers || [];
+            this.renderContainers(this.containers);
+        } catch (e) {
+            console.warn('No se pudieron cargar contenedores:', e);
+            this.containersListEl.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">No se pudo conectar al servidor para listar contenedores.</div>`;
+        }
+    }
+
+    renderContainers(containers) {
+        if (!this.containersListEl) return;
+        if (!containers || containers.length === 0) {
+            this.containersListEl.innerHTML = `
+                <div class="empty-vm-list" style="padding:32px 16px;">
+                    <p style="margin-bottom:12px;">Sin contenedores en esta máquina virtual.</p>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('open-create-container-btn').click()">
+                        Nuevo contenedor
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
+        this.containersListEl.innerHTML = containers
+            .map((c) => {
+                const isRunning = (c.state || '').toLowerCase() === 'running';
+                const stateClass = isRunning
+                    ? 'state-running'
+                    : (c.state || '').toLowerCase().includes('exit')
+                    ? 'state-exited'
+                    : 'state-created';
+
+                return `
+                <div class="container-card" data-vm="${this.escapeAttr(c.vmName)}" data-id="${this.escapeAttr(c.id)}">
+                    <div class="container-head">
+                        <div class="container-title-group">
+                            <span class="container-name">${this.escapeHTML(c.name || c.id)}</span>
+                            <span class="vm-badge" title="Máquina Virtual">${this.escapeHTML(c.vmName || 'VM')}</span>
+                        </div>
+                        <span class="container-state-pill ${stateClass}">${this.escapeHTML(c.state || 'desconocido')}</span>
+                    </div>
+                    <div class="container-meta">
+                        <span class="container-image" title="Imagen Docker">${this.escapeHTML(c.image || '')}</span>
+                        ${c.ports ? `<span class="container-ports-badge" title="Puertos">${this.escapeHTML(c.ports)}</span>` : ''}
+                        <span class="container-status-text" title="Estado">${this.escapeHTML(c.status || '')}</span>
+                    </div>
+                    <div class="container-actions">
+                        ${
+                            isRunning
+                                ? `
+                            <button type="button" class="btn btn-secondary btn-sm" title="Consola interactiva" onclick="window.terminalApp.connectContainerTerminal('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.name || c.id)}')">
+                                Consola
+                            </button>
+                            <button type="button" class="btn btn-secondary btn-sm" title="Reiniciar contenedor" onclick="window.terminalApp.restartContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
+                                Reiniciar
+                            </button>
+                            <button type="button" class="btn btn-secondary btn-sm" title="Detener contenedor" onclick="window.terminalApp.stopContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
+                                Detener
+                            </button>
+                        `
+                                : `
+                            <button type="button" class="btn btn-primary btn-sm" title="Iniciar contenedor" onclick="window.terminalApp.startContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
+                                Iniciar
+                            </button>
+                        `
+                        }
+                        <button type="button" class="btn btn-ghost btn-sm" title="Ver logs" onclick="window.terminalApp.openContainerLogs('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', '${this.escapeAttr(c.name || c.id)}')">
+                            Logs
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-sm" title="Ver detalles" onclick="window.terminalApp.openContainerDetails('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
+                            Detalles
+                        </button>
+                        <button type="button" class="btn btn-danger btn-sm" title="Eliminar contenedor" onclick="window.terminalApp.openDeleteContainerModal('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', '${this.escapeAttr(c.name || c.id)}')">
+                            Eliminar
+                        </button>
+                    </div>
+                </div>
+            `;
+            })
+            .join('');
+    }
+
+    connectContainerTerminal(vmName, containerIdOrName) {
+        if (!vmName || !containerIdOrName) return;
+        this.clearOutput();
+        this.appendInfoLine(`[Iniciando consola interactiva en contenedor '${containerIdOrName}' (${vmName})...]`);
+
+        if (this.targetUserHostEl) {
+            this.targetUserHostEl.textContent = `${vmName}:${containerIdOrName}`;
+        }
+        if (this.targetShellBadgeEl) {
+            this.targetShellBadgeEl.textContent = 'docker';
+            this.targetShellBadgeEl.className = 'badge-shell';
+        }
+        this.currentPath = `/${containerIdOrName}`;
+        this.updateCurrentPath(this.currentPath);
+
+        this.toggleSidebar(false);
+
+        const params = {
+            vm: vmName,
+            container: containerIdOrName,
+        };
+        this.ws.reconnectWith(params);
+    }
+
+    async startContainer(vmName, containerId) {
+        try {
+            const res = await fetch(`/api/containers/${encodeURIComponent(vmName)}/${encodeURIComponent(containerId)}/start`, {
+                method: 'POST',
+            });
+            if (res.ok) {
+                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+            } else {
+                const text = await res.text();
+                alert(`Error iniciando contenedor: ${this.parseApiError(text)}`);
+            }
+        } catch (e) {
+            alert(`Fallo de conexión al iniciar contenedor: ${e.message}`);
+        }
+    }
+
+    async stopContainer(vmName, containerId) {
+        try {
+            const res = await fetch(`/api/containers/${encodeURIComponent(vmName)}/${encodeURIComponent(containerId)}/stop`, {
+                method: 'POST',
+            });
+            if (res.ok) {
+                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+            } else {
+                const text = await res.text();
+                alert(`Error deteniendo contenedor: ${this.parseApiError(text)}`);
+            }
+        } catch (e) {
+            alert(`Fallo de conexión al detener contenedor: ${e.message}`);
+        }
+    }
+
+    async restartContainer(vmName, containerId) {
+        try {
+            const res = await fetch(`/api/containers/${encodeURIComponent(vmName)}/${encodeURIComponent(containerId)}/restart`, {
+                method: 'POST',
+            });
+            if (res.ok) {
+                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+            } else {
+                const text = await res.text();
+                alert(`Error reiniciando contenedor: ${this.parseApiError(text)}`);
+            }
+        } catch (e) {
+            alert(`Fallo de conexión al reiniciar contenedor: ${e.message}`);
+        }
+    }
+
+    openDeleteContainerModal(vmName, containerId, containerName) {
+        this.pendingDeleteContainer = { vm: vmName, id: containerId, name: containerName };
+        if (this.deleteContainerNameEl) {
+            this.deleteContainerNameEl.textContent = containerName || containerId;
+        }
+        if (this.deleteContainerVmTag) {
+            this.deleteContainerVmTag.textContent = vmName;
+        }
+        if (this.deleteContainerForceCheckbox) {
+            this.deleteContainerForceCheckbox.checked = false;
+        }
+        if (this.deleteContainerFeedback) {
+            this.deleteContainerFeedback.className = 'modal-feedback hidden';
+            this.deleteContainerFeedback.textContent = '';
+        }
+        if (this.deleteContainerModal) {
+            this.deleteContainerModal.classList.remove('hidden');
+        }
+    }
+
+    closeDeleteContainerModal() {
+        if (this.deleteContainerModal) {
+            this.deleteContainerModal.classList.add('hidden');
+        }
+        this.pendingDeleteContainer = null;
+    }
+
+    async executeDeleteContainer() {
+        if (!this.pendingDeleteContainer) return;
+        const { vm, id } = this.pendingDeleteContainer;
+        const force = this.deleteContainerForceCheckbox && this.deleteContainerForceCheckbox.checked;
+
+        if (this.confirmDeleteContainerBtn) {
+            this.confirmDeleteContainerBtn.disabled = true;
+            const spinner = this.confirmDeleteContainerBtn.querySelector('.btn-spinner');
+            if (spinner) spinner.classList.remove('hidden');
+        }
+
+        try {
+            const url = `/api/containers/${encodeURIComponent(vm)}/${encodeURIComponent(id)}${force ? '?force=true' : ''}`;
+            const res = await fetch(url, { method: 'DELETE' });
+            if (res.ok) {
+                this.closeDeleteContainerModal();
+                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+            } else {
+                const text = await res.text();
+                if (this.deleteContainerFeedback) {
+                    this.deleteContainerFeedback.className = 'modal-feedback error';
+                    this.deleteContainerFeedback.textContent = this.parseApiError(text);
+                }
+            }
+        } catch (e) {
+            if (this.deleteContainerFeedback) {
+                this.deleteContainerFeedback.className = 'modal-feedback error';
+                this.deleteContainerFeedback.textContent = e.message;
+            }
+        } finally {
+            if (this.confirmDeleteContainerBtn) {
+                this.confirmDeleteContainerBtn.disabled = false;
+                const spinner = this.confirmDeleteContainerBtn.querySelector('.btn-spinner');
+                if (spinner) spinner.classList.add('hidden');
+            }
+        }
+    }
+
+    openContainerLogs(vmName, containerId, containerName) {
+        this.activeLogsTarget = { vm: vmName, id: containerId, name: containerName };
+        if (this.containerLogsTitle) {
+            this.containerLogsTitle.textContent = `Logs: ${containerName || containerId}`;
+        }
+        if (this.containerLogsSubtitle) {
+            this.containerLogsSubtitle.textContent = `VM: ${vmName} (${containerId})`;
+        }
+        if (this.containerLogsModal) {
+            this.containerLogsModal.classList.remove('hidden');
+        }
+        this.refreshContainerLogs();
+    }
+
+    closeContainerLogs() {
+        if (this.containerLogsModal) {
+            this.containerLogsModal.classList.add('hidden');
+        }
+        this.activeLogsTarget = null;
+    }
+
+    async refreshContainerLogs() {
+        if (!this.activeLogsTarget || !this.containerLogsOutput) return;
+        const { vm, id } = this.activeLogsTarget;
+        const tail = this.containerLogsTail ? this.containerLogsTail.value : 200;
+
+        this.containerLogsOutput.textContent = 'Cargando logs...';
+        try {
+            const res = await fetch(`/api/containers/${encodeURIComponent(vm)}/${encodeURIComponent(id)}/logs?tail=${tail}`);
+            if (res.ok) {
+                const data = await res.json();
+                this.containerLogsOutput.textContent = data.logs || 'Sin registros emitidos por el contenedor.';
+                this.containerLogsOutput.scrollTop = this.containerLogsOutput.scrollHeight;
+            } else {
+                const text = await res.text();
+                this.containerLogsOutput.textContent = `Error obteniendo logs: ${this.parseApiError(text)}`;
+            }
+        } catch (e) {
+            this.containerLogsOutput.textContent = `Fallo de conexión al cargar logs: ${e.message}`;
+        }
+    }
+
+    async openContainerDetails(vmName, containerId) {
+        if (!this.containerDetailsModal || !this.containerDetailsContent) return;
+        this.containerDetailsContent.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Obteniendo inspección...</div>`;
+        this.containerDetailsModal.classList.remove('hidden');
+
+        try {
+            const res = await fetch(`/api/containers/${encodeURIComponent(vmName)}/${encodeURIComponent(containerId)}`);
+            if (!res.ok) {
+                const text = await res.text();
+                this.containerDetailsContent.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">Error: ${this.escapeHTML(this.parseApiError(text))}</div>`;
+                return;
+            }
+            const info = await res.json();
+            this.renderContainerDetails(info);
+        } catch (e) {
+            this.containerDetailsContent.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">Error: ${this.escapeHTML(e.message)}</div>`;
+        }
+    }
+
+    closeContainerDetails() {
+        if (this.containerDetailsModal) {
+            this.containerDetailsModal.classList.add('hidden');
+        }
+    }
+
+    renderContainerDetails(info) {
+        if (!this.containerDetailsContent || !info) return;
+
+        const portsStr = (info.ports || []).map((p) => `${p.hostPort}:${p.containerPort}/${p.protocol || 'tcp'}`).join(', ') || 'Ninguno';
+        const mountsStr = (info.mounts || []).map((m) => `${m.hostPath} &rarr; ${m.containerPath}`).join('<br>') || 'Ninguno';
+        const envStr = (info.env || []).join('<br>') || 'Ninguna';
+
+        this.containerDetailsContent.innerHTML = `
+            <div class="vm-detail-item">
+                <span class="vm-detail-label">Nombre</span>
+                <span class="vm-detail-val highlight">${this.escapeHTML(info.name || '')}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-label">ID Contenedor</span>
+                <span class="vm-detail-val">${this.escapeHTML(info.id || '')}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-label">Máquina Virtual</span>
+                <span class="vm-detail-val">${this.escapeHTML(info.vmName || '')}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-label">Imagen</span>
+                <span class="vm-detail-val">${this.escapeHTML(info.image || '')}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-label">Estado</span>
+                <span class="vm-detail-val">${this.escapeHTML(info.state ? info.state.status : '')}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-label">Dirección IP en VM</span>
+                <span class="vm-detail-val">${this.escapeHTML(info.ipAddress || 'Host bridge')}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-label">Política de Reinicio</span>
+                <span class="vm-detail-val">${this.escapeHTML(info.restartPolicy || 'no')}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-label">Puertos Mapeados</span>
+                <span class="vm-detail-val">${this.escapeHTML(portsStr)}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-label">Montajes de Volúmenes</span>
+                <span class="vm-detail-val" style="font-size:11px;">${mountsStr}</span>
+            </div>
+            <div class="vm-detail-item" style="grid-column: 1 / -1;">
+                <span class="vm-detail-label">Variables de Entorno</span>
+                <span class="vm-detail-val" style="font-size:11px; max-height:120px; overflow-y:auto; display:block;">${envStr}</span>
+            </div>
+        `;
+    }
+
+    // =========================================================================
+    // Gestión de Imágenes Docker (Listado, Creación, Compilación, Eliminación)
+    // =========================================================================
+    async loadImages(vmFilter) {
+        if (!this.imagesListEl) return;
+        this.imagesListEl.innerHTML = `
+            <div class="empty-vm-list">
+                <span class="btn-spinner"></span>
+                <span>Cargando imágenes de Docker...</span>
+            </div>
+        `;
+
+        const filter = (vmFilter || '').trim();
+        const url = filter ? `/api/images?vm=${encodeURIComponent(filter)}` : '/api/images';
+
+        try {
+            const res = await fetch(url);
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || `Error ${res.status}`);
+            }
+            const images = await res.json();
+            this.images = Array.isArray(images) ? images : [];
+            this.renderImages(this.images);
+        } catch (e) {
+            console.error('Error cargando imágenes:', e);
+            this.imagesListEl.innerHTML = `
+                <div class="empty-vm-list" style="color:var(--accent-red)">
+                    <p>No se pudieron cargar las imágenes de Docker.</p>
+                    <span class="empty-subtext">${this.escapeHTML(e.message)}</span>
+                </div>
+            `;
+        }
+    }
+
+    renderImages(images) {
+        if (!this.imagesListEl) return;
+        if (!Array.isArray(images) || images.length === 0) {
+            this.imagesListEl.innerHTML = `
+                <div class="empty-vm-list">
+                    <p>No hay imágenes Docker disponibles.</p>
+                    <span class="empty-subtext">Crea una imagen con "+ Crear imagen" o descarga una plantilla de contenedor.</span>
+                </div>
+            `;
+            return;
+        }
+
+        this.imagesListEl.innerHTML = images
+            .map((img) => {
+                const shortId = img.id ? (img.id.startsWith('sha256:') ? img.id.substring(7, 19) : img.id.substring(0, 12)) : 'n/a';
+                const tag = img.tag || '<none>';
+                const repo = img.repository || '<none>';
+                const size = img.size || 'n/a';
+                const created = img.createdAt || 'n/a';
+                const vmName = img.vmName || '';
+
+                return `
+                    <div class="image-card" data-id="${this.escapeAttr(img.id)}">
+                        <div class="image-head">
+                            <div class="image-title-group">
+                                <div class="image-icon">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                                        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                                        <polyline points="2 17 12 22 22 17"></polyline>
+                                        <polyline points="2 12 12 17 22 12"></polyline>
+                                    </svg>
+                                </div>
+                                <div class="image-name">
+                                    <span>${this.escapeHTML(repo)}</span>
+                                    <span class="image-tag-badge">${this.escapeHTML(tag)}</span>
+                                    ${vmName ? `<span class="vm-source-tag">${this.escapeHTML(vmName)}</span>` : ''}
+                                </div>
+                            </div>
+                            <div class="image-size-badge">${this.escapeHTML(size)}</div>
+                        </div>
+
+                        <div class="image-info-grid">
+                            <div class="image-info-item">
+                                <span class="image-info-label">ID Imagen</span>
+                                <span class="image-info-value">${this.escapeHTML(shortId)}</span>
+                            </div>
+                            <div class="image-info-item">
+                                <span class="image-info-label">Creado</span>
+                                <span class="image-info-value">${this.escapeHTML(created)}</span>
+                            </div>
+                        </div>
+
+                        <div class="image-actions">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="window.terminalApp.runImage('${this.escapeAttr(vmName)}', '${this.escapeAttr(repo)}', '${this.escapeAttr(tag)}')" title="Configurar y ejecutar contenedor con esta imagen">
+                                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.5" fill="none">
+                                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                </svg>
+                                <span>Ejecutar</span>
+                            </button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="window.terminalApp.openDeleteImageModal('${this.escapeAttr(vmName)}', '${this.escapeAttr(img.id)}', '${this.escapeAttr(repo)}', '${this.escapeAttr(tag)}')" title="Eliminar imagen">
+                                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                                <span>Eliminar</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            })
+            .join('');
+    }
+
+    async runImage(vmName, repo, tag) {
+        const fullImage = (tag && tag !== '<none>') ? `${repo}:${tag}` : repo;
+        await this.openContainerWizard(vmName);
+        this.selectWizardSource('images');
+        this.selectedWizardImage = { repo, tag, ref: fullImage };
+        if (this.wizImageInput) {
+            this.wizImageInput.value = fullImage;
+        }
+        if (this.wizNameInput) {
+            const cleanRepo = repo.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+            const randSuffix = Math.random().toString(36).substring(2, 6);
+            this.wizNameInput.value = `${cleanRepo}-${randSuffix}`;
+        }
+        this.goToWizardStep(3);
+    }
+
+    openBuildImageModal(preselectedVm = '') {
+        if (!this.imageBuildModal) return;
+        this.hideBuildImageFeedback();
+        if (this.buildLogContainer) this.buildLogContainer.classList.add('hidden');
+        if (this.buildLogOutput) this.buildLogOutput.textContent = '';
+
+        this.updateImagesVmFilter();
+        if (preselectedVm && this.buildVmSelect) {
+            this.buildVmSelect.value = preselectedVm;
+        } else if (this.imagesVmFilter && this.imagesVmFilter.value && this.buildVmSelect) {
+            this.buildVmSelect.value = this.imagesVmFilter.value;
+        }
+
+        if (this.buildImageName) this.buildImageName.value = '';
+        if (this.buildImageTag) this.buildImageTag.value = '';
+        if (this.dfFileName) this.dfFileName.textContent = '';
+        if (this.dfFileInput) this.dfFileInput.value = '';
+        this.switchDfTab('paste');
+
+        this.imageBuildModal.classList.remove('hidden');
+    }
+
+    closeBuildImageModal() {
+        if (this.imageBuildModal) {
+            this.imageBuildModal.classList.add('hidden');
+        }
+        this.hideBuildImageFeedback();
+    }
+
+    switchDfTab(tab) {
+        this.activeDfTab = tab;
+        if (this.dfTabs) {
+            this.dfTabs.forEach((t) => t.classList.toggle('active', t.dataset.dftab === tab));
+        }
+        if (this.dfUploadPanel) {
+            this.dfUploadPanel.classList.toggle('hidden', tab !== 'upload');
+        }
+        if (this.dfPastePanel) {
+            this.dfPastePanel.classList.toggle('hidden', tab !== 'paste');
+        }
+    }
+
+    handleDockerfileUpload(file) {
+        if (!file) return;
+        if (this.dfFileName) {
+            this.dfFileName.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            if (this.buildDockerfileContent) {
+                this.buildDockerfileContent.value = e.target.result || '';
+            }
+            this.switchDfTab('paste');
+        };
+        reader.readAsText(file);
+    }
+
+    setButtonLoading(btn, isLoading) {
+        if (!btn) return;
+        btn.disabled = isLoading;
+        if (isLoading) {
+            btn.dataset.originalText = btn.innerHTML;
+            btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Cargando...`;
+        } else {
+            if (btn.dataset.originalText) {
+                btn.innerHTML = btn.dataset.originalText;
+            }
+        }
+    }
+
+    async submitBuildImage(andRun = false) {
+        const vmName = this.buildVmSelect ? this.buildVmSelect.value : '';
+        const imageName = this.buildImageName ? this.buildImageName.value.trim() : '';
+        const tag = this.buildImageTag ? this.buildImageTag.value.trim() : '';
+        const dockerfile = this.buildDockerfileContent ? this.buildDockerfileContent.value.trim() : '';
+
+        if (!vmName) {
+            this.showBuildImageFeedback('Debes seleccionar una máquina virtual.', 'error');
+            return;
+        }
+        if (!imageName) {
+            this.showBuildImageFeedback('Debes ingresar el nombre de la imagen.', 'error');
+            return;
+        }
+        if (!dockerfile) {
+            this.showBuildImageFeedback('El contenido del Dockerfile no puede estar vacío.', 'error');
+            return;
+        }
+
+        const activeBtn = andRun ? this.submitImageBuildRunBtn : this.submitImageBuildBtn;
+        this.setButtonLoading(activeBtn, true);
+        this.hideBuildImageFeedback();
+        if (this.buildLogContainer) this.buildLogContainer.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/images/build', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    vmName,
+                    imageName,
+                    tag: tag || 'latest',
+                    dockerfile
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                if (data.output && this.buildLogOutput && this.buildLogContainer) {
+                    this.buildLogOutput.textContent = data.output;
+                    this.buildLogContainer.classList.remove('hidden');
+                }
+                throw new Error(data.error || 'Error construyendo la imagen');
+            }
+
+            this.closeBuildImageModal();
+            this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+
+            if (andRun) {
+                this.runImage(vmName, imageName, tag || 'latest');
+            } else {
+                if (this.wizardModal && !this.wizardModal.classList.contains('hidden') && this.wizardSource === 'images') {
+                    this.loadWizardImages();
+                }
+            }
+        } catch (e) {
+            this.showBuildImageFeedback(e.message, 'error');
+        } finally {
+            this.setButtonLoading(activeBtn, false);
+        }
+    }
+
+    openDeleteImageModal(vmName, id, repo, tag) {
+        if (!this.deleteImageModal) return;
+        this.pendingDeleteImage = { vmName, id, repo, tag };
+        if (this.deleteImageNameEl) {
+            this.deleteImageNameEl.textContent = (repo && repo !== '<none>') ? `${repo}:${tag || 'latest'}` : id;
+        }
+        if (this.deleteImageVmTag) {
+            this.deleteImageVmTag.textContent = vmName ? `VM: ${vmName}` : '';
+        }
+        if (this.deleteImageForceCheckbox) {
+            this.deleteImageForceCheckbox.checked = false;
+        }
+        this.hideDeleteImageFeedback();
+        this.deleteImageModal.classList.remove('hidden');
+    }
+
+    closeDeleteImageModal() {
+        if (this.deleteImageModal) {
+            this.deleteImageModal.classList.add('hidden');
+        }
+        this.pendingDeleteImage = null;
+    }
+
+    async confirmDeleteImage() {
+        if (!this.pendingDeleteImage) return;
+        const { vmName, id, repo, tag } = this.pendingDeleteImage;
+        const force = this.deleteImageForceCheckbox ? this.deleteImageForceCheckbox.checked : false;
+
+        this.setButtonLoading(this.confirmDeleteImageBtn, true);
+        this.hideDeleteImageFeedback();
+
+        try {
+            const ref = (repo && repo !== '<none>') ? `${repo}:${tag || 'latest'}` : id;
+            const res = await fetch(`/api/images?vm=${encodeURIComponent(vmName)}&image=${encodeURIComponent(ref)}&force=${force}`, {
+                method: 'DELETE'
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text || 'Error eliminando imagen');
+            }
+
+            this.closeDeleteImageModal();
+            this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+        } catch (e) {
+            this.showDeleteImageFeedback(e.message, 'error');
+        } finally {
+            this.setButtonLoading(this.confirmDeleteImageBtn, false);
+        }
+    }
+
+    showBuildImageFeedback(msg, type = 'error') {
+        if (!this.buildImageFeedback) return;
+        this.buildImageFeedback.textContent = msg;
+        this.buildImageFeedback.className = `modal-feedback ${type}`;
+        this.buildImageFeedback.classList.remove('hidden');
+    }
+
+    hideBuildImageFeedback() {
+        if (this.buildImageFeedback) {
+            this.buildImageFeedback.classList.add('hidden');
+            this.buildImageFeedback.textContent = '';
+        }
+    }
+
+    showDeleteImageFeedback(msg, type = 'error') {
+        if (!this.deleteImageFeedback) return;
+        this.deleteImageFeedback.textContent = msg;
+        this.deleteImageFeedback.className = `modal-feedback ${type}`;
+        this.deleteImageFeedback.classList.remove('hidden');
+    }
+
+    hideDeleteImageFeedback() {
+        if (this.deleteImageFeedback) {
+            this.deleteImageFeedback.classList.add('hidden');
+            this.deleteImageFeedback.textContent = '';
+        }
+    }
+
+    // =========================================================================
+    // Asistente Guiado de Creación de Contenedor (Wizard)
+    // =========================================================================
+    async openContainerWizard(preselectedVm) {
+        if (!this.wizardModal) return;
+        this.wizardModal.classList.remove('hidden');
+        await this.updateContainersVmFilter();
+        await this.updateImagesVmFilter();
+        if (preselectedVm && this.wizVmSelect) {
+            this.wizVmSelect.value = preselectedVm;
+        }
+        this.hideWizFeedback();
+        this.selectedCategory = null;
+        this.selectedTemplate = null;
+        this.selectedWizardImage = null;
+
+        if (this.wizNameInput) this.wizNameInput.value = '';
+        if (this.wizImageInput) this.wizImageInput.value = '';
+        if (this.wizPortsContainer) this.wizPortsContainer.innerHTML = '';
+        if (this.wizEnvContainer) this.wizEnvContainer.innerHTML = '';
+        if (this.wizVolumesContainer) this.wizVolumesContainer.innerHTML = '';
+
+        this.selectWizardSource(this.wizardSource || 'images');
+        this.goToWizardStep(1);
+        this.wizardModal.classList.remove('hidden');
+    }
+
+    closeContainerWizard() {
+        if (this.wizardModal) {
+            this.wizardModal.classList.add('hidden');
+        }
+        this.hideWizFeedback();
+    }
+
+    selectWizardSource(source) {
+        this.wizardSource = source;
+        if (this.wizSourceImages) this.wizSourceImages.classList.toggle('active', source === 'images');
+        if (this.wizSourceCatalog) this.wizSourceCatalog.classList.toggle('active', source === 'catalog');
+        if (this.wizImagesPanel) this.wizImagesPanel.classList.toggle('hidden', source !== 'images');
+        if (this.wizCatalogPanel) this.wizCatalogPanel.classList.toggle('hidden', source !== 'catalog');
+        this.hideWizFeedback();
+
+        if (source === 'images') {
+            this.loadWizardImages();
+        } else {
+            this.renderWizardCategories();
+        }
+    }
+
+    async loadWizardImages() {
+        if (!this.wizImagesGrid) return;
+        const vm = this.wizVmSelect ? this.wizVmSelect.value : '';
+        if (!vm) {
+            this.wizImagesGrid.innerHTML = `
+                <div class="empty-vm-list">
+                    <span>Selecciona una máquina virtual para ver sus imágenes disponibles.</span>
+                </div>
+            `;
+            return;
+        }
+
+        this.wizImagesGrid.innerHTML = `
+            <div class="empty-vm-list">
+                <span class="btn-spinner"></span>
+                <span>Cargando imágenes de ${this.escapeHTML(vm)}...</span>
+            </div>
+        `;
+
+        try {
+            const res = await fetch(`/api/images?vm=${encodeURIComponent(vm)}`);
+            if (!res.ok) throw new Error('Error al listar imágenes');
+            const images = await res.json();
+            if (!Array.isArray(images) || images.length === 0) {
+                this.wizImagesGrid.innerHTML = `
+                    <div class="empty-vm-list">
+                        <p>No se encontraron imágenes en esta VM.</p>
+                        <span class="empty-subtext">Crea una con "+ Crear nueva imagen" o selecciona "Aplicaciones" para usar plantillas.</span>
+                    </div>
+                `;
+                return;
+            }
+
+            this.wizImagesGrid.innerHTML = images
+                .map((img) => {
+                    const tag = img.tag || 'latest';
+                    const fullRef = (img.repository && img.repository !== '<none>') ? `${img.repository}:${tag}` : img.id;
+                    const isSelected = this.selectedWizardImage && (this.selectedWizardImage.id === img.id || this.selectedWizardImage.ref === fullRef);
+                    return `
+                        <div class="wiz-image-card ${isSelected ? 'active' : ''}" onclick="window.terminalApp.selectWizardImage('${this.escapeAttr(img.id)}', '${this.escapeAttr(img.repository)}', '${this.escapeAttr(tag)}')">
+                            <div class="wiz-image-card-head">
+                                <span class="wiz-image-card-title">${this.escapeHTML(img.repository || '<none>')}</span>
+                                <span class="wiz-image-card-tag">${this.escapeHTML(tag)}</span>
+                            </div>
+                            <div class="wiz-image-card-meta">
+                                <span>${this.escapeHTML(img.size || '')}</span>
+                                <span>${this.escapeHTML(img.createdAt || '')}</span>
+                            </div>
+                        </div>
+                    `;
+                })
+                .join('');
+        } catch (e) {
+            this.wizImagesGrid.innerHTML = `
+                <div class="empty-vm-list error">
+                    <span>${this.escapeHTML(e.message)}</span>
+                </div>
+            `;
+        }
+    }
+
+    selectWizardImage(id, repo, tag) {
+        const fullRef = (repo && repo !== '<none>') ? `${repo}:${tag || 'latest'}` : id;
+        this.selectedWizardImage = { id, repo, tag, ref: fullRef };
+
+        if (this.wizImagesGrid) {
+            const cards = this.wizImagesGrid.querySelectorAll('.wiz-image-card');
+            cards.forEach((c) => c.classList.remove('active'));
+            if (window.event && window.event.currentTarget) {
+                window.event.currentTarget.classList.add('active');
+            }
+        }
+
+        if (this.wizImageInput) {
+            this.wizImageInput.value = fullRef;
+        }
+        if (this.wizNameInput && !this.wizNameInput.value) {
+            const cleanRepo = (repo || 'app').replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+            const randSuffix = Math.random().toString(36).substring(2, 6);
+            this.wizNameInput.value = `${cleanRepo}-${randSuffix}`;
+        }
+        this.hideWizFeedback();
+    }
+
+    renderWizardCategories() {
+        if (!this.wizCategoriesGrid) return;
+        if (!this.dockerCatalog || this.dockerCatalog.length === 0) {
+            this.wizCategoriesGrid.innerHTML = `
+                <div class="empty-vm-list">
+                    <span class="btn-spinner"></span> Cargando catálogo...
+                </div>
+            `;
+            this.loadDockerCatalog().then(() => this.renderWizardCategories());
+            return;
+        }
+
+        this.wizCategoriesGrid.innerHTML = this.dockerCatalog
+            .map(
+                (cat) => `
+            <div class="wiz-card ${this.selectedCategory === cat.id ? 'selected' : ''}" data-cat="${this.escapeAttr(cat.id)}" onclick="window.terminalApp.selectWizardCategory('${this.escapeAttr(cat.id)}')">
+                <span class="wiz-card-title">${this.escapeHTML(cat.name)}</span>
+                <span class="wiz-card-desc">${this.escapeHTML(cat.description)}</span>
+            </div>
+        `
+            )
+            .join('');
+    }
+
+    selectWizardCategory(catId) {
+        this.selectedCategory = catId;
+        this.renderWizardCategories();
+        this.hideWizFeedback();
+    }
+
+    renderWizardApps(catId) {
+        if (!this.wizAppsGrid) return;
+        const cat = (this.dockerCatalog || []).find((c) => c.id === catId);
+        if (!cat) {
+            this.wizAppsGrid.innerHTML = `<div class="empty-vm-list">Categoría no encontrada.</div>`;
+            return;
+        }
+
+        if (this.wizCategorySelectedTitle) {
+            this.wizCategorySelectedTitle.textContent = `— ${cat.name}`;
+        }
+
+        this.wizAppsGrid.innerHTML = (cat.items || [])
+            .map(
+                (app) => `
+            <div class="wiz-card ${this.selectedTemplate && this.selectedTemplate.id === app.id ? 'selected' : ''}" data-app="${this.escapeAttr(app.id)}" onclick="window.terminalApp.selectWizardTemplate('${this.escapeAttr(app.id)}')">
+                <span class="wiz-card-title">${this.escapeHTML(app.name)}</span>
+                <span class="wiz-card-desc">${this.escapeHTML(app.description)}</span>
+                ${app.defaultImage ? `<span class="wiz-card-image">${this.escapeHTML(app.defaultImage)}</span>` : '<span class="wiz-card-image">Imagen libre</span>'}
+            </div>
+        `
+            )
+            .join('');
+    }
+
+    selectWizardTemplate(appId) {
+        const cat = (this.dockerCatalog || []).find((c) => c.id === this.selectedCategory);
+        if (!cat) return;
+        const tmpl = (cat.items || []).find((t) => t.id === appId);
+        if (!tmpl) return;
+
+        this.selectedTemplate = tmpl;
+        this.renderWizardApps(this.selectedCategory);
+        this.hideWizFeedback();
+    }
+
+    applyWizardTemplate(tmpl) {
+        if (!tmpl) return;
+        if (this.wizNameInput) {
+            const randomSuffix = Math.random().toString(36).substring(2, 6);
+            this.wizNameInput.value = tmpl.id === 'custom' ? `app-${randomSuffix}` : `${tmpl.id}-${randomSuffix}`;
+        }
+        if (this.wizImageInput) {
+            this.wizImageInput.value = tmpl.defaultImage || '';
+        }
+        if (this.wizRestartSelect) {
+            this.wizRestartSelect.value = tmpl.defaultRestart || 'unless-stopped';
+        }
+
+        // Poblar puertos
+        if (this.wizPortsContainer) {
+            this.wizPortsContainer.innerHTML = '';
+            (tmpl.recommendedPorts || []).forEach((p) => {
+                this.addWizPortRow(p.hostPort, p.containerPort, p.protocol);
+            });
+        }
+
+        // Poblar variables de entorno
+        if (this.wizEnvContainer) {
+            this.wizEnvContainer.innerHTML = '';
+            (tmpl.recommendedEnv || []).forEach((e) => {
+                this.addWizEnvRow(e.key, e.value);
+            });
+        }
+
+        // Poblar volúmenes
+        if (this.wizVolumesContainer) {
+            this.wizVolumesContainer.innerHTML = '';
+            (tmpl.recommendedVolumes || []).forEach((v) => {
+                this.addWizVolumeRow(v.hostPath, v.containerPath);
+            });
+        }
+    }
+
+    addWizPortRow(hostPort = '', containerPort = '', proto = 'tcp') {
+        if (!this.wizPortsContainer) return;
+        const row = document.createElement('div');
+        row.className = 'dynamic-row wiz-port-row';
+        row.innerHTML = `
+            <input type="number" class="port-host" placeholder="Host" value="${this.escapeAttr(hostPort)}" min="1" max="65535" style="flex:1;" />
+            <span style="color:var(--text-muted);">&rarr;</span>
+            <input type="number" class="port-container" placeholder="Contenedor" value="${this.escapeAttr(containerPort)}" min="1" max="65535" style="flex:1;" />
+            <select class="port-proto" style="width:75px;">
+                <option value="tcp" ${proto === 'tcp' ? 'selected' : ''}>TCP</option>
+                <option value="udp" ${proto === 'udp' ? 'selected' : ''}>UDP</option>
+            </select>
+            <button type="button" class="btn-remove-row" title="Eliminar fila">&times;</button>
+        `;
+        row.querySelector('.btn-remove-row').addEventListener('click', () => row.remove());
+        this.wizPortsContainer.appendChild(row);
+    }
+
+    addWizEnvRow(key = '', value = '') {
+        if (!this.wizEnvContainer) return;
+        const row = document.createElement('div');
+        row.className = 'dynamic-row wiz-env-row';
+        row.innerHTML = `
+            <input type="text" class="env-key" placeholder="CLAVE" value="${this.escapeAttr(key)}" style="flex:1;" />
+            <span style="color:var(--text-muted);">=</span>
+            <input type="text" class="env-val" placeholder="Valor" value="${this.escapeAttr(value)}" style="flex:1.5;" />
+            <button type="button" class="btn-remove-row" title="Eliminar fila">&times;</button>
+        `;
+        row.querySelector('.btn-remove-row').addEventListener('click', () => row.remove());
+        this.wizEnvContainer.appendChild(row);
+    }
+
+    addWizVolumeRow(hostPath = '', containerPath = '') {
+        if (!this.wizVolumesContainer) return;
+        const row = document.createElement('div');
+        row.className = 'dynamic-row wiz-vol-row';
+        row.innerHTML = `
+            <input type="text" class="vol-host" placeholder="Ruta en VM" value="${this.escapeAttr(hostPath)}" style="flex:1.2;" />
+            <span style="color:var(--text-muted);">&rarr;</span>
+            <input type="text" class="vol-container" placeholder="Ruta en contenedor" value="${this.escapeAttr(containerPath)}" style="flex:1.2;" />
+            <button type="button" class="btn-remove-row" title="Eliminar fila">&times;</button>
+        `;
+        row.querySelector('.btn-remove-row').addEventListener('click', () => row.remove());
+        this.wizVolumesContainer.appendChild(row);
+    }
+
+    goToWizardStep(step) {
+        if (step < 1 || step > 4) return;
+
+        // Validaciones al avanzar
+        if (step > this.currentWizardStep) {
+            if (this.currentWizardStep === 1) {
+                if (!this.wizVmSelect || !this.wizVmSelect.value) {
+                    this.showWizFeedback('Selecciona una máquina virtual.', 'error');
+                    return;
+                }
+                if (this.wizardSource === 'images') {
+                    const imgVal = this.wizImageInput ? this.wizImageInput.value.trim() : '';
+                    if (!this.selectedWizardImage && !imgVal) {
+                        this.showWizFeedback('Selecciona una imagen de la lista o crea una nueva.', 'error');
+                        return;
+                    }
+                    step = 3;
+                } else {
+                    if (!this.selectedCategory) {
+                        this.showWizFeedback('Selecciona una categoría.', 'error');
+                        return;
+                    }
+                    this.renderWizardApps(this.selectedCategory);
+                }
+            } else if (this.currentWizardStep === 2) {
+                if (!this.selectedTemplate) {
+                    this.showWizFeedback('Selecciona una plantilla.', 'error');
+                    return;
+                }
+                this.applyWizardTemplate(this.selectedTemplate);
+            } else if (this.currentWizardStep === 3) {
+                const name = this.wizNameInput ? this.wizNameInput.value.trim() : '';
+                const image = this.wizImageInput ? this.wizImageInput.value.trim() : '';
+                if (!name) {
+                    this.showWizFeedback('El nombre es obligatorio.', 'error');
+                    return;
+                }
+                if (!image) {
+                    this.showWizFeedback('La imagen es obligatoria.', 'error');
+                    return;
+                }
+                this.buildWizardSummary();
+            }
+        } else if (step < this.currentWizardStep) {
+            if (this.currentWizardStep === 3 && this.wizardSource === 'images') {
+                step = 1;
+            }
+        }
+
+        this.hideWizFeedback();
+        this.currentWizardStep = step;
+
+        // Actualizar indicadores de pasos
+        this.wizStepPills.forEach((p) => {
+            const pStep = parseInt(p.dataset.step, 10);
+            p.classList.toggle('active', pStep === step);
+            p.classList.toggle('completed', pStep < step);
+        });
+
+        // Actualizar contenido visible
+        this.wizStepContents.forEach((c, idx) => {
+            c.classList.toggle('active', idx + 1 === step);
+        });
+
+        // Actualizar botones de navegación
+        if (this.wizPrevBtn) this.wizPrevBtn.classList.toggle('hidden', step === 1);
+        if (this.wizNextBtn) this.wizNextBtn.classList.toggle('hidden', step === 4);
+        if (this.wizSubmitBtn) this.wizSubmitBtn.classList.toggle('hidden', step !== 4);
+    }
+
+    buildWizardSummary() {
+        if (!this.wizSummaryCard) return;
+        const vm = this.wizVmSelect ? this.wizVmSelect.value : '';
+        const name = this.wizNameInput ? this.wizNameInput.value.trim() : '';
+        const image = this.wizImageInput ? this.wizImageInput.value.trim() : '';
+        const restart = this.wizRestartSelect ? this.wizRestartSelect.value : 'unless-stopped';
+
+        // Recopilar puertos
+        const portRows = Array.from(document.querySelectorAll('.wiz-port-row'));
+        const ports = portRows
+            .map((r) => {
+                const hp = r.querySelector('.port-host').value.trim();
+                const cp = r.querySelector('.port-container').value.trim();
+                const proto = r.querySelector('.port-proto').value;
+                if (hp && cp) return `${hp}:${cp}/${proto}`;
+                return null;
+            })
+            .filter(Boolean);
+
+        // Recopilar variables
+        const envRows = Array.from(document.querySelectorAll('.wiz-env-row'));
+        const envs = envRows
+            .map((r) => {
+                const k = r.querySelector('.env-key').value.trim();
+                const v = r.querySelector('.env-val').value.trim();
+                if (k) return `${k}=${v}`;
+                return null;
+            })
+            .filter(Boolean);
+
+        // Recopilar volúmenes
+        const volRows = Array.from(document.querySelectorAll('.wiz-vol-row'));
+        const vols = volRows
+            .map((r) => {
+                const h = r.querySelector('.vol-host').value.trim();
+                const c = r.querySelector('.vol-container').value.trim();
+                if (h && c) return `${h} &rarr; ${c}`;
+                return null;
+            })
+            .filter(Boolean);
+
+        this.wizSummaryCard.innerHTML = `
+            <div class="summary-row">
+                <span class="summary-label">Máquina:</span>
+                <span class="summary-val highlight">${this.escapeHTML(vm)}</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Nombre:</span>
+                <span class="summary-val">${this.escapeHTML(name)}</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Imagen:</span>
+                <span class="summary-val">${this.escapeHTML(image)}</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Reinicio:</span>
+                <span class="summary-val">${this.escapeHTML(restart)}</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Puertos:</span>
+                <span class="summary-val">${ports.length > 0 ? this.escapeHTML(ports.join(', ')) : 'Ninguno'}</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Variables:</span>
+                <span class="summary-val">${envs.length > 0 ? this.escapeHTML(envs.join(', ')) : 'Ninguna'}</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Volúmenes:</span>
+                <span class="summary-val">${vols.length > 0 ? vols.join(', ') : 'Ninguno'}</span>
+            </div>
+        `;
+    }
+
+    async submitCreateContainer() {
+        const vmName = this.wizVmSelect ? this.wizVmSelect.value.trim() : '';
+        const name = this.wizNameInput ? this.wizNameInput.value.trim() : '';
+        const image = this.wizImageInput ? this.wizImageInput.value.trim() : '';
+        const restartPolicy = this.wizRestartSelect ? this.wizRestartSelect.value : 'unless-stopped';
+
+        if (!vmName || !name || !image) {
+            this.showWizFeedback('Faltan campos obligatorios para crear el contenedor.', 'error');
+            return;
+        }
+
+        const ports = [];
+        Array.from(document.querySelectorAll('.wiz-port-row')).forEach((r) => {
+            const hp = parseInt(r.querySelector('.port-host').value, 10);
+            const cp = parseInt(r.querySelector('.port-container').value, 10);
+            const proto = r.querySelector('.port-proto').value || 'tcp';
+            if (hp && cp) {
+                ports.push({ hostPort: hp, containerPort: cp, protocol: proto });
+            }
+        });
+
+        const env = [];
+        Array.from(document.querySelectorAll('.wiz-env-row')).forEach((r) => {
+            const k = r.querySelector('.env-key').value.trim();
+            const v = r.querySelector('.env-val').value.trim();
+            if (k) {
+                env.push({ key: k, value: v });
+            }
+        });
+
+        const volumes = [];
+        Array.from(document.querySelectorAll('.wiz-vol-row')).forEach((r) => {
+            const h = r.querySelector('.vol-host').value.trim();
+            const c = r.querySelector('.vol-container').value.trim();
+            if (h && c) {
+                volumes.push({ hostPath: h, containerPath: c });
+            }
+        });
+
+        const payload = {
+            vmName,
+            name,
+            image,
+            restartPolicy,
+            ports,
+            env,
+            volumes,
+        };
+
+        if (this.wizSubmitBtn) {
+            this.wizSubmitBtn.disabled = true;
+            const spinner = this.wizSubmitBtn.querySelector('.btn-spinner');
+            if (spinner) spinner.classList.remove('hidden');
+        }
+
+        try {
+            const res = await fetch('/api/containers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (res.ok) {
+                this.closeContainerWizard();
+                if (this.containersVmFilter) {
+                    this.containersVmFilter.value = vmName;
+                }
+                this.loadContainers(vmName);
+                this.appendInfoLine(`[Contenedor '${name}' desplegado exitosamente en VM '${vmName}']`);
+            } else {
+                const text = await res.text();
+                this.showWizFeedback(`Error al crear contenedor: ${this.parseApiError(text)}`, 'error');
+            }
+        } catch (e) {
+            this.showWizFeedback(`Error de conexión al crear contenedor: ${e.message}`, 'error');
+        } finally {
+            if (this.wizSubmitBtn) {
+                this.wizSubmitBtn.disabled = false;
+                const spinner = this.wizSubmitBtn.querySelector('.btn-spinner');
+                if (spinner) spinner.classList.add('hidden');
+            }
+        }
+    }
+
+    showWizFeedback(msg, type = 'error') {
+        if (!this.wizFeedback) return;
+        this.wizFeedback.className = `modal-feedback ${type}`;
+        this.wizFeedback.textContent = msg;
+        this.wizFeedback.classList.remove('hidden');
+    }
+
+    hideWizFeedback() {
+        if (!this.wizFeedback) return;
+        this.wizFeedback.className = 'modal-feedback hidden';
+        this.wizFeedback.textContent = '';
     }
 
     escapeAttr(str) {

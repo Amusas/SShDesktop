@@ -7,12 +7,33 @@ class TerminalWebSocket {
         this.reconnectDelay = 2000;
         this.maxReconnectDelay = 30000;
         this.shouldReconnect = true;
+        this.reconnectTimer = null;
         this.connectionParams = {};
     }
 
     connect(params) {
+        // Limpiar cualquier intento previo de reconexión programada
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+
         if (params) {
             this.connectionParams = { ...params };
+        }
+
+        // Si ya existía un socket previo, desvincular todos sus manejadores y cerrarlo
+        // para evitar que sus eventos tardíos ('onclose', 'onmessage') dupliquen tráfico
+        if (this.ws) {
+            const oldSocket = this.ws;
+            oldSocket.onopen = null;
+            oldSocket.onmessage = null;
+            oldSocket.onerror = null;
+            oldSocket.onclose = null;
+            try {
+                oldSocket.close();
+            } catch (e) {}
+            this.ws = null;
         }
 
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -40,7 +61,11 @@ class TerminalWebSocket {
             return;
         }
 
-        this.ws.onopen = () => {
+        const currentSocket = this.ws;
+
+        currentSocket.onopen = () => {
+            if (this.ws !== currentSocket) return;
+
             this.reconnectDelay = 2000;
             if (this.callbacks.onStatusChange) {
                 this.callbacks.onStatusChange('connected');
@@ -50,13 +75,18 @@ class TerminalWebSocket {
             }
         };
 
-        this.ws.onmessage = (event) => {
+        currentSocket.onmessage = (event) => {
+            if (this.ws !== currentSocket) return;
+
             if (this.callbacks.onMessage) {
                 this.callbacks.onMessage(event.data);
             }
         };
 
-        this.ws.onclose = () => {
+        currentSocket.onclose = () => {
+            if (this.ws !== currentSocket) return;
+            this.ws = null;
+
             if (this.callbacks.onStatusChange) {
                 this.callbacks.onStatusChange('disconnected');
             }
@@ -64,12 +94,15 @@ class TerminalWebSocket {
                 this.callbacks.onClose();
             }
             if (this.shouldReconnect) {
-                setTimeout(() => this.connect(), this.reconnectDelay);
+                if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = setTimeout(() => this.connect(), this.reconnectDelay);
                 this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
             }
         };
 
-        this.ws.onerror = () => {
+        currentSocket.onerror = () => {
+            if (this.ws !== currentSocket) return;
+
             if (this.callbacks.onStatusChange) {
                 this.callbacks.onStatusChange('disconnected');
             }
@@ -77,10 +110,9 @@ class TerminalWebSocket {
     }
 
     reconnectWith(params) {
-        this.shouldReconnect = false;
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
         }
         this.shouldReconnect = true;
         this.reconnectDelay = 2000;
@@ -101,8 +133,18 @@ class TerminalWebSocket {
 
     disconnect() {
         this.shouldReconnect = false;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
         if (this.ws) {
-            this.ws.close();
+            this.ws.onopen = null;
+            this.ws.onmessage = null;
+            this.ws.onerror = null;
+            this.ws.onclose = null;
+            try {
+                this.ws.close();
+            } catch (e) {}
             this.ws = null;
         }
     }

@@ -15,16 +15,20 @@ const AnsiParser = (() => {
     ];
 
     // Comandos de sistema operativo (títulos de ventana: \x1b]0;titulo\x07)
-    const OSC_REGEX = /\x1b\](?:[0-9;]*[^\x07\x1b\r\n]*)?(?:\x07|\x1b\\|\r|\n)?/g;
+    const OSC_REGEX = /\x1b\][^\x07\x1b\r\n]*(?:\x07|\x1b\\)?/g;
 
-    // Secuencias de modo privado DEC (control de cursor: \x1b[?25h, \x1b[?25l, bracketed paste \x1b[?2004h)
-    const DEC_REGEX = /\x1b\[\?[0-9;]*[a-zA-Z]/g;
+    // Secuencias de control de dispositivo (DCS: \x1bP...\x07 o \x1bP...\x1b\)
+    const DCS_REGEX = /\x1bP[^\x07\x1b\r\n]*(?:\x07|\x1b\\)?/g;
 
     // Secuencias de control CSI que no sean estilo/color (movimiento de cursor, borrado de línea, etc.)
-    const NON_SGR_CSI_REGEX = /\x1b\[[0-9;]*[A-LN-Za-ln-z]/g;
+    // Incluye modificadores privados (?, >, =) y cualquier caracter final entre @ y ~ excepto 'm'
+    const NON_SGR_CSI_REGEX = /\x1b\[[\x30-\x3f]*[\x20-\x2f]*[@-ln-~]/g;
 
-    // Patrón global para remover todas las secuencias ANSI (OSC y CSI primero, luego escapes Fe sin romper corchetes)
-    const ALL_ANSI_REGEX = /\x1b(?:\](?:[0-9;]*[^\x07\x1b\r\n]*)?(?:\x07|\x1b\\)?|\[[0-?]*[ -/]*[@-~]|[@-XZ\\_])/g;
+    // Secuencias de escape de 2 bytes, modos de teclado (DECPNM \x1b>, DECKPAM \x1b=), selección de fuentes, etc.
+    const OTHER_ESCAPES_REGEX = /\x1b(?:[\^_X][^\x07\x1b\r\n]*(?:\x07|\x1b\\)?|[()#%*+\-\/][@-~]|[0-9<=>A-Za-z])/g;
+
+    // Patrón global para remover todas las secuencias ANSI (para cálculos de texto plano)
+    const ALL_ANSI_REGEX = /\x1b(?:\][^\x07\x1b\r\n]*(?:\x07|\x1b\\)?|P[^\x07\x1b\r\n]*(?:\x07|\x1b\\)?|\[[\x30-\x3f]*[\x20-\x2f]*[@-~]|[\^_X][^\x07\x1b\r\n]*(?:\x07|\x1b\\)?|[()#%*+\-\/][@-~]|[0-9<=>A-Za-z])/g;
 
     function parseSGR(params, classes) {
         if (!params || params === '0') {
@@ -75,9 +79,12 @@ const AnsiParser = (() => {
 
     function stripAnsi(text) {
         if (!text) return '';
-        let s = text.replace(ALL_ANSI_REGEX, '').replace(/\x07/g, '');
+        let s = text.replace(ALL_ANSI_REGEX, '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+        s = s.replace(/^[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:[^\r\n$#>]*\s+(?=[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:)/gm, '');
+        s = s.replace(/(?:^|\r|\n)0;[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:[^\r\n]*(?:\x07|\r|\n|$)/g, '');
         s = s.replace(/0;[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:[^$#\r\n]*(?=[a-zA-Z0-9_.-]+@)/g, '');
         s = s.replace(/^0;[a-zA-Z0-9_.-]+@[^:\r\n]+:[^\r\n~]*~/g, '');
+        s = s.replace(/\[\d+d/g, ''); // Limpiar artefactos residuales de cursor VPA si ESC se fragmentó
         return s;
     }
 
@@ -103,26 +110,137 @@ const AnsiParser = (() => {
         if (!text) return '';
         let clean = text
             .replace(OSC_REGEX, '')
-            .replace(DEC_REGEX, '')
+            .replace(DCS_REGEX, '')
             .replace(NON_SGR_CSI_REGEX, '')
-            .replace(/\x07/g, '');
+            .replace(OTHER_ESCAPES_REGEX, '')
+            .replace(/[\x00-\x07\x0b\x0e-\x1a\x1c-\x1f\x7f]/g, '');
 
+        // Limpieza de títulos de terminal filtrados de OpenSSH o fragmentos de prompt duplicados
+        clean = clean.replace(/^[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:[^\r\n$#>]*\s+(?=[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:)/gm, '');
+        clean = clean.replace(/(?:^|\r|\n)0;[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:[^\r\n]*(?:\x07|\r|\n|$)/g, '');
         clean = clean.replace(/0;[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:[^$#\r\n]*(?=[a-zA-Z0-9_.-]+@)/g, '');
         clean = clean.replace(/^0;[a-zA-Z0-9_.-]+@[^:\r\n]+:[^\r\n~]*~/g, '');
 
-        clean = clean.replace(/PPS\s+([A-Za-z]:\\)/g, 'PS $1');
-        clean = clean.replace(/^P\s+PS\s+/gm, 'PS ');
-        clean = clean.replace(/^P\s*$/gm, '');
+        // Limpieza de artefactos residuales de ConPTY (letras 'P' y escapes fragmentados)
+        clean = clean.replace(/\[\d+d/g, ''); // Artefactos de cursor como [103d
+        clean = clean.replace(/PPS\s+([A-Za-z]:[\\/])/g, 'PS $1');
+        clean = clean.replace(/^P(?=PS\s|[a-zA-Z]:[\\/]|dir|ls|cd)/gm, '');
+        clean = clean.replace(/\bP(dir|cd|ls|cls|clear|echo)\b/g, '$1');
         clean = clean.replace(/^>>\s*$/gm, '');
         clean = clean.replace(/^>\s*$/gm, '');
+        clean = clean.replace(/^[>P\s]+$/gm, '');
+
+        // Cualquier caracter ESC solitario restante que no pertenecía a un SGR válido
+        clean = clean.replace(/\x1b(?!\[[0-9;]*m)/g, '');
+
         return clean;
+    }
+
+    // Formatear líneas de resultados que contienen rutas de directorio (CMD y PowerShell)
+    // Ejemplo: "    Directorio: C:\Users\andres.HP245G7" o " Directorio de C:\Users\andres.HP245G7"
+    function formatDirectoryResultLine(text) {
+        if (!text) return null;
+        const plain = stripAnsi(text);
+
+        // PowerShell: "    Directorio: C:\Users\..." o "Directorio: C:\..." o "Directory: C:\..."
+        const psDirMatch = plain.match(/^(\s*(?:Directorio|Directory):\s*)([a-zA-Z]:[\\/][^\r\n]*|\S+.*)$/i);
+        if (psDirMatch) {
+            const prefix = psDirMatch[1];
+            const pathPart = psDirMatch[2].trim();
+            return `<span class="result-dir-label">${escapeHTML(prefix, [])}</span><span class="result-path-highlight">${escapeHTML(pathPart, [])}</span>`;
+        }
+
+        // Windows CMD: " Directorio de C:\Users\..." o "Directory of C:\..."
+        const cmdDirMatch = plain.match(/^(\s*(?:Directorio de|Directory of)\s*)([a-zA-Z]:[\\/][^\r\n]*|\S+.*)$/i);
+        if (cmdDirMatch) {
+            const prefix = cmdDirMatch[1];
+            const pathPart = cmdDirMatch[2].trim();
+            return `<span class="result-dir-label">${escapeHTML(prefix, [])}</span><span class="result-path-highlight">${escapeHTML(pathPart, [])}</span>`;
+        }
+
+        return null;
+    }
+
+    // Intenta formatear una línea que contiene prompt y/o comando separando usuario, ruta y comando
+    function formatPromptLine(text) {
+        if (!text) return null;
+        const plain = stripAnsi(text);
+
+        // 1. Windows CMD: "hp 245 ryzen 3@HP245G7 C:\path>command" o "C:\path>command"
+        const cmdMatch = plain.match(/^(\s*)(?:([^\r\n>]+?)\s+)?([a-zA-Z]:[\\/][^>:\r\n*?"<>|]*)(>)\s*(.*)$/);
+        if (cmdMatch) {
+            const indent = cmdMatch[1] || '';
+            const userPart = cmdMatch[2] ? cmdMatch[2].trim() : '';
+            const pathPart = cmdMatch[3].trim();
+            const charPart = cmdMatch[4];
+            const cmdPart = cmdMatch[5] ? cmdMatch[5].trim() : '';
+
+            let html = indent;
+            if (userPart) {
+                html += `<span class="prompt-user">${escapeHTML(userPart, [])}</span> `;
+            }
+            html += `<span class="prompt-path-highlight">${escapeHTML(pathPart, [])}</span>`;
+            html += `<span class="prompt-char">${escapeHTML(charPart, [])}</span>`;
+
+            if (cmdPart) {
+                html += ` <span class="line-command">${escapeHTML(cmdPart, [])}</span>`;
+            }
+            return html;
+        }
+
+        // 2. PowerShell: "PS C:\path> command" o "PS C:\path>"
+        const psMatch = plain.match(/^(\s*)(PS\s+)([a-zA-Z]:[\\/][^>:\r\n*?"<>|]*)(>)\s*(.*)$/);
+        if (psMatch) {
+            const indent = psMatch[1] || '';
+            const psLabel = psMatch[2];
+            const pathPart = psMatch[3].trim();
+            const charPart = psMatch[4];
+            const cmdPart = psMatch[5] ? psMatch[5].trim() : '';
+
+            let html = indent;
+            html += `<span class="prompt-ps">${escapeHTML(psLabel, [])}</span>`;
+            html += `<span class="prompt-path-highlight">${escapeHTML(pathPart, [])}</span>`;
+            html += `<span class="prompt-char">${escapeHTML(charPart, [])}</span>`;
+
+            if (cmdPart) {
+                html += ` <span class="line-command">${escapeHTML(cmdPart, [])}</span>`;
+            }
+            return html;
+        }
+
+        // 3. Unix / Linux: "user@host:~$ command" o "user@host:/var/log# command"
+        // Maneja opcionalmente si se filtró un prefijo repetido del título de ventana (ej. "user@host:~ user@host:~$")
+        const unixMatch = plain.match(/^(\s*)(?:[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:[^\r\n$#>]*\s+)?([a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+)(:)([^:$#\r\n\s]+)([$#])\s*(.*)$/);
+        if (unixMatch) {
+            const indent = unixMatch[1] || '';
+            const userHost = unixMatch[2];
+            const sep = unixMatch[3];
+            const pathPart = unixMatch[4];
+            const charPart = unixMatch[5];
+            const cmdPart = unixMatch[6] ? unixMatch[6].trim() : '';
+
+            let html = indent;
+            html += `<span class="prompt-user">${escapeHTML(userHost, [])}</span>`;
+            html += `<span class="prompt-sep">${escapeHTML(sep, [])}</span>`;
+            html += `<span class="prompt-path-highlight">${escapeHTML(pathPart, [])}</span>`;
+            html += `<span class="prompt-char">${escapeHTML(charPart, [])}</span>`;
+
+            if (cmdPart) {
+                html += ` <span class="line-command">${escapeHTML(cmdPart, [])}</span>`;
+            }
+            return html;
+        }
+
+        return null;
     }
 
     function renderPromptAndCommand(promptText, commandText) {
         const p = promptText ? promptText.trim() : '';
         const c = commandText ? commandText.trim() : '';
-        const formatted = formatPromptLine(p + (c ? ' ' + c : ''));
+        const combined = p + (c ? ' ' + c : '');
+        const formatted = formatPromptLine(combined);
         if (formatted) return formatted;
+
         let html = '';
         if (p) {
             html += `<span class="line-prompt">${escapeHTML(p, [])}</span>`;
@@ -133,63 +251,17 @@ const AnsiParser = (() => {
         return html;
     }
 
-    // Intenta formatear una línea que contiene prompt y/o comando
-    function formatPromptLine(text) {
-        if (!text) return null;
-        const plain = stripAnsi(text);
-
-        // Windows CMD: "hp 245 ryzen 3@HP245G7 C:\path>command" o "C:\path>command"
-        const cmdMatch = plain.match(/^(\s*(?:[^\r\n>]*\s+)?[a-zA-Z]:[\\/][^>:\r\n*?"<>|]*>)\s*(.*)$/);
-        if (cmdMatch) {
-            const promptPart = cmdMatch[1];
-            const cmdPart = cmdMatch[2];
-            if (cmdPart && cmdPart.trim()) {
-                return `<span class="line-prompt">${escapeHTML(promptPart, [])}</span> <span class="line-command">${escapeHTML(cmdPart.trim(), [])}</span>`;
-            } else {
-                return `<span class="line-prompt">${escapeHTML(promptPart, [])}</span>`;
-            }
-        }
-
-        // PowerShell: "PS C:\path> command"
-        const psMatch = plain.match(/^(\s*PS\s+[a-zA-Z]:[\\/][^>:\r\n*?"<>|]*>)\s*(.*)$/);
-        if (psMatch) {
-            const promptPart = psMatch[1];
-            const cmdPart = psMatch[2];
-            if (cmdPart && cmdPart.trim()) {
-                return `<span class="line-prompt">${escapeHTML(promptPart, [])}</span> <span class="line-command">${escapeHTML(cmdPart.trim(), [])}</span>`;
-            } else {
-                return `<span class="line-prompt">${escapeHTML(promptPart, [])}</span>`;
-            }
-        }
-
-        // Unix / Linux: "user@host:~$ command"
-        const unixMatch = plain.match(/^(\s*(?:[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:)?(?:~|[\\/][^$#\r\n]*)[$#])\s*(.*)$/);
-        if (unixMatch) {
-            const promptPart = unixMatch[1];
-            const cmdPart = unixMatch[2];
-            const sub = promptPart.match(/^(\s*)([a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+)(:)(~|[\\/][^$#\r\n]*)([$#])\s*$/);
-            let promptHtml = '';
-            if (sub) {
-                promptHtml = `${sub[1]}<span class="prompt-user">${escapeHTML(sub[2], [])}</span><span class="prompt-sep">${escapeHTML(sub[3], [])}</span><span class="prompt-dir">${escapeHTML(sub[4], [])}</span><span class="prompt-char">${escapeHTML(sub[5], [])}</span>`;
-            } else {
-                promptHtml = `<span class="line-prompt">${escapeHTML(promptPart, [])}</span>`;
-            }
-
-            if (cmdPart && cmdPart.trim()) {
-                return `${promptHtml} <span class="line-command">${escapeHTML(cmdPart.trim(), [])}</span>`;
-            } else {
-                return promptHtml;
-            }
-        }
-
-        return null;
-    }
-
     function renderToHTML(text, activeClasses) {
-        // Verificar si la línea completa corresponde a una línea de prompt/comando
+        // 1. Verificar si la línea completa corresponde a una línea de prompt/comando
         const promptFormatted = formatPromptLine(text);
         if (promptFormatted) {
             return { html: promptFormatted, classes: [] };
+        }
+
+        // 2. Verificar si es una línea de resultado con ruta de directorio (Directorio: o Directorio de)
+        const dirFormatted = formatDirectoryResultLine(text);
+        if (dirFormatted) {
+            return { html: dirFormatted, classes: [] };
         }
 
         const cleanText = sanitizeText(text);
@@ -230,21 +302,21 @@ const AnsiParser = (() => {
         return `<span class="${classes.join(' ')}">${escaped}</span>`;
     }
 
-    // Extraer ruta del prompt sin retroceso catastrófico
+    // Extraer ruta del prompt de forma precisa
     function extractPath(text) {
         if (!text) return null;
         const plain = stripAnsi(text);
 
-        // Prompt de Windows cmd: reconoce "C:\>", "C:\path>", "andres@HP245G7 C:\>", etc.
-        const winMatch = plain.match(/([a-zA-Z]:[\\/][^>:\r\n*?"<>|]*)\s*>/);
-        if (winMatch && winMatch[1]) {
-            return winMatch[1].trim();
-        }
-
-        // Prompt de PowerShell: "PS C:\> " o "PS C:\path> "
+        // Prompt de PowerShell: "PS C:\path> "
         const psMatch = plain.match(/PS\s+([a-zA-Z]:[\\/][^>:\r\n*?"<>|]*)\s*>/);
         if (psMatch && psMatch[1]) {
             return psMatch[1].trim();
+        }
+
+        // Prompt de Windows cmd: "C:\path>" o "usuario@host C:\path>"
+        const winMatch = plain.match(/([a-zA-Z]:[\\/][^>:\r\n*?"<>|]*)\s*>/);
+        if (winMatch && winMatch[1]) {
+            return winMatch[1].trim();
         }
 
         // Prompt de Unix/Linux: "usuario@servidor:/ruta$" o "usuario@servidor:~$ "
@@ -263,6 +335,8 @@ const AnsiParser = (() => {
         sanitizeText,
         renderToHTML,
         renderPromptAndCommand,
+        formatPromptLine,
+        formatDirectoryResultLine,
         extractPath,
     };
 })();

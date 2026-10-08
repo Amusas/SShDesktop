@@ -537,6 +537,7 @@ if ! id -u "$TARGET_USER" >/dev/null 2>&1; then
 fi
 
 sudo usermod -aG sudo "$TARGET_USER" 2>/dev/null || sudo usermod -aG wheel "$TARGET_USER" 2>/dev/null || true
+sudo usermod -aG docker "$TARGET_USER" 2>/dev/null || true
 
 if [ -d /etc/sudoers.d ]; then
     echo "$TARGET_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee "/etc/sudoers.d/99-$TARGET_USER" >/dev/null
@@ -558,6 +559,9 @@ sudo rm -f "/etc/sudoers.d/99-bootstrap" 2>/dev/null || true
 BOOTSTRAP_HOME=$(eval echo "~$BOOTSTRAP_USER")
 sudo rm -f "$BOOTSTRAP_HOME/.ssh/authorized_keys" 2>/dev/null || true
 sudo passwd -l "$BOOTSTRAP_USER" 2>/dev/null || true
+
+# Reiniciar servicio docker para aplicar grupos (si aplica)
+sudo systemctl restart docker 2>/dev/null || true
 `, targetUser, escapedPubKey, bootstrapUser)
 
 	session, err := guestClient.NewSession()

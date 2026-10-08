@@ -4,15 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SSH Terminal</title>
-    <link rel="stylesheet" href="/css/style.css?v=15">
+    <link rel="stylesheet" href="/css/style.css?v=21">
 </head>
 <body>
     <div id="app">
         <header id="header">
             <div class="header-left">
-                <button id="menu-btn" class="header-icon-btn" title="Abrir menú lateral" aria-label="Abrir menú lateral">
+                <button id="menu-btn" class="header-icon-btn" title="Configuración y Gestión" aria-label="Configuración y Gestión">
                     <svg class="icon-menu" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
-                        <path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round" />
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
                 </button>
 
@@ -54,8 +55,7 @@
     <aside id="app-sidebar" class="app-sidebar hidden">
         <div class="sidebar-head">
             <div class="sidebar-title">
-                <span class="sidebar-kicker">Menú de Navegación</span>
-                <span class="sidebar-label">SSH Web Terminal</span>
+                <span class="sidebar-label">SSH Terminal</span>
             </div>
             <button id="close-sidebar-btn" class="sidebar-close" aria-label="Cerrar menú">&times;</button>
         </div>
@@ -76,6 +76,13 @@
                 </svg>
                 <span>Máquinas Virtuales</span>
             </button>
+            <button class="sidebar-link" data-menu="docker" id="docker-nav-btn">
+                <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                </svg>
+                <span>Docker</span>
+            </button>
             <button class="sidebar-link" data-menu="keys">
                 <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
                     <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
@@ -83,6 +90,25 @@
                 <span>Llaves SSH</span>
             </button>
         </nav>
+
+        <!-- Subnavegación de Docker: Contenedores e Imágenes -->
+        <div id="docker-subnav" class="docker-subnav hidden">
+            <button class="docker-subnav-btn active" data-subview="containers" id="docker-subnav-containers">
+                <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                </svg>
+                <span>Contenedores</span>
+            </button>
+            <button class="docker-subnav-btn" data-subview="images" id="docker-subnav-images">
+                <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+                <span>Imágenes</span>
+            </button>
+        </div>
 
         <!-- Vista Sidebar: Hosts -->
         <section id="sidebar-config-view" class="sidebar-view active">
@@ -105,7 +131,6 @@
         <section id="sidebar-vms-view" class="sidebar-view">
             <div class="sidebar-view-header">
                 <div class="sidebar-view-title">Máquinas Virtuales</div>
-                <p class="sidebar-view-desc">Crea y administra máquinas virtuales en el servidor remoto vía SSH.</p>
             </div>
 
             <div class="vms-toolbar">
@@ -114,7 +139,7 @@
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
-                    <span>Crear MV</span>
+                    <span>Nueva MV</span>
                 </button>
                 <button id="refresh-vms-btn" class="btn btn-secondary btn-icon" title="Refrescar lista">
                     <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
@@ -133,11 +158,11 @@
                 <form id="vm-form" class="vm-form">
                     <div class="form-field">
                         <label for="vm-name">Nombre de la MV <span class="req">*</span></label>
-                        <input type="text" id="vm-name" name="name" placeholder="ej. otraMV" required autocomplete="off" />
+                        <input type="text" id="vm-name" name="name" placeholder="ej. mi-servidor" required autocomplete="off" />
                     </div>
 
                     <div class="form-field">
-                        <label for="vm-template">Plantilla Base (Disco Multiattach) <span class="req">*</span></label>
+                        <label for="vm-template">Plantilla base <span class="req">*</span></label>
                         <select id="vm-template" name="templateId" required>
                             <option value="" disabled selected>Cargando plantillas disponibles...</option>
                         </select>
@@ -158,7 +183,7 @@
                         <button type="button" id="cancel-vm-form" class="btn btn-secondary">Cancelar</button>
                         <button type="submit" id="vm-submit" class="btn btn-primary">
                             <span class="btn-spinner hidden" aria-hidden="true"></span>
-                            <span class="btn-text">Crear Máquina</span>
+                            <span class="btn-text">Crear máquina</span>
                         </button>
                     </div>
                 </form>
@@ -170,11 +195,81 @@
             </div>
         </section>
 
+        <!-- Vista Sidebar: Contenedores -->
+        <section id="sidebar-containers-view" class="sidebar-view">
+            <div class="sidebar-view-header">
+                <div class="sidebar-view-title">Contenedores Docker</div>
+            </div>
+
+            <div class="containers-toolbar">
+                <div class="containers-filter-wrap">
+                    <label for="containers-vm-filter" class="containers-filter-label">Máquina Virtual:</label>
+                    <select id="containers-vm-filter" class="containers-filter-select">
+                        <option value="">Todas las máquinas virtuales</option>
+                    </select>
+                </div>
+
+                <div class="containers-toolbar-actions">
+                    <span id="docker-status-pill" class="docker-status-pill hidden">Docker Activo</span>
+                    <button id="open-create-container-btn" class="btn btn-primary">
+                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        <span>Nuevo contenedor</span>
+                    </button>
+                    <button id="refresh-containers-btn" class="btn btn-secondary btn-icon" title="Refrescar lista de contenedores">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="vm-list-wrapper">
+                <div id="containers-list" class="containers-list"></div>
+            </div>
+        </section>
+
+        <!-- Vista Sidebar: Imágenes Docker -->
+        <section id="sidebar-images-view" class="sidebar-view">
+            <div class="sidebar-view-header">
+                <div class="sidebar-view-title">Imágenes Docker</div>
+            </div>
+
+            <div class="containers-toolbar">
+                <div class="containers-filter-wrap">
+                    <label for="images-vm-filter" class="containers-filter-label">Máquina Virtual:</label>
+                    <select id="images-vm-filter" class="containers-filter-select">
+                        <option value="">Todas las máquinas virtuales</option>
+                    </select>
+                </div>
+
+                <div class="containers-toolbar-actions">
+                    <button id="open-create-image-btn" class="btn btn-primary">
+                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        <span>Crear imagen</span>
+                    </button>
+                    <button id="refresh-images-btn" class="btn btn-secondary btn-icon" title="Refrescar lista de imágenes">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="vm-list-wrapper">
+                <div id="images-list" class="images-list"></div>
+            </div>
+        </section>
+
         <!-- Vista Sidebar: Llaves SSH -->
         <section id="sidebar-keys-view" class="sidebar-view">
             <div class="sidebar-view-header">
-                <div class="sidebar-view-title">Llaves SSH de Máquinas Virtuales</div>
-                <p class="sidebar-view-desc">Llaves criptográficas (públicas y privadas) generadas automáticamente para cada máquina virtual.</p>
+                <div class="sidebar-view-title">Llaves SSH</div>
             </div>
 
             <div class="vms-toolbar">
@@ -345,10 +440,10 @@
                             <input type="radio" name="shell" value="cmd" />
                             <div class="shell-card-content">
                                 <div class="shell-title">
-                                    <span class="shell-badge-icon cmd">&gt;_</span>
+                                    <span class="shell-badge-icon cmd">CMD</span>
                                     <strong>CMD</strong>
                                 </div>
-                                <span class="shell-desc">cmd.exe tradicional</span>
+                                <span class="shell-desc">cmd.exe</span>
                             </div>
                         </label>
                     </div>
@@ -383,8 +478,439 @@
         </div>
     </div>
 
-    <script src="/js/ansi.js?v=15"></script>
-    <script src="/js/websocket.js?v=15"></script>
-    <script src="/js/app.js?v=15"></script>
+    <!-- Modal Asistente de Creación de Contenedor -->
+    <div id="container-wizard-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog container-wizard-dialog" role="dialog" aria-labelledby="wizard-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                        </svg>
+                    </div>
+                    <h2 id="wizard-title">Nuevo Contenedor</h2>
+                </div>
+                <button id="close-container-wizard-btn" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+
+            <div class="wizard-stepper">
+                <div class="wizard-step-pill active" data-step="1">
+                    <span class="step-num">1</span>
+                    <span class="step-label">VM y Origen</span>
+                </div>
+                <div class="wizard-step-pill" data-step="2">
+                    <span class="step-num">2</span>
+                    <span class="step-label">Plantilla</span>
+                </div>
+                <div class="wizard-step-pill" data-step="3">
+                    <span class="step-num">3</span>
+                    <span class="step-label">Configuración</span>
+                </div>
+                <div class="wizard-step-pill" data-step="4">
+                    <span class="step-num">4</span>
+                    <span class="step-label">Resumen</span>
+                </div>
+            </div>
+
+            <div class="modal-body wizard-body">
+                <!-- Paso 1: Selección de VM y Origen -->
+                <div id="wiz-step-1" class="wizard-step-content active">
+                    <div class="form-field">
+                        <label for="wiz-vm-select">Máquina Virtual <span class="req">*</span></label>
+                        <select id="wiz-vm-select" class="form-select" required>
+                            <option value="" disabled selected>Selecciona una máquina...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field">
+                        <label>¿De dónde quieres crear el contenedor? <span class="req">*</span></label>
+                        <div class="wiz-source-options">
+                            <div class="wiz-source-card active" data-source="images" id="wiz-source-images">
+                                <div class="wiz-source-icon">
+                                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                                        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                                        <polyline points="2 17 12 22 22 17"></polyline>
+                                        <polyline points="2 12 12 17 22 12"></polyline>
+                                    </svg>
+                                </div>
+                                <div class="wiz-source-meta">
+                                    <h4>Usar una imagen</h4>
+                                    <p>Imágenes Docker disponibles en la VM</p>
+                                </div>
+                            </div>
+                            <div class="wiz-source-card" data-source="catalog" id="wiz-source-catalog">
+                                <div class="wiz-source-icon">
+                                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                                        <rect x="3" y="3" width="7" height="7"></rect>
+                                        <rect x="14" y="3" width="7" height="7"></rect>
+                                        <rect x="14" y="14" width="7" height="7"></rect>
+                                        <rect x="3" y="14" width="7" height="7"></rect>
+                                    </svg>
+                                </div>
+                                <div class="wiz-source-meta">
+                                    <h4>Aplicaciones</h4>
+                                    <p>Catálogo visual con plantillas listas</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Panel: Usar Imagen existente en la VM -->
+                    <div id="wiz-images-panel" class="wiz-source-panel">
+                        <div class="wiz-images-header">
+                            <label>Selecciona una imagen disponible:</label>
+                            <button type="button" id="wiz-create-new-image-btn" class="btn btn-secondary btn-sm">
+                                <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2.5" fill="none">
+                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                </svg>
+                                <span>Crear nueva imagen</span>
+                            </button>
+                        </div>
+                        <div id="wiz-images-grid" class="wiz-images-grid">
+                            <!-- Llenado dinámicamente -->
+                        </div>
+                    </div>
+
+                    <!-- Panel: Catálogo de Aplicaciones -->
+                    <div id="wiz-catalog-panel" class="wiz-source-panel hidden">
+                        <div class="form-field">
+                            <label>Categoría <span class="req">*</span></label>
+                            <div id="wiz-categories-grid" class="wiz-categories-grid">
+                                <!-- Llenado dinámicamente -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Paso 2: Selección de Aplicación / Imagen -->
+                <div id="wiz-step-2" class="wizard-step-content">
+                    <div class="form-field">
+                        <label>Plantillas disponibles <span id="wiz-category-selected-title" style="color:var(--accent); font-weight:600;"></span></label>
+                        <div id="wiz-apps-grid" class="wiz-apps-grid">
+                            <!-- Llenado dinámicamente -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Paso 3: Configuración de Parámetros -->
+                <div id="wiz-step-3" class="wizard-step-content">
+                    <div class="form-row">
+                        <div class="form-field flex-2">
+                            <label for="wiz-name">Nombre <span class="req">*</span></label>
+                            <input type="text" id="wiz-name" placeholder="ej. mi-postgres" required autocomplete="off" />
+                        </div>
+                        <div class="form-field flex-1">
+                            <label for="wiz-restart">Reinicio</label>
+                            <select id="wiz-restart" class="form-select">
+                                <option value="unless-stopped" selected>unless-stopped</option>
+                                <option value="always">always</option>
+                                <option value="on-failure">on-failure</option>
+                                <option value="no">no</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="wiz-image">Imagen Docker <span class="req">*</span></label>
+                        <input type="text" id="wiz-image" placeholder="ej. postgres:16-alpine" required autocomplete="off" />
+                    </div>
+
+                    <!-- Mapeo de Puertos -->
+                    <div class="form-field">
+                        <div class="dynamic-section-head">
+                            <label>Puertos (Host &rarr; Contenedor)</label>
+                            <button type="button" id="wiz-add-port-btn" class="btn btn-ghost btn-sm">+ Puerto</button>
+                        </div>
+                        <div id="wiz-ports-container" class="dynamic-rows-container"></div>
+                    </div>
+
+                    <!-- Variables de Entorno -->
+                    <div class="form-field">
+                        <div class="dynamic-section-head">
+                            <label>Variables de entorno</label>
+                            <button type="button" id="wiz-add-env-btn" class="btn btn-ghost btn-sm">+ Variable</button>
+                        </div>
+                        <div id="wiz-env-container" class="dynamic-rows-container"></div>
+                    </div>
+
+                    <!-- Volúmenes -->
+                    <div class="form-field">
+                        <div class="dynamic-section-head">
+                            <label>Volúmenes (Host &rarr; Contenedor)</label>
+                            <button type="button" id="wiz-add-volume-btn" class="btn btn-ghost btn-sm">+ Volumen</button>
+                        </div>
+                        <div id="wiz-volumes-container" class="dynamic-rows-container"></div>
+                    </div>
+                </div>
+
+                <!-- Paso 4: Revisión y Confirmación -->
+                <div id="wiz-step-4" class="wizard-step-content">
+                    <div id="wiz-summary-card" class="wiz-summary-card"></div>
+                </div>
+
+                <div id="wiz-feedback" class="modal-feedback hidden"></div>
+            </div>
+
+            <div class="modal-footer wizard-footer">
+                <button type="button" id="wiz-cancel-btn" class="btn btn-secondary">Cancelar</button>
+                <div class="wizard-nav-actions">
+                    <button type="button" id="wiz-prev-btn" class="btn btn-secondary hidden">&larr; Atrás</button>
+                    <button type="button" id="wiz-next-btn" class="btn btn-primary">Siguiente &rarr;</button>
+                    <button type="button" id="wiz-submit-btn" class="btn btn-primary hidden">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Crear contenedor</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Visor de Logs de Contenedor -->
+    <div id="container-logs-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog container-logs-dialog" role="dialog" aria-labelledby="container-logs-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <line x1="4" y1="6" x2="20" y2="6"></line>
+                            <line x1="4" y1="12" x2="20" y2="12"></line>
+                            <line x1="4" y1="18" x2="14" y2="18"></line>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 id="container-logs-title">Logs de Contenedor</h2>
+                        <span id="container-logs-subtitle" class="logs-subtitle"></span>
+                    </div>
+                </div>
+                <button id="close-container-logs-btn" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            <div class="modal-body logs-body">
+                <div class="logs-toolbar">
+                    <div class="logs-toolbar-left">
+                        <label for="container-logs-tail" class="filter-label">Líneas:</label>
+                        <select id="container-logs-tail" class="containers-filter-select">
+                            <option value="100">100</option>
+                            <option value="200" selected>200</option>
+                            <option value="500">500</option>
+                            <option value="1000">1000</option>
+                        </select>
+                    </div>
+                    <button id="refresh-container-logs-btn" class="btn btn-secondary btn-sm">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                        </svg>
+                        <span>Refrescar</span>
+                    </button>
+                </div>
+                <pre id="container-logs-output" class="logs-console">Cargando logs...</pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="btn-close-container-logs" class="btn btn-secondary">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Inspección de Contenedor -->
+    <div id="container-details-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog vm-details-dialog" role="dialog" aria-labelledby="container-details-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                        </svg>
+                    </div>
+                    <h2 id="container-details-title">Detalles del Contenedor</h2>
+                </div>
+                <button id="close-container-details-btn" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            <div class="modal-body vm-details-body">
+                <div class="vm-details-grid" id="container-details-content"></div>
+                <div class="modal-footer">
+                    <button type="button" id="btn-close-container-details" class="btn btn-secondary">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Confirmación de Eliminación de Contenedor -->
+    <div id="delete-container-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog delete-modal-dialog" role="dialog" aria-labelledby="delete-container-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap warning">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h2 id="delete-container-title">Eliminar Contenedor</h2>
+                </div>
+                <button id="close-delete-container-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            <div class="modal-body delete-modal-body">
+                <div class="delete-confirm-copy">
+                    <p>¿Deseas eliminar este contenedor?</p>
+                    <div class="delete-vm-badge">
+                        <strong id="delete-container-name">contenedor</strong>
+                        <span id="delete-container-vm-tag" class="vm-source-tag"></span>
+                    </div>
+                    <label class="force-delete-checkbox-label">
+                        <input type="checkbox" id="delete-container-force" />
+                        <span>Forzar si está en ejecución (<code>--force</code>)</span>
+                    </label>
+                </div>
+                <div id="delete-container-feedback" class="modal-feedback hidden"></div>
+                <div class="delete-confirm-actions">
+                    <button type="button" id="cancel-delete-container" class="btn btn-secondary">Cancelar</button>
+                    <button type="button" id="confirm-delete-container" class="btn btn-danger">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Eliminar</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Crear Imagen Docker -->
+    <div id="image-build-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog image-build-dialog" role="dialog" aria-labelledby="image-build-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                            <polyline points="2 17 12 22 22 17"></polyline>
+                            <polyline points="2 12 12 17 22 12"></polyline>
+                        </svg>
+                    </div>
+                    <h2 id="image-build-title">Crear Imagen Docker</h2>
+                </div>
+                <button id="close-image-build-btn" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+
+            <div class="modal-body image-build-body">
+                <div class="form-row">
+                    <div class="form-field flex-1">
+                        <label for="build-vm-select">Máquina Virtual <span class="req">*</span></label>
+                        <select id="build-vm-select" class="form-select" required>
+                            <option value="" disabled selected>Selecciona una máquina...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-field flex-2">
+                        <label for="build-image-name">Nombre de la imagen <span class="req">*</span></label>
+                        <input type="text" id="build-image-name" placeholder="ej. mi-backend" required autocomplete="off" />
+                    </div>
+                    <div class="form-field flex-1">
+                        <label for="build-image-tag">Etiqueta (Tag)</label>
+                        <input type="text" id="build-image-tag" placeholder="latest" autocomplete="off" />
+                    </div>
+                </div>
+
+                <div class="form-field">
+                    <label>Dockerfile <span class="req">*</span></label>
+                    <div class="dockerfile-input-tabs">
+                        <button type="button" class="df-tab active" data-dftab="paste">Pegar texto</button>
+                        <button type="button" class="df-tab" data-dftab="upload">Subir archivo</button>
+                    </div>
+
+                    <!-- Panel Subir Archivo -->
+                    <div id="df-upload-panel" class="df-panel hidden">
+                        <div class="df-file-dropzone" id="df-file-dropzone">
+                            <input type="file" id="df-file-input" accept=".dockerfile,Dockerfile,text/*" class="df-file-hidden" />
+                            <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="1.8" fill="none">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <p class="dropzone-text">Haz clic o arrastra un archivo <code>Dockerfile</code> aquí</p>
+                            <span id="df-file-name" class="dropzone-filename"></span>
+                        </div>
+                    </div>
+
+                    <!-- Panel Editor / Textarea Dockerfile -->
+                    <div id="df-paste-panel" class="df-panel">
+                        <textarea id="build-dockerfile-content" class="dockerfile-editor" rows="9" placeholder="# Escribe o pega las instrucciones del Dockerfile
+FROM alpine:latest
+RUN apk add --no-cache curl
+CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
+                    </div>
+                </div>
+
+                <div id="build-image-feedback" class="modal-feedback hidden"></div>
+
+                <!-- Consola para salida de build en caso de error o advertencia -->
+                <div id="build-log-container" class="build-log-container hidden">
+                    <div class="build-log-head">Registro del comando de compilación:</div>
+                    <pre id="build-log-output" class="build-log-pre"></pre>
+                </div>
+            </div>
+
+            <div class="modal-footer image-build-footer">
+                <button type="button" id="cancel-image-build-btn" class="btn btn-secondary">Cancelar</button>
+                <div class="build-modal-actions">
+                    <button type="button" id="submit-image-build-btn" class="btn btn-secondary">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Crear imagen</span>
+                    </button>
+                    <button type="button" id="submit-image-build-run-btn" class="btn btn-primary">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Crear y ejecutar</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Confirmación de Eliminación de Imagen -->
+    <div id="delete-image-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog delete-modal-dialog" role="dialog" aria-labelledby="delete-image-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap warning">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h2 id="delete-image-title">Eliminar Imagen Docker</h2>
+                </div>
+                <button id="close-delete-image-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            <div class="modal-body delete-modal-body">
+                <div class="delete-confirm-copy">
+                    <p>¿Deseas eliminar esta imagen?</p>
+                    <div class="delete-vm-badge">
+                        <strong id="delete-image-name">imagen</strong>
+                        <span id="delete-image-vm-tag" class="vm-source-tag"></span>
+                    </div>
+                    <label class="force-delete-checkbox-label">
+                        <input type="checkbox" id="delete-image-force" />
+                        <span>Forzar eliminación (<code>--force</code>)</span>
+                    </label>
+                </div>
+                <div id="delete-image-feedback" class="modal-feedback hidden"></div>
+                <div class="delete-confirm-actions">
+                    <button type="button" id="cancel-delete-image" class="btn btn-secondary">Cancelar</button>
+                    <button type="button" id="confirm-delete-image" class="btn btn-danger">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Eliminar</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/ansi.js?v=21"></script>
+    <script src="/js/websocket.js?v=21"></script>
+    <script src="/js/app.js?v=21"></script>
 </body>
 </html>
