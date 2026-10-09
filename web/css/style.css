@@ -1890,8 +1890,21 @@ body {
 
 /* Visor de Logs */
 .container-logs-dialog {
-    width: min(880px, 94vw);
-    max-height: 90vh;
+    width: 96vw;
+    max-width: 96vw;
+    height: 92vh;
+    max-height: 94vh;
+}
+
+.logs-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 22px;
+    gap: 12px;
+    overflow: hidden;
 }
 
 .logs-toolbar {
@@ -1902,8 +1915,9 @@ body {
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid var(--border);
     border-radius: 8px;
-    margin-bottom: 14px;
+    margin-bottom: 0;
     gap: 12px;
+    flex-shrink: 0;
 }
 
 .logs-toolbar-left {
@@ -1918,9 +1932,12 @@ body {
     border-radius: 10px;
     padding: 18px 20px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 12.5px;
     color: #cbd5e1;
-    max-height: 480px;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    height: 100%;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-all;

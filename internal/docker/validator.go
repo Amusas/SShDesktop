@@ -75,6 +75,18 @@ func ValidateContainerName(name string) error {
 	return nil
 }
 
+// ValidateVolumeName verifica que el nombre de un volumen cumpla el formato seguro
+func ValidateVolumeName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("el nombre del volumen no puede estar vacío")
+	}
+	if !containerNameRegex.MatchString(name) {
+		return fmt.Errorf("nombre de volumen inválido: '%s' (solo letras, números, puntos, guiones y guiones bajos)", name)
+	}
+	return nil
+}
+
 // ValidateImageName verifica que el nombre y etiqueta de la imagen sean válidos y seguros
 func ValidateImageName(image string) error {
 	image = strings.TrimSpace(image)

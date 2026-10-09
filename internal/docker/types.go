@@ -129,3 +129,38 @@ type BuildImageResponse struct {
 	Output  string `json:"output"`
 }
 
+// CommitContainerRequest contiene los datos para crear una imagen Docker a partir de un contenedor existente
+type CommitContainerRequest struct {
+	VMName      string `json:"vmName"`
+	ContainerID string `json:"containerId"`
+	ImageName   string `json:"imageName"`
+	Tag         string `json:"tag,omitempty"`
+	Comment     string `json:"comment,omitempty"`
+	Author      string `json:"author,omitempty"`
+}
+
+// CommitContainerResponse entrega el resultado de la creación de la imagen desde un contenedor
+type CommitContainerResponse struct {
+	Success bool   `json:"success"`
+	Image   string `json:"image"`
+	ImageID string `json:"imageId,omitempty"`
+	Output  string `json:"output,omitempty"`
+}
+
+// Volume representa un volumen Docker en una VM
+type Volume struct {
+	Name       string `json:"name"`
+	Driver     string `json:"driver"`
+	Mountpoint string `json:"mountpoint"`
+	CreatedAt  string `json:"createdAt,omitempty"`
+	Status     string `json:"status"` // "En uso", "Sin utilizar", etc.
+	VMName     string `json:"vmName"`
+}
+
+// CreateVolumeRequest contiene los parámetros para crear un volumen
+type CreateVolumeRequest struct {
+	VMName string `json:"vmName"`
+	Name   string `json:"name"`
+	Driver string `json:"driver,omitempty"` // local por defecto
+}
+

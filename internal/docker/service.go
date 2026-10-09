@@ -512,3 +512,162 @@ func (s *Service) DeleteImage(ctx context.Context, vmName string, imageRef strin
 	return nil
 }
 
+// CommitContainer crea una nueva imagen Docker a partir del estado actual de un contenedor en la VM
+func (s *Service) CommitContainer(ctx context.Context, req CommitContainerRequest) (*CommitContainerResponse, error) {
+	if strings.TrimSpace(req.VMName) == "" {
+		return nil, fmt.Errorf("el nombre de la máquina virtual (VM) es obligatorio")
+	}
+	containerRef := strings.TrimSpace(req.ContainerID)
+	if containerRef == "" {
+		return nil, fmt.Errorf("el identificador o nombre del contenedor es obligatorio")
+	}
+	if dangerousCharsRegex.MatchString(containerRef) {
+		return nil, fmt.Errorf("identificador de contenedor contiene caracteres inválidos: %s", containerRef)
+	}
+
+	if err := ValidateImageRepository(req.ImageName); err != nil {
+		return nil, err
+	}
+	tag := strings.TrimSpace(req.Tag)
+	if tag == "" {
+		tag = "latest"
+	}
+	if err := ValidateImageTag(tag); err != nil {
+		return nil, err
+	}
+
+	fullTag := fmt.Sprintf("%s:%s", strings.TrimSpace(req.ImageName), tag)
+
+	var args []string
+	args = append(args, "sudo", "docker", "commit")
+	if strings.TrimSpace(req.Comment) != "" {
+		if !dangerousCharsRegex.MatchString(req.Comment) {
+			args = append(args, "-m", EscapeShellArg(req.Comment))
+		}
+	}
+	if strings.TrimSpace(req.Author) != "" {
+		if !dangerousCharsRegex.MatchString(req.Author) {
+			args = append(args, "-a", EscapeShellArg(req.Author))
+		}
+	}
+	args = append(args, EscapeShellArg(containerRef), EscapeShellArg(fullTag))
+
+	cmd := strings.Join(args, " ")
+	s.log.Info("creando imagen Docker desde contenedor en VM", "vm", req.VMName, "container", containerRef, "image", fullTag)
+
+	out, err := s.runner(ctx, req.VMName, cmd+" 2>&1")
+	if err != nil {
+		return &CommitContainerResponse{
+			Success: false,
+			Image:   fullTag,
+			Output:  out,
+		}, fmt.Errorf("error creando imagen a partir del contenedor '%s': %s", containerRef, strings.TrimSpace(out))
+	}
+
+	return &CommitContainerResponse{
+		Success: true,
+		Image:   fullTag,
+		ImageID: strings.TrimSpace(out),
+		Output:  out,
+	}, nil
+}
+
+// ListVolumes obtiene la lista de volúmenes Docker en la VM
+func (s *Service) ListVolumes(ctx context.Context, vmName string) ([]Volume, error) {
+	if strings.TrimSpace(vmName) == "" {
+		return nil, fmt.Errorf("el nombre de la VM no puede estar vacío")
+	}
+
+	format := `{"name":{{json .Name}},"driver":{{json .Driver}},"mountpoint":{{json .Mountpoint}}}`
+	cmd := fmt.Sprintf("sudo docker volume ls --format '%s'", format)
+
+	out, err := s.runner(ctx, vmName, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("listando volúmenes en VM '%s': %w", vmName, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var volumes []Volume
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var v Volume
+		if err := json.Unmarshal([]byte(line), &v); err == nil {
+			v.VMName = vmName
+			volumes = append(volumes, v)
+		}
+	}
+
+	// Obtener volúmenes en uso para marcar estado
+	inUseCmd := `sudo docker ps -q | xargs -r sudo docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{println}}{{end}}{{end}}'`
+	inUseOut, _ := s.runner(ctx, vmName, inUseCmd)
+	inUseSet := make(map[string]bool)
+	for _, name := range strings.Split(strings.TrimSpace(inUseOut), "\n") {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			inUseSet[name] = true
+		}
+	}
+	
+	for i := range volumes {
+		if inUseSet[volumes[i].Name] {
+			volumes[i].Status = "En uso"
+		} else {
+			volumes[i].Status = "Sin utilizar"
+		}
+	}
+
+	return volumes, nil
+}
+
+// CreateVolume crea un volumen en la VM
+func (s *Service) CreateVolume(ctx context.Context, req CreateVolumeRequest) (*Volume, error) {
+	if strings.TrimSpace(req.VMName) == "" {
+		return nil, fmt.Errorf("el nombre de la VM es obligatorio")
+	}
+	if err := ValidateVolumeName(req.Name); err != nil {
+		return nil, err
+	}
+
+	driver := strings.TrimSpace(req.Driver)
+	if driver == "" {
+		driver = "local"
+	}
+
+	cmd := fmt.Sprintf("sudo docker volume create --driver %s --name %s 2>&1", EscapeShellArg(driver), EscapeShellArg(req.Name))
+	s.log.Info("creando volumen Docker en VM", "vm", req.VMName, "name", req.Name, "driver", driver)
+
+	out, err := s.runner(ctx, req.VMName, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("error creando volumen '%s': %s", req.Name, strings.TrimSpace(out))
+	}
+
+	return &Volume{
+		Name: req.Name,
+		Driver: driver,
+		Status: "Sin utilizar",
+		VMName: req.VMName,
+	}, nil
+}
+
+// DeleteVolume elimina un volumen Docker en la VM
+func (s *Service) DeleteVolume(ctx context.Context, vmName string, volumeName string) error {
+	if err := ValidateVolumeName(volumeName); err != nil {
+		return err
+	}
+
+	cmd := fmt.Sprintf("sudo docker volume rm %s 2>&1", EscapeShellArg(volumeName))
+	out, err := s.runner(ctx, vmName, cmd)
+	if err != nil {
+		outStr := strings.TrimSpace(out)
+		if strings.Contains(outStr, "in use") {
+			return fmt.Errorf("el volumen está asociado a uno o más contenedores y no puede ser eliminado")
+		}
+		return fmt.Errorf("error eliminando volumen: %s", outStr)
+	}
+
+	return nil
+}
+

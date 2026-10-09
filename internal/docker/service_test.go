@@ -256,5 +256,84 @@ func TestServiceImageOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error eliminando imagen: %v", err)
 	}
+
+	// Commit container
+	commitReq := CommitContainerRequest{
+		VMName:      "test-vm",
+		ContainerID: "my-container-id",
+		ImageName:   "my-committed-image",
+		Tag:         "v1",
+		Comment:     "test comment",
+	}
+	commitRes, err := svc.CommitContainer(context.Background(), commitReq)
+	if err != nil {
+		t.Fatalf("error al hacer commit del contenedor: %v", err)
+	}
+	if !commitRes.Success || commitRes.Image != "my-committed-image:v1" {
+		t.Errorf("respuesta inesperada en commit: %+v", commitRes)
+	}
+}
+
+func TestServiceVolumeOperations(t *testing.T) {
+	mockVolumeList := `{"name":"postgres_data","driver":"local","mountpoint":"/var/lib/docker/volumes/postgres_data/_data"}
+{"name":"redis_data","driver":"local","mountpoint":"/var/lib/docker/volumes/redis_data/_data"}`
+
+	mockInUse := "postgres_data\n"
+
+	var executedCommands []string
+	runner := func(ctx context.Context, vmName string, command string) (string, error) {
+		executedCommands = append(executedCommands, command)
+		if strings.Contains(command, "docker volume ls") {
+			return mockVolumeList, nil
+		}
+		if strings.Contains(command, "docker ps -q") && strings.Contains(command, "volume") {
+			return mockInUse, nil
+		}
+		if strings.Contains(command, "docker volume create") {
+			return "new_volume_data", nil
+		}
+		if strings.Contains(command, "docker volume rm") {
+			return "new_volume_data", nil
+		}
+		return "", nil
+	}
+
+	discardLog := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewService(runner, discardLog)
+
+	// List volumes
+	vols, err := svc.ListVolumes(context.Background(), "test-vm")
+	if err != nil {
+		t.Fatalf("error listando volúmenes: %v", err)
+	}
+	if len(vols) != 2 {
+		t.Fatalf("se esperaban 2 volúmenes, se obtuvieron: %d", len(vols))
+	}
+	if vols[0].Name != "postgres_data" || vols[0].VMName != "test-vm" || vols[0].Status != "En uso" {
+		t.Errorf("volumen 1 mapeado incorrectamente: %+v", vols[0])
+	}
+	if vols[1].Status != "Sin utilizar" {
+		t.Errorf("volumen 2 debió ser 'Sin utilizar': %+v", vols[1])
+	}
+
+	// Create volume
+	createReq := CreateVolumeRequest{
+		VMName: "test-vm",
+		Name:   "new_volume_data",
+		Driver: "local",
+	}
+	vol, err := svc.CreateVolume(context.Background(), createReq)
+	if err != nil {
+		t.Fatalf("error creando volumen: %v", err)
+	}
+	if vol.Name != "new_volume_data" || vol.Driver != "local" {
+		t.Errorf("volumen creado devuelto es incorrecto: %+v", vol)
+	}
+
+	// Delete volume
+	err = svc.DeleteVolume(context.Background(), "test-vm", "new_volume_data")
+	if err != nil {
+		t.Fatalf("error eliminando volumen: %v", err)
+	}
 }
 

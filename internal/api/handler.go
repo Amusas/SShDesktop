@@ -140,6 +140,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/api/images/"):
 		h.handleImageItem(w, r)
 		return
+	case r.URL.Path == "/api/volumes":
+		h.handleVolumes(w, r)
+		return
+	case strings.HasPrefix(r.URL.Path, "/api/volumes/"):
+		h.handleVolumeItem(w, r)
+		return
 	case strings.HasPrefix(r.URL.Path, "/api/vms/"):
 		h.handleVirtualMachineByID(w, r)
 		return
@@ -1080,6 +1086,21 @@ func (h *Handler) handleContainerItem(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Contenedor reiniciado"})
+		case "commit":
+			var req docker.CommitContainerRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, fmt.Sprintf("Error decodificando solicitud: %s", err), http.StatusBadRequest)
+				return
+			}
+			req.VMName = vmName
+			req.ContainerID = containerID
+			resp, err := h.dockerSvc.CommitContainer(r.Context(), req)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Error creando imagen desde contenedor: %s", err), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(resp)
 		default:
 			http.Error(w, "acción no soportada", http.StatusBadRequest)
 		}
@@ -1238,6 +1259,88 @@ func (h *Handler) handleImageItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Imagen eliminada"})
+	default:
+		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleVolumes(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		vmTarget := strings.TrimSpace(r.URL.Query().Get("vm"))
+		if vmTarget != "" {
+			vols, err := h.dockerSvc.ListVolumes(r.Context(), vmTarget)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Error listando volúmenes: %s", err), http.StatusInternalServerError)
+				return
+			}
+			if vols == nil {
+				vols = []docker.Volume{}
+			}
+			json.NewEncoder(w).Encode(vols)
+			return
+		}
+
+		vms, err := h.vmSvc.List()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error listando VMs: %s", err), http.StatusInternalServerError)
+			return
+		}
+
+		var allVols []docker.Volume
+		for _, v := range vms {
+			vols, err := h.dockerSvc.ListVolumes(r.Context(), v.Name)
+			if err == nil && len(vols) > 0 {
+				allVols = append(allVols, vols...)
+			}
+		}
+		if allVols == nil {
+			allVols = []docker.Volume{}
+		}
+		json.NewEncoder(w).Encode(allVols)
+
+	case http.MethodPost:
+		var req docker.CreateVolumeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, fmt.Sprintf("JSON inválido: %s", err), http.StatusBadRequest)
+			return
+		}
+
+		res, err := h.dockerSvc.CreateVolume(r.Context(), req)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error creando volumen: %s", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(res)
+
+	default:
+		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleVolumeItem(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	prefix := "/api/volumes/"
+	sub := strings.TrimPrefix(r.URL.Path, prefix)
+	parts := strings.SplitN(sub, "/", 2)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		http.Error(w, "ruta de volumen inválida (se espera /api/volumes/{vm}/{volumeName})", http.StatusBadRequest)
+		return
+	}
+	vmName := parts[0]
+	volumeName := parts[1]
+
+	switch r.Method {
+	case http.MethodDelete:
+		if err := h.dockerSvc.DeleteVolume(r.Context(), vmName, volumeName); err != nil {
+			http.Error(w, fmt.Sprintf("Error eliminando volumen: %s", err), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Volumen eliminado"})
 	default:
 		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
 	}

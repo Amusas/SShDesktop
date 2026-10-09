@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SSH Terminal</title>
-    <link rel="stylesheet" href="/css/style.css?v=21">
+    <link rel="stylesheet" href="/css/style.css?v=23">
 </head>
 <body>
     <div id="app">
@@ -107,6 +107,14 @@
                     <polyline points="2 12 12 17 22 12"></polyline>
                 </svg>
                 <span>Imágenes</span>
+            </button>
+            <button class="docker-subnav-btn" data-subview="volumes" id="docker-subnav-volumes">
+                <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                </svg>
+                <span>Volúmenes</span>
             </button>
         </div>
 
@@ -263,6 +271,41 @@
 
             <div class="vm-list-wrapper">
                 <div id="images-list" class="images-list"></div>
+            </div>
+        </section>
+
+        <!-- Vista Sidebar: Volúmenes Docker -->
+        <section id="sidebar-volumes-view" class="sidebar-view">
+            <div class="sidebar-view-header">
+                <div class="sidebar-view-title">Volúmenes Docker</div>
+            </div>
+
+            <div class="containers-toolbar">
+                <div class="containers-filter-wrap">
+                    <label for="volumes-vm-filter" class="containers-filter-label">Máquina Virtual:</label>
+                    <select id="volumes-vm-filter" class="containers-filter-select">
+                        <option value="">Todas las máquinas virtuales</option>
+                    </select>
+                </div>
+
+                <div class="containers-toolbar-actions">
+                    <button id="open-create-volume-btn" class="btn btn-primary">
+                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        <span>Crear volumen</span>
+                    </button>
+                    <button id="refresh-volumes-btn" class="btn btn-secondary btn-icon" title="Refrescar lista de volúmenes">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="vm-list-wrapper">
+                <div id="volumes-list" class="volumes-list"></div>
             </div>
         </section>
 
@@ -776,6 +819,59 @@
         </div>
     </div>
 
+    <!-- Modal Crear Imagen desde Contenedor (docker commit) -->
+    <div id="commit-container-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog" role="dialog" aria-labelledby="commit-container-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                            <polyline points="2 17 12 22 22 17"></polyline>
+                            <polyline points="2 12 12 17 22 12"></polyline>
+                        </svg>
+                    </div>
+                    <h2 id="commit-container-title">Crear Imagen desde Contenedor</h2>
+                </div>
+                <button id="close-commit-container-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            <form id="commit-container-form">
+                <div class="modal-body">
+                    <div class="delete-vm-badge" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.25); text-align: left;">
+                        <span style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 2px;">Contenedor origen:</span>
+                        <strong id="commit-container-target-name" style="color: var(--accent);">contenedor</strong>
+                        <span id="commit-container-vm-tag" class="vm-source-tag"></span>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-field flex-2">
+                            <label for="commit-image-name">Nombre de la nueva imagen <span class="req">*</span></label>
+                            <input type="text" id="commit-image-name" placeholder="ej. mi-app-personalizada" required autocomplete="off" />
+                        </div>
+                        <div class="form-field flex-1">
+                            <label for="commit-image-tag">Etiqueta (Tag)</label>
+                            <input type="text" id="commit-image-tag" placeholder="latest" autocomplete="off" />
+                        </div>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="commit-image-comment">Descripción o comentario (opcional)</label>
+                        <input type="text" id="commit-image-comment" placeholder="ej. Estado actual del contenedor guardado como imagen" autocomplete="off" />
+                    </div>
+
+                    <div id="commit-container-feedback" class="modal-feedback hidden"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" id="cancel-commit-container" class="btn btn-secondary">Cancelar</button>
+                    <button type="submit" id="submit-commit-container" class="btn btn-primary">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Guardar imagen</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Modal Crear Imagen Docker -->
     <div id="image-build-modal" class="modal-backdrop hidden" aria-hidden="true">
         <div class="modal-dialog image-build-dialog" role="dialog" aria-labelledby="image-build-title">
@@ -908,9 +1004,90 @@ CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
             </div>
         </div>
     </div>
+    <!-- Modal Crear Volumen Docker -->
+    <div id="create-volume-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog" role="dialog" aria-labelledby="create-volume-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                        </svg>
+                    </div>
+                    <h2 id="create-volume-title">Crear Volumen Docker</h2>
+                </div>
+                <button id="close-create-volume-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            
+            <form id="create-volume-form" class="modal-body">
+                <div class="form-field">
+                    <label for="create-volume-vm">Máquina Virtual <span class="req">*</span></label>
+                    <select id="create-volume-vm" name="vmName" class="form-select" required>
+                        <option value="" disabled selected>Selecciona una máquina...</option>
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label for="create-volume-name">Nombre del Volumen <span class="req">*</span></label>
+                    <input type="text" id="create-volume-name" name="name" placeholder="ej. postgres_data" required autocomplete="off" />
+                </div>
+                <div class="form-field">
+                    <label for="create-volume-driver">Driver</label>
+                    <input type="text" id="create-volume-driver" name="driver" placeholder="local" value="local" autocomplete="off" />
+                </div>
+                
+                <div id="create-volume-feedback" class="modal-feedback hidden"></div>
 
-    <script src="/js/ansi.js?v=21"></script>
-    <script src="/js/websocket.js?v=21"></script>
-    <script src="/js/app.js?v=21"></script>
+                <div class="modal-footer">
+                    <button type="button" id="cancel-create-volume-btn" class="btn btn-secondary">Cancelar</button>
+                    <button type="submit" id="submit-create-volume-btn" class="btn btn-primary">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Crear volumen</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Confirmación de Eliminación de Volumen -->
+    <div id="delete-volume-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog delete-modal-dialog" role="dialog" aria-labelledby="delete-volume-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap warning">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h2 id="delete-volume-title">Eliminar Volumen Docker</h2>
+                </div>
+                <button id="close-delete-volume-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            <div class="modal-body delete-modal-body">
+                <div class="delete-confirm-copy">
+                    <p>¿Deseas eliminar este volumen?</p>
+                    <div class="delete-vm-badge">
+                        <strong id="delete-volume-name">volumen</strong>
+                        <span id="delete-volume-vm-tag" class="vm-source-tag"></span>
+                    </div>
+                </div>
+                <div id="delete-volume-feedback" class="modal-feedback hidden"></div>
+                <div class="delete-confirm-actions">
+                    <button type="button" id="cancel-delete-volume" class="btn btn-secondary">Cancelar</button>
+                    <button type="button" id="confirm-delete-volume" class="btn btn-danger">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Eliminar</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/ansi.js?v=24"></script>
+    <script src="/js/websocket.js?v=24"></script>
+    <script src="/js/app.js?v=24"></script>
 </body>
 </html>

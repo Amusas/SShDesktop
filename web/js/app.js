@@ -1,4 +1,4 @@
-﻿// Gestor de la interfaz de terminal web, menú lateral, gestión de VMs, Llaves SSH y conexión WebSocket
+// Gestor de la interfaz de terminal web, menú lateral, gestión de VMs, Llaves SSH y conexión WebSocket
 class TerminalApp {
     constructor() {
         // Elementos principales de la terminal
@@ -187,6 +187,49 @@ class TerminalApp {
         this.closeContainerDetailsBtn = document.getElementById('close-container-details-btn');
         this.btnCloseContainerDetails = document.getElementById('btn-close-container-details');
         this.containerDetailsContent = document.getElementById('container-details-content');
+
+        // Modal de Creación de Imagen desde Contenedor (Commit)
+        this.commitContainerModal = document.getElementById('commit-container-modal');
+        this.closeCommitContainerBtn = document.getElementById('close-commit-container-modal');
+        this.cancelCommitContainerBtn = document.getElementById('cancel-commit-container');
+        this.commitContainerForm = document.getElementById('commit-container-form');
+        this.commitContainerTargetName = document.getElementById('commit-container-target-name');
+        this.commitContainerVmTag = document.getElementById('commit-container-vm-tag');
+        this.commitImageNameInput = document.getElementById('commit-image-name');
+        this.commitImageTagInput = document.getElementById('commit-image-tag');
+        this.commitImageCommentInput = document.getElementById('commit-image-comment');
+        this.commitContainerFeedback = document.getElementById('commit-container-feedback');
+        this.submitCommitContainerBtn = document.getElementById('submit-commit-container');
+        this.currentCommitVm = '';
+        this.currentCommitContainerId = '';
+
+        // Elementos de Gestión de Volúmenes Docker
+        this.volumesListEl = document.getElementById('volumes-list');
+        this.volumesVmFilter = document.getElementById('volumes-vm-filter');
+        this.openCreateVolumeBtn = document.getElementById('open-create-volume-btn');
+        this.refreshVolumesBtn = document.getElementById('refresh-volumes-btn');
+        this.volumes = [];
+
+        // Modal de Creación de Volumen
+        this.createVolumeModal = document.getElementById('create-volume-modal');
+        this.closeCreateVolumeModalBtn = document.getElementById('close-create-volume-modal');
+        this.cancelCreateVolumeBtn = document.getElementById('cancel-create-volume-btn');
+        this.createVolumeForm = document.getElementById('create-volume-form');
+        this.createVolumeVm = document.getElementById('create-volume-vm');
+        this.createVolumeName = document.getElementById('create-volume-name');
+        this.createVolumeDriver = document.getElementById('create-volume-driver');
+        this.createVolumeFeedback = document.getElementById('create-volume-feedback');
+        this.submitCreateVolumeBtn = document.getElementById('submit-create-volume-btn');
+
+        // Modal de Eliminación de Volumen
+        this.deleteVolumeModal = document.getElementById('delete-volume-modal');
+        this.closeDeleteVolumeModalBtn = document.getElementById('close-delete-volume-modal');
+        this.cancelDeleteVolumeBtn = document.getElementById('cancel-delete-volume');
+        this.confirmDeleteVolumeBtn = document.getElementById('confirm-delete-volume');
+        this.deleteVolumeNameEl = document.getElementById('delete-volume-name');
+        this.deleteVolumeVmTag = document.getElementById('delete-volume-vm-tag');
+        this.deleteVolumeFeedback = document.getElementById('delete-volume-feedback');
+        this.pendingDeleteVolume = null;
 
         // Elementos del modal de configuracion
         this.modalEl = document.getElementById('config-modal');
@@ -636,6 +679,66 @@ class TerminalApp {
             this.confirmDeleteContainerBtn.addEventListener('click', () => this.executeDeleteContainer());
         }
 
+        // Eventos de Gestión de Volúmenes
+        if (this.openCreateVolumeBtn) {
+            this.openCreateVolumeBtn.addEventListener('click', () => {
+                this.createVolumeForm.reset();
+                this.createVolumeFeedback.classList.add('hidden');
+                
+                // Limpiar select de VM y rellenar con la lista actual
+                this.createVolumeVm.innerHTML = '<option value="" disabled selected>Selecciona una máquina...</option>';
+                if (this.vms) {
+                    this.vms.forEach(vm => {
+                        const opt = document.createElement('option');
+                        opt.value = vm.name || vm.Name;
+                        opt.textContent = vm.name || vm.Name;
+                        this.createVolumeVm.appendChild(opt);
+                    });
+                }
+
+                if (this.volumesVmFilter && this.volumesVmFilter.value) {
+                    this.createVolumeVm.value = this.volumesVmFilter.value;
+                }
+                
+                this.createVolumeModal.classList.remove('hidden');
+                setTimeout(() => this.createVolumeName.focus(), 50);
+            });
+        }
+        if (this.closeCreateVolumeModalBtn) {
+            this.closeCreateVolumeModalBtn.addEventListener('click', () => this.createVolumeModal.classList.add('hidden'));
+        }
+        if (this.cancelCreateVolumeBtn) {
+            this.cancelCreateVolumeBtn.addEventListener('click', () => this.createVolumeModal.classList.add('hidden'));
+        }
+        if (this.createVolumeForm) {
+            this.createVolumeForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.submitCreateVolume();
+            });
+        }
+
+        if (this.refreshVolumesBtn) {
+            this.refreshVolumesBtn.addEventListener('click', () => {
+                this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
+            });
+        }
+        if (this.volumesVmFilter) {
+            this.volumesVmFilter.addEventListener('change', () => {
+                this.loadVolumes(this.volumesVmFilter.value);
+            });
+        }
+
+        // Eventos de Eliminación de Volumen
+        if (this.closeDeleteVolumeModalBtn) {
+            this.closeDeleteVolumeModalBtn.addEventListener('click', () => this.closeDeleteVolumeModal());
+        }
+        if (this.cancelDeleteVolumeBtn) {
+            this.cancelDeleteVolumeBtn.addEventListener('click', () => this.closeDeleteVolumeModal());
+        }
+        if (this.confirmDeleteVolumeBtn) {
+            this.confirmDeleteVolumeBtn.addEventListener('click', () => this.executeDeleteVolume());
+        }
+
         // Eventos de Detalles de Contenedor
         if (this.closeContainerDetailsBtn) {
             this.closeContainerDetailsBtn.addEventListener('click', () => this.closeContainerDetails());
@@ -722,6 +825,20 @@ class TerminalApp {
             this.confirmDeleteImageBtn.addEventListener('click', () => this.confirmDeleteImage());
         }
 
+        // Eventos del Modal Crear Imagen desde Contenedor (Commit)
+        if (this.closeCommitContainerBtn) {
+            this.closeCommitContainerBtn.addEventListener('click', () => this.closeCommitContainerModal());
+        }
+        if (this.cancelCommitContainerBtn) {
+            this.cancelCommitContainerBtn.addEventListener('click', () => this.closeCommitContainerModal());
+        }
+        if (this.commitContainerForm) {
+            this.commitContainerForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.submitCommitContainer();
+            });
+        }
+
         // Eventos de Origen en Wizard
         if (this.wizSourceImages) {
             this.wizSourceImages.addEventListener('click', () => this.selectWizardSource('images'));
@@ -749,6 +866,7 @@ class TerminalApp {
                     this.closeDeleteContainerModal();
                     this.closeBuildImageModal();
                     this.closeDeleteImageModal();
+                    this.closeCommitContainerModal();
                 } else if (this.isSidebarOpen()) {
                     this.toggleSidebar(false);
                 }
@@ -804,6 +922,11 @@ class TerminalApp {
                 if (e.target === this.deleteImageModal) this.closeDeleteImageModal();
             });
         }
+        if (this.commitContainerModal) {
+            this.commitContainerModal.addEventListener('click', (e) => {
+                if (e.target === this.commitContainerModal) this.closeCommitContainerModal();
+            });
+        }
 
         // Boton de valores por defecto
         this.resetDefaultsBtn.addEventListener('click', () => {
@@ -827,7 +950,8 @@ class TerminalApp {
             (this.containerDetailsModal && !this.containerDetailsModal.classList.contains('hidden')) ||
             (this.deleteContainerModal && !this.deleteContainerModal.classList.contains('hidden')) ||
             (this.imageBuildModal && !this.imageBuildModal.classList.contains('hidden')) ||
-            (this.deleteImageModal && !this.deleteImageModal.classList.contains('hidden'));
+            (this.deleteImageModal && !this.deleteImageModal.classList.contains('hidden')) ||
+            (this.commitContainerModal && !this.commitContainerModal.classList.contains('hidden'));
     }
 
     isSidebarOpen() {
@@ -851,7 +975,7 @@ class TerminalApp {
     }
 
     switchSidebarView(view) {
-        const isDocker = (view === 'docker' || view === 'containers' || view === 'images');
+        const isDocker = (view === 'docker' || view === 'containers' || view === 'images' || view === 'volumes');
 
         // Resaltar pestañas principales
         this.sideLinks.forEach((l) => {
@@ -870,7 +994,10 @@ class TerminalApp {
         }
 
         if (isDocker) {
-            const subview = (view === 'images') ? 'images' : (this.activeDockerSubnav || 'containers');
+            let subview = this.activeDockerSubnav || 'containers';
+            if (view === 'images' || view === 'volumes') {
+                subview = view;
+            }
             this.switchDockerSubview(subview);
             return;
         }
@@ -894,6 +1021,8 @@ class TerminalApp {
                 s.classList.toggle('active', s.id === 'sidebar-containers-view');
             } else if (subview === 'images') {
                 s.classList.toggle('active', s.id === 'sidebar-images-view');
+            } else if (subview === 'volumes') {
+                s.classList.toggle('active', s.id === 'sidebar-volumes-view');
             } else {
                 s.classList.remove('active');
             }
@@ -905,6 +1034,9 @@ class TerminalApp {
         } else if (subview === 'images') {
             this.updateImagesVmFilter();
             this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+        } else if (subview === 'volumes') {
+            this.updateVolumesVmFilter();
+            this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
         }
     }
 
@@ -1979,6 +2111,38 @@ class TerminalApp {
             .replace(/"/g, '&quot;');
     }
 
+    formatDate(rawDate) {
+        if (!rawDate || rawDate === 'n/a') return 'n/a';
+        const str = String(rawDate).trim();
+        if (!str || str === 'n/a') return 'n/a';
+
+        // Detectar formato ISO o Docker: YYYY-MM-DD HH:MM:SS o YYYY-MM-DDTHH:MM:SS
+        const match = str.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/);
+        if (match) {
+            const [_, year, month, day, hour, min] = match;
+            const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+            const mIdx = parseInt(month, 10) - 1;
+            const mName = months[mIdx] || month;
+            return `${day} ${mName} ${year}, ${hour}:${min}`;
+        }
+
+        // Intento con Date estándar
+        try {
+            const d = new Date(str);
+            if (!isNaN(d.getTime())) {
+                const day = String(d.getDate()).padStart(2, '0');
+                const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+                const mName = months[d.getMonth()] || '';
+                const year = d.getFullYear();
+                const hour = String(d.getHours()).padStart(2, '0');
+                const min = String(d.getMinutes()).padStart(2, '0');
+                return `${day} ${mName} ${year}, ${hour}:${min}`;
+            }
+        } catch (e) {}
+
+        return str;
+    }
+
     // =========================================================================
     // Gestión de Contenedores Docker en VMs Linux
     // =========================================================================
@@ -2064,6 +2228,184 @@ class TerminalApp {
             }
         } catch (e) {
             console.warn('No se pudieron listar VMs para el filtro de imágenes:', e);
+        }
+    }
+
+    async updateVolumesVmFilter() {
+        if (!this.volumesVmFilter && !this.createVolumeVm) return;
+        try {
+            const res = await fetch('/api/vms');
+            if (res.ok) {
+                const vms = await res.json();
+                this.vms = vms;
+
+                if (this.volumesVmFilter) {
+                    const currentVal = this.volumesVmFilter.value;
+                    let opts = ``;
+                    vms.forEach((v) => {
+                        const isRunning = (v.state || '').toLowerCase() === 'running';
+                        const label = `${v.name} (${isRunning ? 'En ejecución' : 'Apagada'})`;
+                        opts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(label)}</option>`;
+                    });
+                    this.volumesVmFilter.innerHTML = opts;
+                    if (currentVal && vms.some((v) => v.name === currentVal)) {
+                        this.volumesVmFilter.value = currentVal;
+                    }
+                }
+
+                if (this.createVolumeVm) {
+                    const currentBuild = this.createVolumeVm.value;
+                    let bOpts = `<option value="" disabled selected>Selecciona una máquina...</option>`;
+                    vms.forEach((v) => {
+                        bOpts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(v.name)}</option>`;
+                    });
+                    this.createVolumeVm.innerHTML = bOpts;
+                    if (currentBuild && vms.some((v) => v.name === currentBuild)) {
+                        this.createVolumeVm.value = currentBuild;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('No se pudieron listar VMs para el filtro de volúmenes:', e);
+        }
+    }
+
+    async loadVolumes(vmFilter) {
+        if (!this.volumesListEl) return;
+        this.volumesListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando volúmenes...</div>`;
+
+        const filter = (vmFilter || '').trim();
+        const url = filter ? `/api/volumes?vm=${encodeURIComponent(filter)}` : '/api/volumes';
+
+        try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Error al listar volúmenes');
+            let vols = await res.json();
+            if (!vols) vols = [];
+            this.volumes = vols;
+            this.renderVolumes();
+        } catch (e) {
+            console.error('loadVolumes error:', e);
+            this.volumesListEl.innerHTML = `<div class="empty-vm-list error">No se pudieron cargar los volúmenes.</div>`;
+        }
+    }
+
+    renderVolumes() {
+        if (!this.volumesListEl) return;
+        if (!this.volumes || this.volumes.length === 0) {
+            this.volumesListEl.innerHTML = `<div class="empty-vm-list">No hay volúmenes Docker disponibles.</div>`;
+            return;
+        }
+
+        let html = '';
+        this.volumes.forEach((vol) => {
+            const isUsed = vol.status === 'En uso';
+            const statusClass = isUsed ? 'state-running' : 'state-stopped';
+
+            html += `
+                <div class="vm-card">
+                    <div class="vm-card-header">
+                        <div class="vm-title-row">
+                            <h3 class="vm-name">${this.escapeHTML(vol.name)}</h3>
+                            <span class="vm-state-badge ${statusClass}">${this.escapeHTML(vol.status || 'Desconocido')}</span>
+                        </div>
+                        <div class="vm-state-actions">
+                            <button class="btn btn-danger btn-icon" onclick="window.terminalApp.promptDeleteVolume('${this.escapeAttr(vol.vmName)}', '${this.escapeAttr(vol.name)}')" title="Eliminar volumen">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="vm-details-grid">
+                        <div class="vm-detail-item">
+                            <span class="vm-detail-label">Máquina Virtual</span>
+                            <span class="vm-detail-value"><span class="vm-source-tag">${this.escapeHTML(vol.vmName)}</span></span>
+                        </div>
+                        <div class="vm-detail-item">
+                            <span class="vm-detail-label">Driver</span>
+                            <span class="vm-detail-value">${this.escapeHTML(vol.driver)}</span>
+                        </div>
+                        <div class="vm-detail-item" style="grid-column: 1 / -1;">
+                            <span class="vm-detail-label">Punto de montaje</span>
+                            <span class="vm-detail-value" style="font-family: monospace; font-size: 0.85rem; word-break: break-all;">${this.escapeHTML(vol.mountpoint)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        this.volumesListEl.innerHTML = html;
+    }
+
+    async submitCreateVolume() {
+        const vmName = this.createVolumeVm.value;
+        const name = this.createVolumeName.value.trim();
+        const driver = this.createVolumeDriver.value.trim() || 'local';
+
+        if (!vmName || !name) return;
+
+        this.submitCreateVolumeBtn.disabled = true;
+        this.submitCreateVolumeBtn.querySelector('.btn-spinner').classList.remove('hidden');
+        this.submitCreateVolumeBtn.querySelector('.btn-text').textContent = 'Creando...';
+        this.createVolumeFeedback.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/volumes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vmName, name, driver }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error creando volumen');
+
+            this.createVolumeModal.classList.add('hidden');
+            this.createVolumeForm.reset();
+            this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
+        } catch (e) {
+            this.createVolumeFeedback.textContent = e.message;
+            this.createVolumeFeedback.className = 'modal-feedback error';
+            this.createVolumeFeedback.classList.remove('hidden');
+        } finally {
+            this.submitCreateVolumeBtn.disabled = false;
+            this.submitCreateVolumeBtn.querySelector('.btn-spinner').classList.add('hidden');
+            this.submitCreateVolumeBtn.querySelector('.btn-text').textContent = 'Crear volumen';
+        }
+    }
+
+    promptDeleteVolume(vmName, volumeName) {
+        this.pendingDeleteVolume = { vmName, volumeName };
+        this.deleteVolumeNameEl.textContent = volumeName;
+        this.deleteVolumeVmTag.textContent = vmName;
+        this.deleteVolumeFeedback.classList.add('hidden');
+        this.deleteVolumeModal.classList.remove('hidden');
+    }
+
+    closeDeleteVolumeModal() {
+        this.deleteVolumeModal.classList.add('hidden');
+        this.pendingDeleteVolume = null;
+    }
+
+    async executeDeleteVolume() {
+        if (!this.pendingDeleteVolume) return;
+        const { vmName, volumeName } = this.pendingDeleteVolume;
+
+        this.confirmDeleteVolumeBtn.disabled = true;
+        this.confirmDeleteVolumeBtn.querySelector('.btn-spinner').classList.remove('hidden');
+
+        try {
+            const res = await fetch(`/api/volumes/${encodeURIComponent(vmName)}/${encodeURIComponent(volumeName)}`, {
+                method: 'DELETE',
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error al eliminar');
+
+            this.closeDeleteVolumeModal();
+            this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
+        } catch (e) {
+            this.deleteVolumeFeedback.textContent = e.message;
+            this.deleteVolumeFeedback.className = 'modal-feedback error';
+            this.deleteVolumeFeedback.classList.remove('hidden');
+        } finally {
+            this.confirmDeleteVolumeBtn.disabled = false;
+            this.confirmDeleteVolumeBtn.querySelector('.btn-spinner').classList.add('hidden');
         }
     }
 
@@ -2177,6 +2519,9 @@ class TerminalApp {
                         </button>
                         <button type="button" class="btn btn-ghost btn-sm" title="Ver detalles" onclick="window.terminalApp.openContainerDetails('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
                             Detalles
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" title="Crear imagen a partir de este contenedor" onclick="window.terminalApp.openCommitContainerModal('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', '${this.escapeAttr(c.name || c.id)}')">
+                            Crear imagen
                         </button>
                         <button type="button" class="btn btn-danger btn-sm" title="Eliminar contenedor" onclick="window.terminalApp.openDeleteContainerModal('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', '${this.escapeAttr(c.name || c.id)}')">
                             Eliminar
@@ -2322,6 +2667,118 @@ class TerminalApp {
                 const spinner = this.confirmDeleteContainerBtn.querySelector('.btn-spinner');
                 if (spinner) spinner.classList.add('hidden');
             }
+        }
+    }
+
+    openCommitContainerModal(vmName, containerId, containerName) {
+        this.currentCommitVm = vmName;
+        this.currentCommitContainerId = containerId;
+
+        if (this.commitContainerTargetName) {
+            this.commitContainerTargetName.textContent = containerName || containerId;
+        }
+        if (this.commitContainerVmTag) {
+            this.commitContainerVmTag.textContent = vmName;
+        }
+
+        if (this.commitImageNameInput) {
+            const cleanName = (containerName || 'app')
+                .replace(/^\//, '')
+                .replace(/[^a-zA-Z0-9_.-]/g, '-')
+                .toLowerCase();
+            this.commitImageNameInput.value = `${cleanName}-img`;
+        }
+        if (this.commitImageTagInput) {
+            this.commitImageTagInput.value = 'latest';
+        }
+        if (this.commitImageCommentInput) {
+            this.commitImageCommentInput.value = '';
+        }
+
+        this.hideCommitContainerFeedback();
+
+        if (this.commitContainerModal) {
+            this.commitContainerModal.classList.remove('hidden');
+        }
+
+        if (this.commitImageNameInput) {
+            setTimeout(() => this.commitImageNameInput.focus(), 60);
+        }
+    }
+
+    closeCommitContainerModal() {
+        if (this.commitContainerModal) {
+            this.commitContainerModal.classList.add('hidden');
+        }
+        this.hideCommitContainerFeedback();
+        this.currentCommitVm = '';
+        this.currentCommitContainerId = '';
+    }
+
+    showCommitContainerFeedback(msg, type = 'error') {
+        if (!this.commitContainerFeedback) return;
+        this.commitContainerFeedback.className = `modal-feedback ${type}`;
+        this.commitContainerFeedback.textContent = msg;
+        this.commitContainerFeedback.classList.remove('hidden');
+    }
+
+    hideCommitContainerFeedback() {
+        if (!this.commitContainerFeedback) return;
+        this.commitContainerFeedback.className = 'modal-feedback hidden';
+        this.commitContainerFeedback.textContent = '';
+    }
+
+    async submitCommitContainer() {
+        const vmName = this.currentCommitVm;
+        const containerId = this.currentCommitContainerId;
+        const imageName = this.commitImageNameInput ? this.commitImageNameInput.value.trim() : '';
+        const tag = this.commitImageTagInput ? this.commitImageTagInput.value.trim() : 'latest';
+        const comment = this.commitImageCommentInput ? this.commitImageCommentInput.value.trim() : '';
+
+        if (!vmName || !containerId) {
+            this.showCommitContainerFeedback('No se pudo identificar el contenedor origen.', 'error');
+            return;
+        }
+        if (!imageName) {
+            this.showCommitContainerFeedback('Debes ingresar un nombre para la nueva imagen.', 'error');
+            return;
+        }
+
+        this.setButtonLoading(this.submitCommitContainerBtn, true);
+        this.hideCommitContainerFeedback();
+
+        try {
+            const url = `/api/containers/${encodeURIComponent(vmName)}/${encodeURIComponent(containerId)}/commit`;
+            const payload = {
+                imageName,
+                tag: tag || 'latest',
+                comment,
+            };
+
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                this.closeCommitContainerModal();
+                this.appendInfoLine(`[Imagen '${data.image || imageName}' guardada exitosamente en la VM '${vmName}']`);
+
+                // Actualizar la lista de imágenes de la VM para que se refleje inmediatamente
+                if (this.imagesVmFilter) {
+                    this.imagesVmFilter.value = vmName;
+                }
+                this.loadImages(vmName);
+            } else {
+                const text = await res.text();
+                this.showCommitContainerFeedback(`Error al crear imagen: ${this.parseApiError(text)}`, 'error');
+            }
+        } catch (e) {
+            this.showCommitContainerFeedback(`Error de conexión: ${e.message}`, 'error');
+        } finally {
+            this.setButtonLoading(this.submitCommitContainerBtn, false);
         }
     }
 
@@ -2496,7 +2953,7 @@ class TerminalApp {
                 const tag = img.tag || '<none>';
                 const repo = img.repository || '<none>';
                 const size = img.size || 'n/a';
-                const created = img.createdAt || 'n/a';
+                const created = this.formatDate(img.createdAt);
                 const vmName = img.vmName || '';
 
                 return `
@@ -2873,7 +3330,7 @@ class TerminalApp {
                             </div>
                             <div class="wiz-image-card-meta">
                                 <span>${this.escapeHTML(img.size || '')}</span>
-                                <span>${this.escapeHTML(img.createdAt || '')}</span>
+                                <span>${this.escapeHTML(this.formatDate(img.createdAt))}</span>
                             </div>
                         </div>
                     `;
@@ -3051,12 +3508,32 @@ class TerminalApp {
         if (!this.wizVolumesContainer) return;
         const row = document.createElement('div');
         row.className = 'dynamic-row wiz-vol-row';
+        
+        // Determinar si es una ruta absoluta (empieza por / o \ o x:) o un volumen administrado
+        const isBind = hostPath && (hostPath.startsWith('/') || hostPath.startsWith('\\') || hostPath.indexOf(':') === 1);
+        
         row.innerHTML = `
-            <input type="text" class="vol-host" placeholder="Ruta en VM" value="${this.escapeAttr(hostPath)}" style="flex:1.2;" />
-            <span style="color:var(--text-muted);">&rarr;</span>
-            <input type="text" class="vol-container" placeholder="Ruta en contenedor" value="${this.escapeAttr(containerPath)}" style="flex:1.2;" />
+            <select class="vol-type" style="flex: 0.6; margin-right: 8px; padding: 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-input); color: var(--text);">
+                <option value="volume" ${!isBind ? 'selected' : ''}>Volumen</option>
+                <option value="bind" ${isBind ? 'selected' : ''}>Ruta (Bind)</option>
+            </select>
+            <input type="text" class="vol-host" placeholder="${!isBind ? 'Nombre del volumen' : 'Ruta absoluta en VM'}" value="${this.escapeAttr(hostPath)}" style="flex:1;" />
+            <span style="color:var(--text-muted); padding: 0 4px;">&rarr;</span>
+            <input type="text" class="vol-container" placeholder="Ruta en contenedor" value="${this.escapeAttr(containerPath)}" style="flex:1;" />
             <button type="button" class="btn-remove-row" title="Eliminar fila">&times;</button>
         `;
+        
+        const typeSelect = row.querySelector('.vol-type');
+        const hostInput = row.querySelector('.vol-host');
+        
+        typeSelect.addEventListener('change', () => {
+            if (typeSelect.value === 'volume') {
+                hostInput.placeholder = 'Nombre del volumen';
+            } else {
+                hostInput.placeholder = 'Ruta absoluta en VM';
+            }
+        });
+
         row.querySelector('.btn-remove-row').addEventListener('click', () => row.remove());
         this.wizVolumesContainer.appendChild(row);
     }

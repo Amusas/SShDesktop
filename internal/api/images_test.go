@@ -36,6 +36,9 @@ func TestImageAPIEndpoints(t *testing.T) {
 		if strings.Contains(command, "docker rmi") {
 			return "Untagged: alpine:latest", nil
 		}
+		if strings.Contains(command, "docker commit") {
+			return "sha256:2222", nil
+		}
 		return "", nil
 	}
 
@@ -103,5 +106,28 @@ func TestImageAPIEndpoints(t *testing.T) {
 
 	if rrDelPath.Code != http.StatusOK {
 		t.Fatalf("se esperaba status 200 en delete con ruta, obtenido: %d", rrDelPath.Code)
+	}
+
+	// 5. POST /api/containers/test-vm/c123/commit
+	commitPayload := docker.CommitContainerRequest{
+		ImageName: "backup-image",
+		Tag:       "v2.0",
+		Comment:   "snapshot",
+	}
+	commitBytes, _ := json.Marshal(commitPayload)
+	reqCommit := httptest.NewRequest(http.MethodPost, "/api/containers/test-vm/c123/commit", bytes.NewReader(commitBytes))
+	reqCommit.Header.Set("Content-Type", "application/json")
+	rrCommit := httptest.NewRecorder()
+	h.ServeHTTP(rrCommit, reqCommit)
+
+	if rrCommit.Code != http.StatusCreated {
+		t.Fatalf("se esperaba status 201 en commit, obtenido: %d, body: %s", rrCommit.Code, rrCommit.Body.String())
+	}
+	var commitResp docker.CommitContainerResponse
+	if err := json.NewDecoder(rrCommit.Body).Decode(&commitResp); err != nil {
+		t.Fatalf("error decodificando respuesta de commit: %v", err)
+	}
+	if !commitResp.Success || commitResp.Image != "backup-image:v2.0" {
+		t.Errorf("respuesta de commit inesperada: %+v", commitResp)
 	}
 }
