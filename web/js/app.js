@@ -3528,24 +3528,17 @@ class TerminalApp {
         const row = document.createElement('div');
         row.className = 'dynamic-row wiz-vol-row';
         
-        const isBind = hostPath && (hostPath.startsWith('/') || hostPath.startsWith('\\') || hostPath.indexOf(':') === 1);
         const selectedVm = this.wizVmSelect ? this.wizVmSelect.value.trim() : '';
 
         row.innerHTML = `
-            <select class="vol-type" style="flex: 0.55; min-width: 90px;">
-                <option value="volume" ${!isBind ? 'selected' : ''}>Volumen</option>
-                <option value="bind" ${isBind ? 'selected' : ''}>Ruta (Bind)</option>
-            </select>
             <div class="vol-source-wrap">
                 <!-- Select de volumen existente -->
-                <select class="vol-select ${isBind ? 'hidden' : ''}">
+                <select class="vol-select">
                     <option value="" disabled ${!hostPath ? 'selected' : ''}>Cargando volúmenes...</option>
                 </select>
                 <!-- Botón rápido para crear nuevo volumen -->
-                <button type="button" class="btn-inline-add ${isBind ? 'hidden' : ''}" title="Crear nuevo volumen en esta VM">+</button>
-                <!-- Input de texto para Ruta (Bind) -->
-                <input type="text" class="vol-host-bind ${!isBind ? 'hidden' : ''}" placeholder="Ruta absoluta en VM (ej. /opt/data)" value="${isBind ? this.escapeAttr(hostPath) : ''}" />
-                <!-- Input oculto que mantiene el valor final para envío -->
+                <button type="button" class="btn-inline-add" title="Crear nuevo volumen en esta VM">+</button>
+                <!-- Input oculto para mantener el valor seleccionado para el envío -->
                 <input type="hidden" class="vol-host" value="${this.escapeAttr(hostPath)}" />
             </div>
             <span style="color:var(--text-muted); padding: 0 4px; flex-shrink: 0;">&rarr;</span>
@@ -3553,10 +3546,8 @@ class TerminalApp {
             <button type="button" class="btn-remove-row" title="Eliminar fila">&times;</button>
         `;
 
-        const typeSelect = row.querySelector('.vol-type');
         const volSelect = row.querySelector('.vol-select');
         const btnNewVol = row.querySelector('.btn-inline-add');
-        const bindInput = row.querySelector('.vol-host-bind');
         const hiddenHost = row.querySelector('.vol-host');
 
         const populateOptions = (volumesList, selectVal) => {
@@ -3581,7 +3572,7 @@ class TerminalApp {
         // Cargar volúmenes de la VM seleccionada
         if (selectedVm) {
             this.fetchVmVolumes(selectedVm).then((vols) => {
-                populateOptions(vols, !isBind ? hostPath : '');
+                populateOptions(vols, hostPath);
             });
         } else {
             volSelect.innerHTML = '<option value="" disabled selected>Selecciona una VM primero</option>';
@@ -3589,25 +3580,6 @@ class TerminalApp {
 
         volSelect.addEventListener('change', () => {
             hiddenHost.value = volSelect.value;
-        });
-
-        bindInput.addEventListener('input', () => {
-            hiddenHost.value = bindInput.value.trim();
-        });
-
-        typeSelect.addEventListener('change', () => {
-            if (typeSelect.value === 'volume') {
-                volSelect.classList.remove('hidden');
-                btnNewVol.classList.remove('hidden');
-                bindInput.classList.add('hidden');
-                hiddenHost.value = volSelect.value;
-            } else {
-                volSelect.classList.add('hidden');
-                btnNewVol.classList.add('hidden');
-                bindInput.classList.remove('hidden');
-                hiddenHost.value = bindInput.value.trim();
-                setTimeout(() => bindInput.focus(), 50);
-            }
         });
 
         btnNewVol.addEventListener('click', () => {
@@ -3623,7 +3595,7 @@ class TerminalApp {
                 this.createVolumeVm.value = currentVm;
             }
 
-            // Registrar callback para seleccionar automáticamente el nuevo volumen en esta fila
+            // Callback para seleccionar automáticamente el nuevo volumen en esta fila
             this._onVolumeCreatedCallback = (newVolName, vm) => {
                 if (vm === currentVm) {
                     this.fetchVmVolumes(currentVm).then((vols) => {
