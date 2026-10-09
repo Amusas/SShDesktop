@@ -217,7 +217,6 @@ class TerminalApp {
         this.createVolumeForm = document.getElementById('create-volume-form');
         this.createVolumeVm = document.getElementById('create-volume-vm');
         this.createVolumeName = document.getElementById('create-volume-name');
-        this.createVolumeDriver = document.getElementById('create-volume-driver');
         this.createVolumeFeedback = document.getElementById('create-volume-feedback');
         this.submitCreateVolumeBtn = document.getElementById('submit-create-volume-btn');
 
@@ -2335,10 +2334,24 @@ class TerminalApp {
         this.volumesListEl.innerHTML = html;
     }
 
+    async fetchVmVolumes(vmName) {
+        if (!vmName) return [];
+        try {
+            const res = await fetch(`/api/volumes?vm=${encodeURIComponent(vmName)}`);
+            if (res.ok) {
+                const vols = await res.json();
+                return Array.isArray(vols) ? vols : [];
+            }
+        } catch (e) {
+            console.warn('Error obteniendo volúmenes de VM:', e);
+        }
+        return [];
+    }
+
     async submitCreateVolume() {
         const vmName = this.createVolumeVm.value;
         const name = this.createVolumeName.value.trim();
-        const driver = this.createVolumeDriver.value.trim() || 'local';
+        const driver = 'local';
 
         if (!vmName || !name) return;
 
@@ -2359,6 +2372,12 @@ class TerminalApp {
             this.createVolumeModal.classList.add('hidden');
             this.createVolumeForm.reset();
             this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
+
+            if (typeof this._onVolumeCreatedCallback === 'function') {
+                const cb = this._onVolumeCreatedCallback;
+                this._onVolumeCreatedCallback = null;
+                cb(name, vmName);
+            }
         } catch (e) {
             this.createVolumeFeedback.textContent = e.message;
             this.createVolumeFeedback.className = 'modal-feedback error';
@@ -3504,33 +3523,120 @@ class TerminalApp {
         this.wizEnvContainer.appendChild(row);
     }
 
-    addWizVolumeRow(hostPath = '', containerPath = '') {
+    async addWizVolumeRow(hostPath = '', containerPath = '') {
         if (!this.wizVolumesContainer) return;
         const row = document.createElement('div');
         row.className = 'dynamic-row wiz-vol-row';
         
-        // Determinar si es una ruta absoluta (empieza por / o \ o x:) o un volumen administrado
         const isBind = hostPath && (hostPath.startsWith('/') || hostPath.startsWith('\\') || hostPath.indexOf(':') === 1);
-        
+        const selectedVm = this.wizVmSelect ? this.wizVmSelect.value.trim() : '';
+
         row.innerHTML = `
-            <select class="vol-type" style="flex: 0.6; margin-right: 8px; padding: 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-input); color: var(--text);">
+            <select class="vol-type" style="flex: 0.55; min-width: 90px;">
                 <option value="volume" ${!isBind ? 'selected' : ''}>Volumen</option>
                 <option value="bind" ${isBind ? 'selected' : ''}>Ruta (Bind)</option>
             </select>
-            <input type="text" class="vol-host" placeholder="${!isBind ? 'Nombre del volumen' : 'Ruta absoluta en VM'}" value="${this.escapeAttr(hostPath)}" style="flex:1;" />
-            <span style="color:var(--text-muted); padding: 0 4px;">&rarr;</span>
-            <input type="text" class="vol-container" placeholder="Ruta en contenedor" value="${this.escapeAttr(containerPath)}" style="flex:1;" />
+            <div class="vol-source-wrap">
+                <!-- Select de volumen existente -->
+                <select class="vol-select ${isBind ? 'hidden' : ''}">
+                    <option value="" disabled ${!hostPath ? 'selected' : ''}>Cargando volúmenes...</option>
+                </select>
+                <!-- Botón rápido para crear nuevo volumen -->
+                <button type="button" class="btn-inline-add ${isBind ? 'hidden' : ''}" title="Crear nuevo volumen en esta VM">+</button>
+                <!-- Input de texto para Ruta (Bind) -->
+                <input type="text" class="vol-host-bind ${!isBind ? 'hidden' : ''}" placeholder="Ruta absoluta en VM (ej. /opt/data)" value="${isBind ? this.escapeAttr(hostPath) : ''}" />
+                <!-- Input oculto que mantiene el valor final para envío -->
+                <input type="hidden" class="vol-host" value="${this.escapeAttr(hostPath)}" />
+            </div>
+            <span style="color:var(--text-muted); padding: 0 4px; flex-shrink: 0;">&rarr;</span>
+            <input type="text" class="vol-container" placeholder="Ruta en contenedor (ej. /var/lib/data)" value="${this.escapeAttr(containerPath)}" style="flex: 1;" />
             <button type="button" class="btn-remove-row" title="Eliminar fila">&times;</button>
         `;
-        
+
         const typeSelect = row.querySelector('.vol-type');
-        const hostInput = row.querySelector('.vol-host');
-        
+        const volSelect = row.querySelector('.vol-select');
+        const btnNewVol = row.querySelector('.btn-inline-add');
+        const bindInput = row.querySelector('.vol-host-bind');
+        const hiddenHost = row.querySelector('.vol-host');
+
+        const populateOptions = (volumesList, selectVal) => {
+            let opts = '<option value="" disabled ' + (!selectVal ? 'selected' : '') + '>Selecciona un volumen...</option>';
+            if (volumesList.length === 0) {
+                opts = '<option value="" disabled selected>No hay volúmenes (crea uno con +)</option>';
+            } else {
+                volumesList.forEach((v) => {
+                    const vName = v.name || v.Name || v;
+                    opts += `<option value="${this.escapeAttr(vName)}" ${selectVal === vName ? 'selected' : ''}>${this.escapeHTML(vName)}</option>`;
+                });
+            }
+            volSelect.innerHTML = opts;
+            if (selectVal && volumesList.some(v => (v.name || v.Name || v) === selectVal)) {
+                volSelect.value = selectVal;
+                hiddenHost.value = selectVal;
+            } else if (!selectVal && volumesList.length > 0) {
+                hiddenHost.value = '';
+            }
+        };
+
+        // Cargar volúmenes de la VM seleccionada
+        if (selectedVm) {
+            this.fetchVmVolumes(selectedVm).then((vols) => {
+                populateOptions(vols, !isBind ? hostPath : '');
+            });
+        } else {
+            volSelect.innerHTML = '<option value="" disabled selected>Selecciona una VM primero</option>';
+        }
+
+        volSelect.addEventListener('change', () => {
+            hiddenHost.value = volSelect.value;
+        });
+
+        bindInput.addEventListener('input', () => {
+            hiddenHost.value = bindInput.value.trim();
+        });
+
         typeSelect.addEventListener('change', () => {
             if (typeSelect.value === 'volume') {
-                hostInput.placeholder = 'Nombre del volumen';
+                volSelect.classList.remove('hidden');
+                btnNewVol.classList.remove('hidden');
+                bindInput.classList.add('hidden');
+                hiddenHost.value = volSelect.value;
             } else {
-                hostInput.placeholder = 'Ruta absoluta en VM';
+                volSelect.classList.add('hidden');
+                btnNewVol.classList.add('hidden');
+                bindInput.classList.remove('hidden');
+                hiddenHost.value = bindInput.value.trim();
+                setTimeout(() => bindInput.focus(), 50);
+            }
+        });
+
+        btnNewVol.addEventListener('click', () => {
+            const currentVm = this.wizVmSelect ? this.wizVmSelect.value.trim() : '';
+            if (!currentVm) {
+                this.showWizFeedback('Debes seleccionar una máquina virtual primero.', 'error');
+                return;
+            }
+            if (this.createVolumeForm) this.createVolumeForm.reset();
+            if (this.createVolumeFeedback) this.createVolumeFeedback.classList.add('hidden');
+            if (this.createVolumeVm) {
+                this.createVolumeVm.innerHTML = `<option value="${this.escapeAttr(currentVm)}" selected>${this.escapeHTML(currentVm)}</option>`;
+                this.createVolumeVm.value = currentVm;
+            }
+
+            // Registrar callback para seleccionar automáticamente el nuevo volumen en esta fila
+            this._onVolumeCreatedCallback = (newVolName, vm) => {
+                if (vm === currentVm) {
+                    this.fetchVmVolumes(currentVm).then((vols) => {
+                        populateOptions(vols, newVolName);
+                    });
+                }
+            };
+
+            if (this.createVolumeModal) {
+                this.createVolumeModal.classList.remove('hidden');
+                if (this.createVolumeName) {
+                    setTimeout(() => this.createVolumeName.focus(), 50);
+                }
             }
         });
 
