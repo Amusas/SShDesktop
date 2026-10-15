@@ -146,6 +146,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/api/volumes/"):
 		h.handleVolumeItem(w, r)
 		return
+	case r.URL.Path == "/api/networks":
+		h.handleNetworks(w, r)
+		return
+	case strings.HasPrefix(r.URL.Path, "/api/networks/"):
+		h.handleNetworkItem(w, r)
+		return
 	case strings.HasPrefix(r.URL.Path, "/api/vms/"):
 		h.handleVirtualMachineByID(w, r)
 		return
@@ -1345,4 +1351,95 @@ func (h *Handler) handleVolumeItem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
 	}
 }
+
+func (h *Handler) handleNetworks(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		vmName := r.URL.Query().Get("vm")
+		if vmName == "" {
+			var allNetworks []docker.Network
+			vms, err := h.vmSvc.List()
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Error listando VMs: %s", err), http.StatusInternalServerError)
+				return
+			}
+			for _, v := range vms {
+				nets, err := h.dockerSvc.ListNetworks(r.Context(), v.Name)
+				if err == nil {
+					allNetworks = append(allNetworks, nets...)
+				}
+			}
+			if allNetworks == nil {
+				allNetworks = []docker.Network{}
+			}
+			json.NewEncoder(w).Encode(allNetworks)
+			return
+		}
+
+		nets, err := h.dockerSvc.ListNetworks(r.Context(), vmName)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error listando redes: %s", err), http.StatusInternalServerError)
+			return
+		}
+		if nets == nil {
+			nets = []docker.Network{}
+		}
+		json.NewEncoder(w).Encode(nets)
+
+	case http.MethodPost:
+		var req docker.CreateNetworkRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "cuerpo de solicitud inválido", http.StatusBadRequest)
+			return
+		}
+
+		res, err := h.dockerSvc.CreateNetwork(r.Context(), req)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error creando red: %s", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(res)
+
+	default:
+		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleNetworkItem(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	prefix := "/api/networks/"
+	sub := strings.TrimPrefix(r.URL.Path, prefix)
+	parts := strings.SplitN(sub, "/", 2)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		http.Error(w, "ruta de red inválida (se espera /api/networks/{vm}/{networkName})", http.StatusBadRequest)
+		return
+	}
+	vmName := parts[0]
+	networkName := parts[1]
+
+	switch r.Method {
+	case http.MethodGet:
+		netDetail, err := h.dockerSvc.InspectNetwork(r.Context(), vmName, networkName)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error inspeccionando red: %s", err), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(netDetail)
+
+	case http.MethodDelete:
+		if err := h.dockerSvc.DeleteNetwork(r.Context(), vmName, networkName); err != nil {
+			http.Error(w, fmt.Sprintf("Error eliminando red: %s", err), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Red eliminada"})
+
+	default:
+		http.Error(w, "método no permitido", http.StatusMethodNotAllowed)
+	}
+}
+
 

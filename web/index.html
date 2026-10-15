@@ -116,6 +116,14 @@
                 </svg>
                 <span>Volúmenes</span>
             </button>
+            <button class="docker-subnav-btn" data-subview="networks" id="docker-subnav-networks">
+                <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+                <span>Redes</span>
+            </button>
         </div>
 
         <!-- Vista Sidebar: Hosts -->
@@ -306,6 +314,41 @@
 
             <div class="vm-list-wrapper">
                 <div id="volumes-list" class="volumes-list"></div>
+            </div>
+        </section>
+
+        <!-- Vista Sidebar: Redes Docker -->
+        <section id="sidebar-networks-view" class="sidebar-view">
+            <div class="sidebar-view-header">
+                <div class="sidebar-view-title">Redes Docker</div>
+            </div>
+
+            <div class="containers-toolbar">
+                <div class="containers-filter-wrap">
+                    <label for="networks-vm-filter" class="containers-filter-label">Máquina Virtual:</label>
+                    <select id="networks-vm-filter" class="containers-filter-select">
+                        <option value="">Todas las máquinas virtuales</option>
+                    </select>
+                </div>
+
+                <div class="containers-toolbar-actions">
+                    <button id="open-create-network-btn" class="btn btn-primary">
+                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        <span>Crear red</span>
+                    </button>
+                    <button id="refresh-networks-btn" class="btn btn-secondary btn-icon" title="Refrescar lista de redes">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="vm-list-wrapper">
+                <div id="networks-list" class="networks-list"></div>
             </div>
         </section>
 
@@ -685,6 +728,19 @@
                             <button type="button" id="wiz-add-volume-btn" class="btn btn-ghost btn-sm">+ Volumen</button>
                         </div>
                         <div id="wiz-volumes-container" class="dynamic-rows-container"></div>
+                    </div>
+
+                    <!-- Red Docker -->
+                    <div class="form-field">
+                        <div class="dynamic-section-head">
+                            <label for="wiz-network">Red Docker</label>
+                            <button type="button" id="wiz-add-network-btn" class="btn btn-ghost btn-sm">+ Nueva red</button>
+                        </div>
+                        <div class="vol-source-wrap">
+                            <select id="wiz-network" class="form-select">
+                                <option value="">Predeterminada (bridge)</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -1082,8 +1138,153 @@ CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
         </div>
     </div>
 
-    <script src="/js/ansi.js?v=26"></script>
-    <script src="/js/websocket.js?v=26"></script>
-    <script src="/js/app.js?v=26"></script>
+    <!-- Modal Crear Red Docker -->
+    <div id="create-network-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog" role="dialog" aria-labelledby="create-network-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                    </div>
+                    <h2 id="create-network-title">Crear Red Docker</h2>
+                </div>
+                <button id="close-create-network-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            
+            <form id="create-network-form" class="modal-body">
+                <div class="form-field">
+                    <label for="create-network-vm">Máquina Virtual <span class="req">*</span></label>
+                    <select id="create-network-vm" name="vmName" class="form-select" required>
+                        <option value="" disabled selected>Selecciona una máquina...</option>
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label for="create-network-name">Nombre de la Red <span class="req">*</span></label>
+                    <input type="text" id="create-network-name" name="name" placeholder="ej. backend_net" required autocomplete="off" />
+                </div>
+                <div class="form-field">
+                    <label for="create-network-driver">Driver</label>
+                    <select id="create-network-driver" name="driver" class="form-select">
+                        <option value="bridge" selected>bridge (Red local estándar)</option>
+                        <option value="overlay" disabled title="Requiere entorno Docker Swarm">overlay (Requiere Docker Swarm)</option>
+                    </select>
+                </div>
+
+                <!-- Configuración Avanzada Plegable -->
+                <div class="advanced-section-toggle" style="margin: 12px 0 6px 0;">
+                    <button type="button" id="toggle-network-advanced-btn" class="btn btn-ghost btn-sm" style="padding-left: 0;">
+                        <span id="network-advanced-arrow">▶</span> Configuración avanzada (IPAM / Opciones)
+                    </button>
+                </div>
+
+                <div id="network-advanced-fields" class="hidden" style="display: flex; flex-direction: column; gap: 10px; padding: 10px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 10px;">
+                    <div class="form-field">
+                        <label for="create-network-subnet">Subred (CIDR)</label>
+                        <input type="text" id="create-network-subnet" name="subnet" placeholder="ej. 172.20.0.0/16" autocomplete="off" />
+                    </div>
+                    <div class="form-field">
+                        <label for="create-network-gateway">Gateway</label>
+                        <input type="text" id="create-network-gateway" name="gateway" placeholder="ej. 172.20.0.1" autocomplete="off" />
+                    </div>
+                    <div class="form-field">
+                        <label for="create-network-iprange">Rango IP (IP Range CIDR)</label>
+                        <input type="text" id="create-network-iprange" name="ipRange" placeholder="ej. 172.20.10.0/24" autocomplete="off" />
+                    </div>
+                    <div style="display: flex; gap: 20px; align-items: center; margin-top: 4px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px;">
+                            <input type="checkbox" id="create-network-internal" name="internal" />
+                            <span>Interna (Sin salida a Internet)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px;">
+                            <input type="checkbox" id="create-network-attachable" name="attachable" />
+                            <span>Attachable</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div id="create-network-feedback" class="modal-feedback hidden"></div>
+
+                <div class="modal-footer">
+                    <button type="button" id="cancel-create-network-btn" class="btn btn-secondary">Cancelar</button>
+                    <button type="submit" id="submit-create-network-btn" class="btn btn-primary">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Crear red</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Detalles de Red Docker -->
+    <div id="network-details-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog" role="dialog" aria-labelledby="network-details-title" style="max-width: 580px;">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                    </div>
+                    <h2 id="network-details-title">Detalles de la Red</h2>
+                </div>
+                <button id="close-network-details-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            
+            <div class="modal-body" id="network-details-body" style="display: flex; flex-direction: column; gap: 12px;">
+                <!-- Dinámico en JS -->
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" id="close-network-details-btn" class="btn btn-secondary">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Confirmación de Eliminación de Red -->
+    <div id="delete-network-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog delete-modal-dialog" role="dialog" aria-labelledby="delete-network-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap warning">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h2 id="delete-network-title">Eliminar Red Docker</h2>
+                </div>
+                <button id="close-delete-network-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            <div class="modal-body delete-modal-body">
+                <div class="delete-confirm-copy">
+                    <p>¿Deseas eliminar esta red Docker?</p>
+                    <div class="delete-vm-badge">
+                        <strong id="delete-network-name">red</strong>
+                        <span id="delete-network-vm-tag" class="vm-source-tag"></span>
+                    </div>
+                </div>
+                <div id="delete-network-feedback" class="modal-feedback hidden"></div>
+                <div class="delete-confirm-actions">
+                    <button type="button" id="cancel-delete-network" class="btn btn-secondary">Cancelar</button>
+                    <button type="button" id="confirm-delete-network" class="btn btn-danger">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Eliminar</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="/js/ansi.js?v=27"></script>
+    <script src="/js/websocket.js?v=27"></script>
+    <script src="/js/app.js?v=27"></script>
 </body>
 </html>

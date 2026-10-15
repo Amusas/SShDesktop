@@ -250,6 +250,13 @@ func (s *Service) CreateContainer(ctx context.Context, req CreateContainerReques
 	}
 	args = append(args, "--restart", EscapeShellArg(policy))
 
+	if strings.TrimSpace(req.Network) != "" {
+		if err := ValidateNetworkName(req.Network); err != nil {
+			return nil, fmt.Errorf("nombre de red inválido: %w", err)
+		}
+		args = append(args, "--network", EscapeShellArg(req.Network))
+	}
+
 	for _, p := range req.Ports {
 		if err := ValidatePort(p.HostPort); err != nil {
 			return nil, fmt.Errorf("puerto host inválido: %w", err)
@@ -670,4 +677,300 @@ func (s *Service) DeleteVolume(ctx context.Context, vmName string, volumeName st
 
 	return nil
 }
+
+// ListNetworks lista las redes de la VM con información resumida y cantidad de contenedores
+func (s *Service) ListNetworks(ctx context.Context, vmName string) ([]Network, error) {
+	if strings.TrimSpace(vmName) == "" {
+		return nil, fmt.Errorf("el nombre de la VM es obligatorio")
+	}
+
+	// Consultar redes en formato JSON por línea
+	format := `{"id":{{json .ID}},"name":{{json .Name}},"driver":{{json .Driver}},"scope":{{json .Scope}}}`
+	cmd := fmt.Sprintf("sudo docker network ls --format '%s'", format)
+
+	out, err := s.runner(ctx, vmName, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("listando redes en VM '%s': %w", vmName, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	var networks []Network
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var netItem Network
+		if err := json.Unmarshal([]byte(line), &netItem); err == nil {
+			netItem.VMName = vmName
+			if len(netItem.ID) > 12 {
+				netItem.ID = netItem.ID[:12]
+			}
+			networks = append(networks, netItem)
+		}
+	}
+
+	// Obtener detalles IPAM y contenedores conectados mediante docker network inspect masivo
+	if len(networks) > 0 {
+		var netNames []string
+		for _, n := range networks {
+			netNames = append(netNames, EscapeShellArg(n.Name))
+		}
+		inspectCmd := fmt.Sprintf("sudo docker network inspect %s 2>/dev/null", strings.Join(netNames, " "))
+		inspOut, _ := s.runner(ctx, vmName, inspectCmd)
+		if strings.TrimSpace(inspOut) != "" {
+			var inspectDetails []struct {
+				Name       string `json:"Name"`
+				Internal   bool   `json:"Internal"`
+				Attachable bool   `json:"Attachable"`
+				IPAM       struct {
+					Config []struct {
+						Subnet  string `json:"Subnet"`
+						Gateway string `json:"Gateway"`
+						IPRange string `json:"IPRange"`
+					} `json:"Config"`
+				} `json:"IPAM"`
+				Containers map[string]struct {
+					Name string `json:"Name"`
+				} `json:"Containers"`
+			}
+			if err := json.Unmarshal([]byte(inspOut), &inspectDetails); err == nil {
+				detailMap := make(map[string]struct {
+					subnet     string
+					gateway    string
+					ipRange    string
+					internal   bool
+					attachable bool
+					count      int
+					cNames     []string
+				})
+				for _, d := range inspectDetails {
+					sub := ""
+					gw := ""
+					ipr := ""
+					if len(d.IPAM.Config) > 0 {
+						sub = d.IPAM.Config[0].Subnet
+						gw = d.IPAM.Config[0].Gateway
+						ipr = d.IPAM.Config[0].IPRange
+					}
+					var cNames []string
+					for _, c := range d.Containers {
+						cNames = append(cNames, c.Name)
+					}
+					detailMap[d.Name] = struct {
+						subnet     string
+						gateway    string
+						ipRange    string
+						internal   bool
+						attachable bool
+						count      int
+						cNames     []string
+					}{
+						subnet:     sub,
+						gateway:    gw,
+						ipRange:    ipr,
+						internal:   d.Internal,
+						attachable: d.Attachable,
+						count:      len(d.Containers),
+						cNames:     cNames,
+					}
+				}
+
+				for i := range networks {
+					if info, ok := detailMap[networks[i].Name]; ok {
+						networks[i].Subnet = info.subnet
+						networks[i].Gateway = info.gateway
+						networks[i].IPRange = info.ipRange
+						networks[i].Internal = info.internal
+						networks[i].Attachable = info.attachable
+						networks[i].Containers = info.count
+						networks[i].ContainerList = info.cNames
+					}
+				}
+			}
+		}
+	}
+
+	return networks, nil
+}
+
+// InspectNetwork devuelve los detalles completos de una red Docker
+func (s *Service) InspectNetwork(ctx context.Context, vmName string, networkID string) (*Network, error) {
+	if strings.TrimSpace(vmName) == "" {
+		return nil, fmt.Errorf("el nombre de la VM es obligatorio")
+	}
+	if err := ValidateNetworkName(networkID); err != nil {
+		return nil, err
+	}
+
+	cmd := fmt.Sprintf("sudo docker network inspect %s", EscapeShellArg(networkID))
+	out, err := s.runner(ctx, vmName, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("inspeccionando red '%s' en VM '%s': %w", networkID, vmName, err)
+	}
+
+	var inspectList []struct {
+		Id         string `json:"Id"`
+		Name       string `json:"Name"`
+		Driver     string `json:"Driver"`
+		Scope      string `json:"Scope"`
+		Internal   bool   `json:"Internal"`
+		Attachable bool   `json:"Attachable"`
+		Options    map[string]string `json:"Options"`
+		IPAM       struct {
+			Driver string `json:"Driver"`
+			Config []struct {
+				Subnet  string `json:"Subnet"`
+				Gateway string `json:"Gateway"`
+				IPRange string `json:"IPRange"`
+			} `json:"Config"`
+		} `json:"IPAM"`
+		Containers map[string]struct {
+			Name        string `json:"Name"`
+			EndpointID  string `json:"EndpointID"`
+			MacAddress  string `json:"MacAddress"`
+			IPv4Address string `json:"IPv4Address"`
+		} `json:"Containers"`
+	}
+
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &inspectList); err != nil || len(inspectList) == 0 {
+		return nil, fmt.Errorf("fallo al parsear inspección de red: %w", err)
+	}
+
+	item := inspectList[0]
+	netDetail := &Network{
+		ID:         item.Id,
+		Name:       item.Name,
+		Driver:     item.Driver,
+		Scope:      item.Scope,
+		Internal:   item.Internal,
+		Attachable: item.Attachable,
+		Options:    item.Options,
+		VMName:     vmName,
+	}
+
+	if len(item.IPAM.Config) > 0 {
+		netDetail.Subnet = item.IPAM.Config[0].Subnet
+		netDetail.Gateway = item.IPAM.Config[0].Gateway
+		netDetail.IPRange = item.IPAM.Config[0].IPRange
+	}
+
+	netDetail.Containers = len(item.Containers)
+	for _, c := range item.Containers {
+		netDetail.ContainerList = append(netDetail.ContainerList, c.Name)
+	}
+
+	return netDetail, nil
+}
+
+// CreateNetwork crea una red en la VM especificada
+func (s *Service) CreateNetwork(ctx context.Context, req CreateNetworkRequest) (*Network, error) {
+	if strings.TrimSpace(req.VMName) == "" {
+		return nil, fmt.Errorf("el nombre de la VM es obligatorio")
+	}
+	if err := ValidateNetworkName(req.Name); err != nil {
+		return nil, err
+	}
+	if err := ValidateNetworkDriver(req.Driver); err != nil {
+		return nil, err
+	}
+
+	// Validar IPAM si fue provisto
+	if strings.TrimSpace(req.Subnet) != "" {
+		if _, err := ValidateCIDR(req.Subnet); err != nil {
+			return nil, err
+		}
+	}
+	if strings.TrimSpace(req.Gateway) != "" {
+		if err := ValidateGatewaySubnet(req.Gateway, req.Subnet); err != nil {
+			return nil, err
+		}
+	}
+	if strings.TrimSpace(req.IPRange) != "" {
+		if err := ValidateIPRange(req.IPRange, req.Subnet); err != nil {
+			return nil, err
+		}
+	}
+
+	driver := strings.TrimSpace(req.Driver)
+	if driver == "" {
+		driver = "bridge"
+	}
+
+	var args []string
+	args = append(args, "sudo", "docker", "network", "create", "--driver", EscapeShellArg(driver))
+
+	if strings.TrimSpace(req.Subnet) != "" {
+		args = append(args, "--subnet", EscapeShellArg(req.Subnet))
+	}
+	if strings.TrimSpace(req.Gateway) != "" {
+		args = append(args, "--gateway", EscapeShellArg(req.Gateway))
+	}
+	if strings.TrimSpace(req.IPRange) != "" {
+		args = append(args, "--ip-range", EscapeShellArg(req.IPRange))
+	}
+	if req.Internal {
+		args = append(args, "--internal")
+	}
+	if req.Attachable {
+		args = append(args, "--attachable")
+	}
+
+	args = append(args, EscapeShellArg(req.Name))
+	cmd := strings.Join(args, " ") + " 2>&1"
+
+	s.log.Info("creando red Docker en VM", "vm", req.VMName, "name", req.Name, "driver", driver)
+
+	out, err := s.runner(ctx, req.VMName, cmd)
+	if err != nil {
+		outStr := strings.TrimSpace(out)
+		if strings.Contains(outStr, "already exists") {
+			return nil, fmt.Errorf("ya existe una red con el nombre '%s'", req.Name)
+		}
+		return nil, fmt.Errorf("error creando red '%s': %s", req.Name, outStr)
+	}
+
+	id := strings.TrimSpace(out)
+	if len(id) > 12 {
+		id = id[:12]
+	}
+
+	return &Network{
+		ID:         id,
+		Name:       req.Name,
+		Driver:     driver,
+		Scope:      "local",
+		Subnet:     req.Subnet,
+		Gateway:    req.Gateway,
+		IPRange:    req.IPRange,
+		Internal:   req.Internal,
+		Attachable: req.Attachable,
+		Containers: 0,
+		VMName:     req.VMName,
+	}, nil
+}
+
+// DeleteNetwork elimina una red Docker en la VM asegurando que no sea una de las redes predeterminadas
+func (s *Service) DeleteNetwork(ctx context.Context, vmName string, networkName string) error {
+	netLower := strings.ToLower(strings.TrimSpace(networkName))
+	if netLower == "bridge" || netLower == "host" || netLower == "none" {
+		return fmt.Errorf("no está permitido eliminar las redes predeterminadas del sistema ('%s')", networkName)
+	}
+	if err := ValidateNetworkName(networkName); err != nil {
+		return err
+	}
+
+	cmd := fmt.Sprintf("sudo docker network rm %s 2>&1", EscapeShellArg(networkName))
+	out, err := s.runner(ctx, vmName, cmd)
+	if err != nil {
+		outStr := strings.TrimSpace(out)
+		if strings.Contains(outStr, "has active endpoints") || strings.Contains(outStr, "in use") {
+			return fmt.Errorf("la red '%s' tiene contenedores conectados y no puede ser eliminada", networkName)
+		}
+		return fmt.Errorf("error eliminando red: %s", outStr)
+	}
+
+	return nil
+}
+
 

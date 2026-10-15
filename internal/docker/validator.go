@@ -2,6 +2,7 @@ package docker
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"strings"
 )
@@ -145,8 +146,105 @@ func ValidateRestartPolicy(policy string) error {
 	}
 }
 
+// ValidateNetworkName verifica que el nombre de una red cumpla el formato seguro
+func ValidateNetworkName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("el nombre de la red no puede estar vacío")
+	}
+	if !containerNameRegex.MatchString(name) {
+		return fmt.Errorf("nombre de red inválido: '%s' (solo letras, números, puntos, guiones y guiones bajos)", name)
+	}
+	return nil
+}
+
+// ValidateNetworkDriver verifica que el driver de red sea compatible (bridge o overlay)
+func ValidateNetworkDriver(driver string) error {
+	driver = strings.ToLower(strings.TrimSpace(driver))
+	if driver == "" || driver == "bridge" || driver == "macvlan" || driver == "ipvlan" || driver == "overlay" {
+		return nil
+	}
+	return fmt.Errorf("driver de red no soportado: '%s' (permitidos: bridge, macvlan, ipvlan, overlay)", driver)
+}
+
+// ValidateCIDR verifica que la cadena sea una subred válida en formato CIDR (ej. 172.20.0.0/16)
+func ValidateCIDR(cidr string) (*net.IPNet, error) {
+	cidr = strings.TrimSpace(cidr)
+	if cidr == "" {
+		return nil, nil
+	}
+	_, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return nil, fmt.Errorf("formato CIDR de subred inválido: '%s' (ej. 172.20.0.0/16)", cidr)
+	}
+	return ipNet, nil
+}
+
+// ValidateIP verifica que la cadena sea una dirección IP válida
+func ValidateIP(ipStr string) (net.IP, error) {
+	ipStr = strings.TrimSpace(ipStr)
+	if ipStr == "" {
+		return nil, nil
+	}
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return nil, fmt.Errorf("dirección IP inválida: '%s'", ipStr)
+	}
+	return ip, nil
+}
+
+// ValidateGatewaySubnet verifica que el gateway pertenezca a la subred indicada
+func ValidateGatewaySubnet(gatewayStr string, subnetStr string) error {
+	gatewayStr = strings.TrimSpace(gatewayStr)
+	subnetStr = strings.TrimSpace(subnetStr)
+	if gatewayStr == "" {
+		return nil
+	}
+	if subnetStr == "" {
+		return fmt.Errorf("no se puede configurar un gateway sin especificar una subred")
+	}
+	gw, err := ValidateIP(gatewayStr)
+	if err != nil {
+		return err
+	}
+	subNet, err := ValidateCIDR(subnetStr)
+	if err != nil {
+		return err
+	}
+	if !subNet.Contains(gw) {
+		return fmt.Errorf("la IP del gateway '%s' no pertenece a la subred '%s'", gatewayStr, subnetStr)
+	}
+	return nil
+}
+
+// ValidateIPRange verifica que el rango IP esté dentro de la subred
+func ValidateIPRange(ipRangeStr string, subnetStr string) error {
+	ipRangeStr = strings.TrimSpace(ipRangeStr)
+	subnetStr = strings.TrimSpace(subnetStr)
+	if ipRangeStr == "" {
+		return nil
+	}
+	if subnetStr == "" {
+		return fmt.Errorf("no se puede configurar un rango IP sin especificar una subred")
+	}
+	rangeNet, err := ValidateCIDR(ipRangeStr)
+	if err != nil {
+		return fmt.Errorf("formato CIDR de rango IP inválido: '%s'", ipRangeStr)
+	}
+	subNet, err := ValidateCIDR(subnetStr)
+	if err != nil {
+		return err
+	}
+	// El inicio del rango IP debe estar dentro de la subred
+	if !subNet.Contains(rangeNet.IP) {
+		return fmt.Errorf("el rango IP '%s' no está contenido en la subred '%s'", ipRangeStr, subnetStr)
+	}
+	return nil
+}
+
 // EscapeShellArg envuelve un argumento en comillas simples seguras para POSIX shell
 func EscapeShellArg(arg string) string {
 	// Reemplaza comillas simples por '\'' para cerrar y reabrir comillas dentro de sh
 	return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
 }
+

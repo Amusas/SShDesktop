@@ -100,6 +100,8 @@ class TerminalApp {
         this.wizAddPortBtn = document.getElementById('wiz-add-port-btn');
         this.wizAddEnvBtn = document.getElementById('wiz-add-env-btn');
         this.wizAddVolumeBtn = document.getElementById('wiz-add-volume-btn');
+        this.wizNetworkSelect = document.getElementById('wiz-network');
+        this.wizAddNetworkBtn = document.getElementById('wiz-add-network-btn');
         this.wizSummaryCard = document.getElementById('wiz-summary-card');
         this.wizFeedback = document.getElementById('wiz-feedback');
         this.currentWizardStep = 1;
@@ -229,6 +231,48 @@ class TerminalApp {
         this.deleteVolumeVmTag = document.getElementById('delete-volume-vm-tag');
         this.deleteVolumeFeedback = document.getElementById('delete-volume-feedback');
         this.pendingDeleteVolume = null;
+
+        // Elementos de Gestión de Redes Docker
+        this.networksListEl = document.getElementById('networks-list');
+        this.networksVmFilter = document.getElementById('networks-vm-filter');
+        this.openCreateNetworkBtn = document.getElementById('open-create-network-btn');
+        this.refreshNetworksBtn = document.getElementById('refresh-networks-btn');
+        this.networks = [];
+
+        // Modal de Creación de Red
+        this.createNetworkModal = document.getElementById('create-network-modal');
+        this.closeCreateNetworkModalBtn = document.getElementById('close-create-network-modal');
+        this.cancelCreateNetworkBtn = document.getElementById('cancel-create-network-btn');
+        this.createNetworkForm = document.getElementById('create-network-form');
+        this.createNetworkVm = document.getElementById('create-network-vm');
+        this.createNetworkName = document.getElementById('create-network-name');
+        this.createNetworkDriver = document.getElementById('create-network-driver');
+        this.toggleNetworkAdvancedBtn = document.getElementById('toggle-network-advanced-btn');
+        this.networkAdvancedFields = document.getElementById('network-advanced-fields');
+        this.networkAdvancedArrow = document.getElementById('network-advanced-arrow');
+        this.createNetworkSubnet = document.getElementById('create-network-subnet');
+        this.createNetworkGateway = document.getElementById('create-network-gateway');
+        this.createNetworkIpRange = document.getElementById('create-network-iprange');
+        this.createNetworkInternal = document.getElementById('create-network-internal');
+        this.createNetworkAttachable = document.getElementById('create-network-attachable');
+        this.createNetworkFeedback = document.getElementById('create-network-feedback');
+        this.submitCreateNetworkBtn = document.getElementById('submit-create-network-btn');
+
+        // Modal de Detalles de Red
+        this.networkDetailsModal = document.getElementById('network-details-modal');
+        this.closeNetworkDetailsModalBtn = document.getElementById('close-network-details-modal');
+        this.closeNetworkDetailsBtn = document.getElementById('close-network-details-btn');
+        this.networkDetailsBody = document.getElementById('network-details-body');
+
+        // Modal de Eliminación de Red
+        this.deleteNetworkModal = document.getElementById('delete-network-modal');
+        this.closeDeleteNetworkModalBtn = document.getElementById('close-delete-network-modal');
+        this.cancelDeleteNetworkBtn = document.getElementById('cancel-delete-network');
+        this.confirmDeleteNetworkBtn = document.getElementById('confirm-delete-network');
+        this.deleteNetworkNameEl = document.getElementById('delete-network-name');
+        this.deleteNetworkVmTag = document.getElementById('delete-network-vm-tag');
+        this.deleteNetworkFeedback = document.getElementById('delete-network-feedback');
+        this.pendingDeleteNetwork = null;
 
         // Elementos del modal de configuracion
         this.modalEl = document.getElementById('config-modal');
@@ -738,6 +782,76 @@ class TerminalApp {
             this.confirmDeleteVolumeBtn.addEventListener('click', () => this.executeDeleteVolume());
         }
 
+        // Eventos de Gestión de Redes Docker
+        if (this.openCreateNetworkBtn) {
+            this.openCreateNetworkBtn.addEventListener('click', () => {
+                this.openCreateNetworkDialog();
+            });
+        }
+        if (this.closeCreateNetworkModalBtn) {
+            this.closeCreateNetworkModalBtn.addEventListener('click', () => this.createNetworkModal.classList.add('hidden'));
+        }
+        if (this.cancelCreateNetworkBtn) {
+            this.cancelCreateNetworkBtn.addEventListener('click', () => this.createNetworkModal.classList.add('hidden'));
+        }
+        if (this.createNetworkForm) {
+            this.createNetworkForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.submitCreateNetwork();
+            });
+        }
+        if (this.toggleNetworkAdvancedBtn) {
+            this.toggleNetworkAdvancedBtn.addEventListener('click', () => {
+                const isHidden = this.networkAdvancedFields.classList.toggle('hidden');
+                if (this.networkAdvancedArrow) {
+                    this.networkAdvancedArrow.textContent = isHidden ? '▶' : '▼';
+                }
+            });
+        }
+        if (this.refreshNetworksBtn) {
+            this.refreshNetworksBtn.addEventListener('click', () => {
+                this.loadNetworks(this.networksVmFilter ? this.networksVmFilter.value : '');
+            });
+        }
+        if (this.networksVmFilter) {
+            this.networksVmFilter.addEventListener('change', () => {
+                this.loadNetworks(this.networksVmFilter.value);
+            });
+        }
+
+        // Eventos de Detalles de Red
+        if (this.closeNetworkDetailsModalBtn) {
+            this.closeNetworkDetailsModalBtn.addEventListener('click', () => this.networkDetailsModal.classList.add('hidden'));
+        }
+        if (this.closeNetworkDetailsBtn) {
+            this.closeNetworkDetailsBtn.addEventListener('click', () => this.networkDetailsModal.classList.add('hidden'));
+        }
+
+        // Eventos de Eliminación de Red
+        if (this.closeDeleteNetworkModalBtn) {
+            this.closeDeleteNetworkModalBtn.addEventListener('click', () => this.closeDeleteNetworkModal());
+        }
+        if (this.cancelDeleteNetworkBtn) {
+            this.cancelDeleteNetworkBtn.addEventListener('click', () => this.closeDeleteNetworkModal());
+        }
+        if (this.confirmDeleteNetworkBtn) {
+            this.confirmDeleteNetworkBtn.addEventListener('click', () => this.executeDeleteNetwork());
+        }
+
+        // Evento botón + Nueva red dentro del Asistente de Contenedores
+        if (this.wizAddNetworkBtn) {
+            this.wizAddNetworkBtn.addEventListener('click', () => {
+                const vm = this.wizVmSelect ? this.wizVmSelect.value.trim() : '';
+                if (!vm) {
+                    this.showWizFeedback('Selecciona una máquina virtual primero.', 'error');
+                    return;
+                }
+                this.openCreateNetworkDialog(vm, (newNetName) => {
+                    this.updateWizardNetworks(vm, newNetName);
+                });
+            });
+        }
+
         // Eventos de Detalles de Contenedor
         if (this.closeContainerDetailsBtn) {
             this.closeContainerDetailsBtn.addEventListener('click', () => this.closeContainerDetails());
@@ -1022,6 +1136,8 @@ class TerminalApp {
                 s.classList.toggle('active', s.id === 'sidebar-images-view');
             } else if (subview === 'volumes') {
                 s.classList.toggle('active', s.id === 'sidebar-volumes-view');
+            } else if (subview === 'networks') {
+                s.classList.toggle('active', s.id === 'sidebar-networks-view');
             } else {
                 s.classList.remove('active');
             }
@@ -1036,6 +1152,9 @@ class TerminalApp {
         } else if (subview === 'volumes') {
             this.updateVolumesVmFilter();
             this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
+        } else if (subview === 'networks') {
+            this.updateNetworksVmFilter();
+            this.loadNetworks(this.networksVmFilter ? this.networksVmFilter.value : '');
         }
     }
 
@@ -2428,6 +2547,360 @@ class TerminalApp {
         }
     }
 
+    // =========================================================================
+    // Gestión de Redes Docker
+    // =========================================================================
+    async updateNetworksVmFilter() {
+        if (!this.networksVmFilter) return;
+        try {
+            const currentFilter = this.networksVmFilter.value;
+            const res = await fetch('/api/vms');
+            if (res.ok) {
+                const vms = await res.json();
+                let opts = '<option value="">Todas las máquinas virtuales</option>';
+                if (Array.isArray(vms)) {
+                    vms.forEach((vm) => {
+                        opts += `<option value="${this.escapeAttr(vm.name)}">${this.escapeHTML(vm.name)}</option>`;
+                    });
+                }
+                this.networksVmFilter.innerHTML = opts;
+                if (currentFilter && Array.isArray(vms) && vms.some((v) => v.name === currentFilter)) {
+                    this.networksVmFilter.value = currentFilter;
+                }
+            }
+        } catch (e) {
+            console.warn('No se pudieron listar VMs para el filtro de redes:', e);
+        }
+    }
+
+    async loadNetworks(vmFilter) {
+        if (!this.networksListEl) return;
+        this.networksListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando redes Docker...</div>`;
+
+        const filter = (vmFilter || '').trim();
+        const url = filter ? `/api/networks?vm=${encodeURIComponent(filter)}` : '/api/networks';
+
+        try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Error al listar redes');
+            let nets = await res.json();
+            if (!nets) nets = [];
+            this.networks = nets;
+            this.renderNetworks();
+        } catch (e) {
+            console.error('loadNetworks error:', e);
+            this.networksListEl.innerHTML = `<div class="empty-vm-list error">No se pudieron cargar las redes.</div>`;
+        }
+    }
+
+    renderNetworks() {
+        if (!this.networksListEl) return;
+        if (!this.networks || this.networks.length === 0) {
+            this.networksListEl.innerHTML = `<div class="empty-vm-list">No hay redes Docker disponibles.</div>`;
+            return;
+        }
+
+        let html = '';
+        this.networks.forEach((net) => {
+            const isDefault = ['bridge', 'host', 'none'].includes(net.name.toLowerCase());
+            const shortId = net.id ? net.id.substring(0, 12) : '-';
+            const containersCount = typeof net.containers === 'number' ? net.containers : 0;
+            const subnetText = net.subnet ? net.subnet : (isDefault ? 'Automática por Docker' : 'No configurada');
+
+            html += `
+                <div class="vm-card" data-net-name="${this.escapeAttr(net.name)}" data-vm="${this.escapeAttr(net.vmName)}">
+                    <div class="vm-card-header">
+                        <div class="vm-card-title-group">
+                            <span class="vm-name">${this.escapeHTML(net.name)}</span>
+                            <span class="vm-source-tag">${this.escapeHTML(net.vmName)}</span>
+                            ${isDefault ? '<span class="status-pill status-pill-active" style="font-size: 10px; padding: 2px 6px;">Predeterminada</span>' : ''}
+                        </div>
+                        <div class="vm-card-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="window.terminalApp.showNetworkDetails('${this.escapeAttr(net.vmName)}', '${this.escapeAttr(net.name)}')">
+                                Detalles
+                            </button>
+                            ${!isDefault ? `
+                                <button class="btn btn-danger btn-sm" onclick="window.terminalApp.promptDeleteNetwork('${this.escapeAttr(net.vmName)}', '${this.escapeAttr(net.name)}')">
+                                    Eliminar
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                    <div class="vm-details-grid">
+                        <div class="vm-detail-item">
+                            <span class="vm-detail-label">ID</span>
+                            <span class="vm-detail-value font-mono">${this.escapeHTML(shortId)}</span>
+                        </div>
+                        <div class="vm-detail-item">
+                            <span class="vm-detail-label">Driver</span>
+                            <span class="vm-detail-value">${this.escapeHTML(net.driver || 'bridge')}</span>
+                        </div>
+                        <div class="vm-detail-item">
+                            <span class="vm-detail-label">Scope</span>
+                            <span class="vm-detail-value">${this.escapeHTML(net.scope || 'local')}</span>
+                        </div>
+                        <div class="vm-detail-item">
+                            <span class="vm-detail-label">Contenedores</span>
+                            <span class="vm-detail-value font-mono">${containersCount}</span>
+                        </div>
+                        <div class="vm-detail-item" style="grid-column: 1 / -1;">
+                            <span class="vm-detail-label">Subred</span>
+                            <span class="vm-detail-value font-mono" style="font-size: 0.85rem;">${this.escapeHTML(subnetText)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        this.networksListEl.innerHTML = html;
+    }
+
+    async fetchVmNetworks(vmName) {
+        if (!vmName) return [];
+        try {
+            const res = await fetch(`/api/networks?vm=${encodeURIComponent(vmName)}`);
+            if (res.ok) {
+                const nets = await res.json();
+                return Array.isArray(nets) ? nets : [];
+            }
+        } catch (e) {
+            console.warn('Error obteniendo redes de VM:', e);
+        }
+        return [];
+    }
+
+    openCreateNetworkDialog(presetVm = '', onCreatedCallback = null) {
+        if (this.createNetworkForm) this.createNetworkForm.reset();
+        if (this.createNetworkFeedback) this.createNetworkFeedback.classList.add('hidden');
+        if (this.networkAdvancedFields) this.networkAdvancedFields.classList.add('hidden');
+        if (this.networkAdvancedArrow) this.networkAdvancedArrow.textContent = '▶';
+
+        // Llenar select de VM
+        if (this.createNetworkVm) {
+            this.createNetworkVm.innerHTML = '<option value="" disabled selected>Selecciona una máquina...</option>';
+            if (this.vms) {
+                this.vms.forEach((vm) => {
+                    const opt = document.createElement('option');
+                    const vName = vm.name || vm.Name;
+                    opt.value = vName;
+                    opt.textContent = vName;
+                    this.createNetworkVm.appendChild(opt);
+                });
+            }
+            const activeVm = presetVm || (this.networksVmFilter ? this.networksVmFilter.value : '');
+            if (activeVm) {
+                this.createNetworkVm.value = activeVm;
+            }
+        }
+
+        this._onNetworkCreatedCallback = onCreatedCallback;
+        if (this.createNetworkModal) {
+            this.createNetworkModal.classList.remove('hidden');
+            setTimeout(() => {
+                if (this.createNetworkName) this.createNetworkName.focus();
+            }, 50);
+        }
+    }
+
+    async submitCreateNetwork() {
+        const vmName = this.createNetworkVm.value;
+        const name = this.createNetworkName.value.trim();
+        const driver = this.createNetworkDriver ? this.createNetworkDriver.value : 'bridge';
+        const subnet = this.createNetworkSubnet ? this.createNetworkSubnet.value.trim() : '';
+        const gateway = this.createNetworkGateway ? this.createNetworkGateway.value.trim() : '';
+        const ipRange = this.createNetworkIpRange ? this.createNetworkIpRange.value.trim() : '';
+        const internal = this.createNetworkInternal ? this.createNetworkInternal.checked : false;
+        const attachable = this.createNetworkAttachable ? this.createNetworkAttachable.checked : false;
+
+        if (!vmName || !name) return;
+
+        this.submitCreateNetworkBtn.disabled = true;
+        this.submitCreateNetworkBtn.querySelector('.btn-spinner').classList.remove('hidden');
+        this.submitCreateNetworkBtn.querySelector('.btn-text').textContent = 'Creando...';
+        this.createNetworkFeedback.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/networks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    vmName,
+                    name,
+                    driver,
+                    subnet,
+                    gateway,
+                    ipRange,
+                    internal,
+                    attachable,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error creando red');
+
+            this.createNetworkModal.classList.add('hidden');
+            this.createNetworkForm.reset();
+            this.loadNetworks(this.networksVmFilter ? this.networksVmFilter.value : '');
+
+            if (typeof this._onNetworkCreatedCallback === 'function') {
+                const cb = this._onNetworkCreatedCallback;
+                this._onNetworkCreatedCallback = null;
+                cb(name, vmName);
+            }
+        } catch (e) {
+            this.createNetworkFeedback.textContent = e.message;
+            this.createNetworkFeedback.className = 'modal-feedback error';
+            this.createNetworkFeedback.classList.remove('hidden');
+        } finally {
+            this.submitCreateNetworkBtn.disabled = false;
+            this.submitCreateNetworkBtn.querySelector('.btn-spinner').classList.add('hidden');
+            this.submitCreateNetworkBtn.querySelector('.btn-text').textContent = 'Crear red';
+        }
+    }
+
+    async showNetworkDetails(vmName, networkName) {
+        if (!this.networkDetailsModal || !this.networkDetailsBody) return;
+        this.networkDetailsBody.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando detalles...</div>`;
+        this.networkDetailsModal.classList.remove('hidden');
+
+        try {
+            const res = await fetch(`/api/networks/${encodeURIComponent(vmName)}/${encodeURIComponent(networkName)}`);
+            if (!res.ok) {
+                const errData = await res.text();
+                throw new Error(errData || 'Error consultando detalles de la red');
+            }
+            const net = await res.json();
+
+            let containersHtml = '<span style="color: var(--text-muted); font-size: 12px;">Sin contenedores conectados</span>';
+            if (net.containerList && net.containerList.length > 0) {
+                containersHtml = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">` +
+                    net.containerList.map((c) => `<span class="badge" style="background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 4px; font-family: var(--font-mono); font-size: 11px;">${this.escapeHTML(c)}</span>`).join('') +
+                    `</div>`;
+            }
+
+            this.networkDetailsBody.innerHTML = `
+                <div class="vm-details-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Nombre</span>
+                        <span class="vm-detail-value" style="font-weight: 600;">${this.escapeHTML(net.name)}</span>
+                    </div>
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Máquina Virtual</span>
+                        <span class="vm-detail-value">${this.escapeHTML(net.vmName || vmName)}</span>
+                    </div>
+                    <div class="vm-detail-item" style="grid-column: 1 / -1;">
+                        <span class="vm-detail-label">ID Completo</span>
+                        <span class="vm-detail-value font-mono" style="font-size: 11px; word-break: break-all;">${this.escapeHTML(net.id || '-')}</span>
+                    </div>
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Driver</span>
+                        <span class="vm-detail-value">${this.escapeHTML(net.driver || 'bridge')}</span>
+                    </div>
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Scope</span>
+                        <span class="vm-detail-value">${this.escapeHTML(net.scope || 'local')}</span>
+                    </div>
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Subred (CIDR)</span>
+                        <span class="vm-detail-value font-mono">${this.escapeHTML(net.subnet || 'No configurada')}</span>
+                    </div>
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Gateway</span>
+                        <span class="vm-detail-value font-mono">${this.escapeHTML(net.gateway || 'No configurado')}</span>
+                    </div>
+                    ${net.ipRange ? `
+                        <div class="vm-detail-item" style="grid-column: 1 / -1;">
+                            <span class="vm-detail-label">Rango IP</span>
+                            <span class="vm-detail-value font-mono">${this.escapeHTML(net.ipRange)}</span>
+                        </div>
+                    ` : ''}
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Interna (sin internet)</span>
+                        <span class="vm-detail-value">${net.internal ? 'Sí' : 'No'}</span>
+                    </div>
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Attachable</span>
+                        <span class="vm-detail-value">${net.attachable ? 'Sí' : 'No'}</span>
+                    </div>
+                    <div class="vm-detail-item" style="grid-column: 1 / -1; margin-top: 6px;">
+                        <span class="vm-detail-label">Contenedores Conectados (${net.containers || 0})</span>
+                        ${containersHtml}
+                    </div>
+                </div>
+            `;
+        } catch (e) {
+            this.networkDetailsBody.innerHTML = `<div class="empty-vm-list error">${this.escapeHTML(e.message)}</div>`;
+        }
+    }
+
+    promptDeleteNetwork(vmName, networkName) {
+        if (['bridge', 'host', 'none'].includes(networkName.toLowerCase())) {
+            alert(`No está permitido eliminar las redes predeterminadas ('${networkName}').`);
+            return;
+        }
+        this.pendingDeleteNetwork = { vmName, networkName };
+        this.deleteNetworkNameEl.textContent = networkName;
+        this.deleteNetworkVmTag.textContent = vmName;
+        this.deleteNetworkFeedback.classList.add('hidden');
+        this.deleteNetworkModal.classList.remove('hidden');
+    }
+
+    closeDeleteNetworkModal() {
+        this.deleteNetworkModal.classList.add('hidden');
+        this.pendingDeleteNetwork = null;
+    }
+
+    async executeDeleteNetwork() {
+        if (!this.pendingDeleteNetwork) return;
+        const { vmName, networkName } = this.pendingDeleteNetwork;
+
+        this.confirmDeleteNetworkBtn.disabled = true;
+        this.confirmDeleteNetworkBtn.querySelector('.btn-spinner').classList.remove('hidden');
+
+        try {
+            const res = await fetch(`/api/networks/${encodeURIComponent(vmName)}/${encodeURIComponent(networkName)}`, {
+                method: 'DELETE',
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error al eliminar red');
+
+            this.closeDeleteNetworkModal();
+            this.loadNetworks(this.networksVmFilter ? this.networksVmFilter.value : '');
+        } catch (e) {
+            this.deleteNetworkFeedback.textContent = e.message;
+            this.deleteNetworkFeedback.className = 'modal-feedback error';
+            this.deleteNetworkFeedback.classList.remove('hidden');
+        } finally {
+            this.confirmDeleteNetworkBtn.disabled = false;
+            this.confirmDeleteNetworkBtn.querySelector('.btn-spinner').classList.add('hidden');
+        }
+    }
+
+    async updateWizardNetworks(vmName, selectNetworkName = '') {
+        if (!this.wizNetworkSelect) return;
+        this.wizNetworkSelect.innerHTML = '<option value="">Predeterminada (bridge)</option><option value="" disabled>Cargando redes...</option>';
+        if (!vmName) {
+            this.wizNetworkSelect.innerHTML = '<option value="">Predeterminada (bridge)</option>';
+            return;
+        }
+
+        try {
+            const nets = await this.fetchVmNetworks(vmName);
+            let opts = '<option value="">Predeterminada (bridge)</option>';
+            if (Array.isArray(nets)) {
+                nets.forEach((n) => {
+                    const isSelected = selectNetworkName && (n.name === selectNetworkName);
+                    opts += `<option value="${this.escapeAttr(n.name)}" ${isSelected ? 'selected' : ''}>${this.escapeHTML(n.name)} (${this.escapeHTML(n.driver)})</option>`;
+                });
+            }
+            this.wizNetworkSelect.innerHTML = opts;
+            if (selectNetworkName) {
+                this.wizNetworkSelect.value = selectNetworkName;
+            }
+        } catch (e) {
+            console.warn('Error actualizando selector de redes del wizard:', e);
+            this.wizNetworkSelect.innerHTML = '<option value="">Predeterminada (bridge)</option>';
+        }
+    }
+
     async loadContainers(vmFilter) {
         if (!this.containersListEl) return;
         this.containersListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando contenedores...</div>`;
@@ -3633,6 +4106,8 @@ class TerminalApp {
                         return;
                     }
                     step = 3;
+                    const selectedVm = this.wizVmSelect ? this.wizVmSelect.value.trim() : '';
+                    this.updateWizardNetworks(selectedVm);
                 } else {
                     if (!this.selectedCategory) {
                         this.showWizFeedback('Selecciona una categoría.', 'error');
@@ -3646,6 +4121,8 @@ class TerminalApp {
                     return;
                 }
                 this.applyWizardTemplate(this.selectedTemplate);
+                const selectedVm = this.wizVmSelect ? this.wizVmSelect.value.trim() : '';
+                this.updateWizardNetworks(selectedVm);
             } else if (this.currentWizardStep === 3) {
                 const name = this.wizNameInput ? this.wizNameInput.value.trim() : '';
                 const image = this.wizImageInput ? this.wizImageInput.value.trim() : '';
@@ -3756,6 +4233,10 @@ class TerminalApp {
                 <span class="summary-label">Volúmenes:</span>
                 <span class="summary-val">${vols.length > 0 ? vols.join(', ') : 'Ninguno'}</span>
             </div>
+            <div class="summary-row">
+                <span class="summary-label">Red:</span>
+                <span class="summary-val highlight">${this.escapeHTML(this.wizNetworkSelect && this.wizNetworkSelect.value ? this.wizNetworkSelect.value : 'Predeterminada (bridge)')}</span>
+            </div>
         `;
     }
 
@@ -3764,6 +4245,7 @@ class TerminalApp {
         const name = this.wizNameInput ? this.wizNameInput.value.trim() : '';
         const image = this.wizImageInput ? this.wizImageInput.value.trim() : '';
         const restartPolicy = this.wizRestartSelect ? this.wizRestartSelect.value : 'unless-stopped';
+        const network = this.wizNetworkSelect ? this.wizNetworkSelect.value.trim() : '';
 
         if (!vmName || !name || !image) {
             this.showWizFeedback('Faltan campos obligatorios para crear el contenedor.', 'error');
@@ -3803,6 +4285,7 @@ class TerminalApp {
             name,
             image,
             restartPolicy,
+            network,
             ports,
             env,
             volumes,

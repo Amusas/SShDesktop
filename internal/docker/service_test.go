@@ -337,3 +337,138 @@ func TestServiceVolumeOperations(t *testing.T) {
 	}
 }
 
+func TestNetworkValidation(t *testing.T) {
+	if err := ValidateNetworkName("my-net_1.0"); err != nil {
+		t.Errorf("nombre de red válido rechazado: %v", err)
+	}
+	if err := ValidateNetworkName("bad net;rm"); err == nil {
+		t.Errorf("se esperaba error para nombre de red con metacaracteres")
+	}
+
+	if err := ValidateNetworkDriver("bridge"); err != nil {
+		t.Errorf("driver bridge rechazado: %v", err)
+	}
+	if err := ValidateNetworkDriver("overlay"); err != nil {
+		t.Errorf("driver overlay rechazado: %v", err)
+	}
+	if err := ValidateNetworkDriver("invalid-driver"); err == nil {
+		t.Errorf("driver inválido aceptado")
+	}
+
+	// CIDR
+	if _, err := ValidateCIDR("172.20.0.0/16"); err != nil {
+		t.Errorf("CIDR válido rechazado: %v", err)
+	}
+	if _, err := ValidateCIDR("172.20.0.0"); err == nil {
+		t.Errorf("IP sin máscara aceptada como CIDR")
+	}
+
+	// Gateway & Subnet
+	if err := ValidateGatewaySubnet("172.20.0.1", "172.20.0.0/16"); err != nil {
+		t.Errorf("gateway válido en subred rechazado: %v", err)
+	}
+	if err := ValidateGatewaySubnet("10.0.0.1", "172.20.0.0/16"); err == nil {
+		t.Errorf("gateway fuera de subred aceptado")
+	}
+
+	// IP range
+	if err := ValidateIPRange("172.20.10.0/24", "172.20.0.0/16"); err != nil {
+		t.Errorf("rango IP válido en subred rechazado: %v", err)
+	}
+	if err := ValidateIPRange("192.168.1.0/24", "172.20.0.0/16"); err == nil {
+		t.Errorf("rango IP fuera de subred aceptado")
+	}
+}
+
+func TestServiceNetworkOperations(t *testing.T) {
+	mockNetList := `{"id":"1234567890ab","name":"bridge","driver":"bridge","scope":"local"}
+{"id":"abcdef123456","name":"custom_net","driver":"bridge","scope":"local"}`
+
+	mockInspectMulti := `[
+		{
+			"Name": "bridge",
+			"Internal": false,
+			"Attachable": false,
+			"IPAM": { "Config": [{ "Subnet": "172.17.0.0/16", "Gateway": "172.17.0.1" }] },
+			"Containers": { "c1": { "Name": "c1_app" } }
+		},
+		{
+			"Name": "custom_net",
+			"Internal": true,
+			"Attachable": true,
+			"IPAM": { "Config": [{ "Subnet": "172.20.0.0/16", "Gateway": "172.20.0.1" }] },
+			"Containers": {}
+		}
+	]`
+
+	var executedCommands []string
+	runner := func(ctx context.Context, vmName string, command string) (string, error) {
+		executedCommands = append(executedCommands, command)
+		if strings.Contains(command, "docker network ls") {
+			return mockNetList, nil
+		}
+		if strings.Contains(command, "docker network inspect") {
+			return mockInspectMulti, nil
+		}
+		if strings.Contains(command, "docker network create") {
+			return "9876543210fe", nil
+		}
+		if strings.Contains(command, "docker network rm") {
+			return "custom_net", nil
+		}
+		return "", nil
+	}
+
+	discardLog := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewService(runner, discardLog)
+
+	// List networks
+	nets, err := svc.ListNetworks(context.Background(), "test-vm")
+	if err != nil {
+		t.Fatalf("error listando redes: %v", err)
+	}
+	if len(nets) != 2 {
+		t.Fatalf("se esperaban 2 redes, se obtuvieron: %d", len(nets))
+	}
+	if nets[0].Name != "bridge" || nets[0].Containers != 1 || nets[0].Subnet != "172.17.0.0/16" {
+		t.Errorf("red 0 mapeada incorrectamente: %+v", nets[0])
+	}
+	if nets[1].Name != "custom_net" || nets[1].Containers != 0 || !nets[1].Internal || !nets[1].Attachable {
+		t.Errorf("red 1 mapeada incorrectamente: %+v", nets[1])
+	}
+
+	// Create network
+	createReq := CreateNetworkRequest{
+		VMName:     "test-vm",
+		Name:       "new_net",
+		Driver:     "bridge",
+		Subnet:     "172.25.0.0/16",
+		Gateway:    "172.25.0.1",
+		Internal:   true,
+		Attachable: true,
+	}
+	newNet, err := svc.CreateNetwork(context.Background(), createReq)
+	if err != nil {
+		t.Fatalf("error creando red: %v", err)
+	}
+	if newNet.Name != "new_net" || newNet.ID != "9876543210fe" || !newNet.Internal {
+		t.Errorf("red creada inesperada: %+v", newNet)
+	}
+
+	// Check command parameters
+	lastCmd := executedCommands[len(executedCommands)-1]
+	if !strings.Contains(lastCmd, "--subnet '172.25.0.0/16'") || !strings.Contains(lastCmd, "--internal") {
+		t.Errorf("comando create no contiene argumentos esperados: %s", lastCmd)
+	}
+
+	// Delete default network protection
+	if err := svc.DeleteNetwork(context.Background(), "test-vm", "bridge"); err == nil {
+		t.Fatalf("se esperaba error al intentar eliminar red predeterminada 'bridge'")
+	}
+
+	// Delete custom network
+	if err := svc.DeleteNetwork(context.Background(), "test-vm", "custom_net"); err != nil {
+		t.Fatalf("error eliminando red personalizada: %v", err)
+	}
+}
+

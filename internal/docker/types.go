@@ -42,6 +42,7 @@ type CreateContainerRequest struct {
 	Volumes       []VolumeMount `json:"volumes,omitempty"`
 	Env           []EnvVar      `json:"env,omitempty"`
 	RestartPolicy string        `json:"restartPolicy,omitempty"` // unless-stopped, always, on-failure, no
+	Network       string        `json:"network,omitempty"`       // Red Docker a la que conectar el contenedor
 	Command       string        `json:"command,omitempty"`
 }
 
@@ -164,3 +165,31 @@ type CreateVolumeRequest struct {
 	Driver string `json:"driver,omitempty"` // local por defecto
 }
 
+// Network representa una red Docker en una VM
+type Network struct {
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Driver         string            `json:"driver"`
+	Scope          string            `json:"scope"`
+	Subnet         string            `json:"subnet,omitempty"`
+	Gateway        string            `json:"gateway,omitempty"`
+	IPRange        string            `json:"ipRange,omitempty"`
+	Internal       bool              `json:"internal"`
+	Attachable     bool              `json:"attachable"`
+	Containers     int               `json:"containers"`
+	ContainerList  []string          `json:"containerList,omitempty"` // Nombres de contenedores conectados
+	VMName         string            `json:"vmName"`
+	Options        map[string]string `json:"options,omitempty"`
+}
+
+// CreateNetworkRequest contiene los parámetros para crear una red Docker
+type CreateNetworkRequest struct {
+	VMName     string `json:"vmName"`
+	Name       string `json:"name"`
+	Driver     string `json:"driver,omitempty"` // bridge por defecto
+	Subnet     string `json:"subnet,omitempty"`
+	Gateway    string `json:"gateway,omitempty"`
+	IPRange    string `json:"ipRange,omitempty"`
+	Internal   bool   `json:"internal,omitempty"`
+	Attachable bool   `json:"attachable,omitempty"`
+}
