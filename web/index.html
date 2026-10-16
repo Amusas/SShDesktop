@@ -967,57 +967,82 @@
                 </div>
 
                 <div class="form-field">
-                    <label>Dockerfile <span class="req">*</span></label>
-                    <div class="dockerfile-input-tabs">
-                        <button type="button" class="df-tab active" data-dftab="paste">Pegar texto</button>
-                        <button type="button" class="df-tab" data-dftab="upload">Subir archivo</button>
+                    <div class="df-section-header">
+                        <label class="df-section-label">Dockerfile <span class="req">*</span></label>
+                        <div class="dockerfile-input-tabs">
+                            <button type="button" class="df-tab active" data-dftab="paste">Pegar texto</button>
+                            <button type="button" class="df-tab" data-dftab="upload">Subir archivo</button>
+                        </div>
                     </div>
 
                     <!-- Panel Subir Archivo -->
                     <div id="df-upload-panel" class="df-panel hidden">
+                        <!-- Dropzone inicial -->
                         <div class="df-file-dropzone" id="df-file-dropzone">
                             <input type="file" id="df-file-input" accept=".dockerfile,Dockerfile,text/*" multiple class="df-file-hidden" />
-                            <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="1.8" fill="none">
+                            <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="1.8" fill="none">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                                 <polyline points="17 8 12 3 7 8"></polyline>
                                 <line x1="12" y1="3" x2="12" y2="15"></line>
                             </svg>
-                            <p class="dropzone-text">Haz clic o arrastra tu <code>Dockerfile</code> (y archivos para COPY) aquí</p>
-                            <span id="df-file-name" class="dropzone-filename"></span>
+                            <span class="dropzone-text">Arrastra tu <strong>Dockerfile</strong> o haz clic para explorar</span>
+                        </div>
+
+                        <!-- Card cuando ya se seleccionó Dockerfile -->
+                        <div id="df-selected-card" class="df-selected-card hidden">
+                            <div class="df-card-left">
+                                <span class="df-card-icon">📄</span>
+                                <div class="df-card-info">
+                                    <div class="df-card-title-row">
+                                        <strong id="df-file-name" class="df-card-name">Dockerfile</strong>
+                                        <span class="df-card-tag">Principal</span>
+                                    </div>
+                                    <span id="df-file-size" class="df-card-size">0 KB</span>
+                                </div>
+                            </div>
+                            <button type="button" id="df-change-file-btn" class="btn btn-xs btn-secondary">Cambiar</button>
                         </div>
                     </div>
 
                     <!-- Panel Editor / Textarea Dockerfile -->
                     <div id="df-paste-panel" class="df-panel">
-                        <textarea id="build-dockerfile-content" class="dockerfile-editor" rows="8" placeholder="# Escribe o pega las instrucciones del Dockerfile
+                        <textarea id="build-dockerfile-content" class="dockerfile-editor" rows="7" placeholder="# Escribe o pega las instrucciones del Dockerfile
 FROM alpine:latest
 RUN apk add --no-cache curl
 CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
                     </div>
                 </div>
 
-                <!-- Archivos adjuntos para el contexto de compilación (COPY / ADD) -->
+                <!-- Archivos adjuntos para el contexto (COPY / ADD) -->
                 <div class="form-field df-context-section" id="df-context-section">
                     <div class="df-context-header">
-                        <label class="df-context-title">Archivos adjuntos para el contexto (COPY / ADD)</label>
-                        <span id="df-attached-count" class="df-attached-badge">0 archivos</span>
-                    </div>
-                    <p class="df-context-help">Adjunta los archivos locales que el Dockerfile copiará a la imagen con las instrucciones <code>COPY</code> o <code>ADD</code>.</p>
-
-                    <div class="df-context-dropzone" id="df-context-dropzone">
+                        <div class="df-context-header-left">
+                            <label class="df-context-title">Archivos adjuntos (COPY / ADD)</label>
+                            <span id="df-attached-count" class="df-attached-badge">0</span>
+                        </div>
+                        <button type="button" id="df-attach-trigger-btn" class="btn btn-xs btn-outline-accent">
+                            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.2" fill="none">
+                                <path d="M12 5v14M5 12h14"></path>
+                            </svg>
+                            <span>Adjuntar archivos</span>
+                        </button>
                         <input type="file" id="df-extra-files-input" multiple class="df-file-hidden" />
-                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="1.8" fill="none">
+                    </div>
+
+                    <!-- Dropzone compacta cuando no hay archivos -->
+                    <div class="df-context-dropzone" id="df-context-dropzone">
+                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="1.8" fill="none">
                             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
                         </svg>
-                        <span class="df-context-drop-text">Haz clic o arrastra archivos adicionales aquí</span>
+                        <span class="df-context-drop-text">Arrastra aquí los archivos a copiar con <code>COPY</code> / <code>ADD</code></span>
                     </div>
 
+                    <!-- Contenedor cuando hay archivos adjuntos -->
                     <div id="df-attachments-container" class="df-attachments-container hidden">
-                        <div class="df-attachments-bar">
-                            <span class="df-attachments-bar-title">Archivos listos para enviar a la VM:</span>
-                            <button type="button" id="df-clear-all-btn" class="btn-link-danger">Quitar todos</button>
-                        </div>
                         <div id="df-attachments-list" class="df-attachments-list"></div>
+                        <div class="df-attachments-bar">
+                            <button type="button" id="df-clear-all-btn" class="btn-link-danger">Eliminar todos</button>
+                        </div>
                     </div>
                 </div>
 
@@ -1276,8 +1301,8 @@ CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
     </div>
 
 
-    <script src="/js/ansi.js?v=29"></script>
-    <script src="/js/websocket.js?v=29"></script>
-    <script src="/js/app.js?v=29"></script>
+    <script src="/js/ansi.js?v=30"></script>
+    <script src="/js/websocket.js?v=30"></script>
+    <script src="/js/app.js?v=30"></script>
 </body>
 </html>

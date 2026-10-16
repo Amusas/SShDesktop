@@ -132,7 +132,11 @@ class TerminalApp {
         this.dfPastePanel = document.getElementById('df-paste-panel');
         this.dfFileInput = document.getElementById('df-file-input');
         this.dfFileDropzone = document.getElementById('df-file-dropzone');
+        this.dfSelectedCard = document.getElementById('df-selected-card');
+        this.dfChangeFileBtn = document.getElementById('df-change-file-btn');
         this.dfFileName = document.getElementById('df-file-name');
+        this.dfFileSize = document.getElementById('df-file-size');
+        this.dfAttachTriggerBtn = document.getElementById('df-attach-trigger-btn');
         this.dfExtraFilesInput = document.getElementById('df-extra-files-input');
         this.dfContextDropzone = document.getElementById('df-context-dropzone');
         this.dfAttachedCount = document.getElementById('df-attached-count');
@@ -912,6 +916,11 @@ class TerminalApp {
                     this.handlePrimaryFilesUpload(e.dataTransfer.files);
                 }
             });
+        if (this.dfChangeFileBtn && this.dfFileInput) {
+            this.dfChangeFileBtn.addEventListener('click', () => this.dfFileInput.click());
+        }
+        if (this.dfAttachTriggerBtn && this.dfExtraFilesInput) {
+            this.dfAttachTriggerBtn.addEventListener('click', () => this.dfExtraFilesInput.click());
         }
         if (this.dfContextDropzone && this.dfExtraFilesInput) {
             this.dfContextDropzone.addEventListener('click', () => this.dfExtraFilesInput.click());
@@ -3542,6 +3551,9 @@ class TerminalApp {
         if (this.buildImageName) this.buildImageName.value = '';
         if (this.buildImageTag) this.buildImageTag.value = '';
         if (this.dfFileName) this.dfFileName.textContent = '';
+        if (this.dfFileSize) this.dfFileSize.textContent = '';
+        if (this.dfSelectedCard) this.dfSelectedCard.classList.add('hidden');
+        if (this.dfFileDropzone) this.dfFileDropzone.classList.remove('hidden');
         if (this.dfFileInput) this.dfFileInput.value = '';
         if (this.dfExtraFilesInput) this.dfExtraFilesInput.value = '';
         this.attachedBuildFiles = [];
@@ -3599,7 +3611,16 @@ class TerminalApp {
     handleDockerfileUpload(file) {
         if (!file) return;
         if (this.dfFileName) {
-            this.dfFileName.textContent = `✓ ${file.name} (${this.formatBytes(file.size)}) - Listo`;
+            this.dfFileName.textContent = file.name;
+        }
+        if (this.dfFileSize) {
+            this.dfFileSize.textContent = this.formatBytes(file.size);
+        }
+        if (this.dfSelectedCard) {
+            this.dfSelectedCard.classList.remove('hidden');
+        }
+        if (this.dfFileDropzone) {
+            this.dfFileDropzone.classList.add('hidden');
         }
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -3664,19 +3685,21 @@ class TerminalApp {
     renderAttachedFiles() {
         if (!this.dfAttachmentsList || !this.dfAttachmentsContainer || !this.dfAttachedCount) return;
         const count = this.attachedBuildFiles.length;
-        this.dfAttachedCount.textContent = `${count} ${count === 1 ? 'archivo' : 'archivos'}`;
+        this.dfAttachedCount.textContent = count;
 
         if (count === 0) {
+            if (this.dfContextDropzone) this.dfContextDropzone.classList.remove('hidden');
             this.dfAttachmentsContainer.classList.add('hidden');
             this.dfAttachmentsList.innerHTML = '';
             return;
         }
 
+        if (this.dfContextDropzone) this.dfContextDropzone.classList.add('hidden');
         this.dfAttachmentsContainer.classList.remove('hidden');
         this.dfAttachmentsList.innerHTML = this.attachedBuildFiles.map((file, idx) => `
             <div class="df-attached-item">
                 <div class="df-attached-info">
-                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="1.8" fill="none">
+                    <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="1.8" fill="none">
                         <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
                         <polyline points="13 2 13 9 20 9"></polyline>
                     </svg>
