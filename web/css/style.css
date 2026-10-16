@@ -9,20 +9,20 @@
 }
 
 :root {
-    --bg-primary: #0a0a0c;
-    --bg-secondary: #141416;
-    --bg-card: #18181b;
-    --bg-tertiary: #141418;
-    --bg-input: #050507;
-    --text-primary: #e2e8f0;
-    --text-muted: #64748b;
-    --accent: #38bdf8;
-    --accent-hover: #0284c7;
+    --bg-primary: #0b111c;
+    --bg-secondary: #0d1524;
+    --bg-card: #101c30;
+    --bg-tertiary: #14223a;
+    --bg-input: #080d16;
+    --text-primary: #f8fafc;
+    --text-muted: #8da2bd;
+    --accent: #1d63ed;
+    --accent-hover: #256af4;
     --accent-green: #22c55e;
     --accent-red: #ef4444;
     --accent-yellow: #f59e0b;
-    --border: #1e293b;
-    --border-focus: #38bdf8;
+    --border: #1a2a44;
+    --border-focus: #1d63ed;
     --font-mono: "Cascadia Code", "Consolas", "Fira Code", "JetBrains Mono", "Courier New", monospace;
 }
 
@@ -1158,12 +1158,13 @@ body {
 
 .btn-primary {
     background: var(--accent);
-    color: #0f172a;
+    color: #ffffff;
+    font-weight: 600;
 }
 
 .btn-primary:hover {
-    background: #7dd3fc;
-    box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+    background: var(--accent-hover);
+    box-shadow: 0 0 12px rgba(29, 99, 237, 0.4);
 }
 
 .btn-secondary {
@@ -2033,7 +2034,7 @@ body {
     display: flex;
     gap: 6px;
     padding: 6px 8px;
-    background: rgba(15, 23, 42, 0.6);
+    background: rgba(13, 21, 36, 0.85);
     border: 1px solid var(--border);
     border-radius: 8px;
     margin-bottom: 10px;
@@ -2068,9 +2069,9 @@ body {
 
 .docker-subnav-btn.active {
     color: #ffffff;
-    background: rgba(56, 189, 248, 0.18);
-    border-color: rgba(56, 189, 248, 0.4);
-    box-shadow: 0 1px 6px rgba(56, 189, 248, 0.15);
+    background: rgba(29, 99, 237, 0.25);
+    border-color: rgba(29, 99, 237, 0.6);
+    box-shadow: 0 1px 6px rgba(29, 99, 237, 0.25);
 }
 
 /* ==========================================================================
