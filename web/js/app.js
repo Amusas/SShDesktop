@@ -916,6 +916,7 @@ class TerminalApp {
                     this.handlePrimaryFilesUpload(e.dataTransfer.files);
                 }
             });
+        }
         if (this.dfChangeFileBtn && this.dfFileInput) {
             this.dfChangeFileBtn.addEventListener('click', () => this.dfFileInput.click());
         }
