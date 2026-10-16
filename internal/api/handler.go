@@ -1004,25 +1004,13 @@ func (h *Handler) handleContainers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var (
-			allContainers []docker.Container
-			mu            sync.Mutex
-			wg            sync.WaitGroup
-		)
+		var allContainers []docker.Container
 		for _, v := range vms {
-			wg.Add(1)
-			go func(vmName string) {
-				defer wg.Done()
-				conts, err := h.dockerSvc.ListContainers(r.Context(), vmName)
-				if err == nil && len(conts) > 0 {
-					mu.Lock()
-					allContainers = append(allContainers, conts...)
-					mu.Unlock()
-				}
-			}(v.Name)
+			conts, err := h.dockerSvc.ListContainers(r.Context(), v.Name)
+			if err == nil && len(conts) > 0 {
+				allContainers = append(allContainers, conts...)
+			}
 		}
-		wg.Wait()
-
 		if allContainers == nil {
 			allContainers = []docker.Container{}
 		}
@@ -1192,25 +1180,13 @@ func (h *Handler) handleImages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var (
-			allImages []docker.Image
-			mu        sync.Mutex
-			wg        sync.WaitGroup
-		)
+		var allImages []docker.Image
 		for _, v := range vms {
-			wg.Add(1)
-			go func(vmName string) {
-				defer wg.Done()
-				imgs, err := h.dockerSvc.ListImages(r.Context(), vmName)
-				if err == nil && len(imgs) > 0 {
-					mu.Lock()
-					allImages = append(allImages, imgs...)
-					mu.Unlock()
-				}
-			}(v.Name)
+			imgs, err := h.dockerSvc.ListImages(r.Context(), v.Name)
+			if err == nil && len(imgs) > 0 {
+				allImages = append(allImages, imgs...)
+			}
 		}
-		wg.Wait()
-
 		if allImages == nil {
 			allImages = []docker.Image{}
 		}
@@ -1319,25 +1295,13 @@ func (h *Handler) handleVolumes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var (
-			allVols []docker.Volume
-			mu      sync.Mutex
-			wg      sync.WaitGroup
-		)
+		var allVols []docker.Volume
 		for _, v := range vms {
-			wg.Add(1)
-			go func(vmName string) {
-				defer wg.Done()
-				vols, err := h.dockerSvc.ListVolumes(r.Context(), vmName)
-				if err == nil && len(vols) > 0 {
-					mu.Lock()
-					allVols = append(allVols, vols...)
-					mu.Unlock()
-				}
-			}(v.Name)
+			vols, err := h.dockerSvc.ListVolumes(r.Context(), v.Name)
+			if err == nil && len(vols) > 0 {
+				allVols = append(allVols, vols...)
+			}
 		}
-		wg.Wait()
-
 		if allVols == nil {
 			allVols = []docker.Volume{}
 		}
@@ -1395,30 +1359,18 @@ func (h *Handler) handleNetworks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		vmName := r.URL.Query().Get("vm")
 		if vmName == "" {
+			var allNetworks []docker.Network
 			vms, err := h.vmSvc.List()
 			if err != nil {
 				http.Error(w, fmt.Sprintf("Error listando VMs: %s", err), http.StatusInternalServerError)
 				return
 			}
-			var (
-				allNetworks []docker.Network
-				mu          sync.Mutex
-				wg          sync.WaitGroup
-			)
 			for _, v := range vms {
-				wg.Add(1)
-				go func(vName string) {
-					defer wg.Done()
-					nets, err := h.dockerSvc.ListNetworks(r.Context(), vName)
-					if err == nil && len(nets) > 0 {
-						mu.Lock()
-						allNetworks = append(allNetworks, nets...)
-						mu.Unlock()
-					}
-				}(v.Name)
+				nets, err := h.dockerSvc.ListNetworks(r.Context(), v.Name)
+				if err == nil {
+					allNetworks = append(allNetworks, nets...)
+				}
 			}
-			wg.Wait()
-
 			if allNetworks == nil {
 				allNetworks = []docker.Network{}
 			}
