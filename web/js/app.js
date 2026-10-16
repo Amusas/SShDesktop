@@ -2627,17 +2627,19 @@ class TerminalApp {
 
     renderNetworks() {
         if (!this.networksListEl) return;
-        if (!this.networks || this.networks.length === 0) {
-            this.networksListEl.innerHTML = `<div class="empty-vm-list">No hay redes Docker disponibles.</div>`;
+        const customNetworks = (this.networks || []).filter(
+            net => !['bridge', 'host', 'none'].includes((net.name || '').toLowerCase().trim())
+        );
+
+        if (customNetworks.length === 0) {
+            this.networksListEl.innerHTML = `<div class="empty-vm-list">No hay redes Docker personalizadas disponibles.</div>`;
             return;
         }
 
         let html = '';
-        this.networks.forEach((net) => {
-            const isDefault = ['bridge', 'host', 'none'].includes(net.name.toLowerCase());
+        customNetworks.forEach((net) => {
             const shortId = net.id ? net.id.substring(0, 12) : '-';
             const containersCount = typeof net.containers === 'number' ? net.containers : 0;
-            const subnetText = net.subnet ? net.subnet : (isDefault ? 'Automática por Docker' : 'No configurada');
 
             html += `
                 <div class="vm-card" data-net-name="${this.escapeAttr(net.name)}" data-vm="${this.escapeAttr(net.vmName)}">
@@ -2645,17 +2647,14 @@ class TerminalApp {
                         <div class="vm-card-title-group">
                             <span class="vm-name">${this.escapeHTML(net.name)}</span>
                             <span class="vm-source-tag">${this.escapeHTML(net.vmName)}</span>
-                            ${isDefault ? '<span class="status-pill status-pill-active" style="font-size: 10px; padding: 2px 6px;">Predeterminada</span>' : ''}
                         </div>
                         <div class="vm-card-actions">
                             <button class="btn btn-secondary btn-sm" onclick="window.terminalApp.showNetworkDetails('${this.escapeAttr(net.vmName)}', '${this.escapeAttr(net.name)}')">
                                 Detalles
                             </button>
-                            ${!isDefault ? `
-                                <button class="btn btn-danger btn-sm" onclick="window.terminalApp.promptDeleteNetwork('${this.escapeAttr(net.vmName)}', '${this.escapeAttr(net.name)}')">
-                                    Eliminar
-                                </button>
-                            ` : ''}
+                            <button class="btn btn-danger btn-sm" onclick="window.terminalApp.promptDeleteNetwork('${this.escapeAttr(net.vmName)}', '${this.escapeAttr(net.name)}')">
+                                Eliminar
+                            </button>
                         </div>
                     </div>
                     <div class="vm-details-grid">
@@ -2674,10 +2673,6 @@ class TerminalApp {
                         <div class="vm-detail-item">
                             <span class="vm-detail-label">Contenedores</span>
                             <span class="vm-detail-value font-mono">${containersCount}</span>
-                        </div>
-                        <div class="vm-detail-item" style="grid-column: 1 / -1;">
-                            <span class="vm-detail-label">Subred</span>
-                            <span class="vm-detail-value font-mono" style="font-size: 0.85rem;">${this.escapeHTML(subnetText)}</span>
                         </div>
                     </div>
                 </div>
@@ -2898,26 +2893,43 @@ class TerminalApp {
         if (!this.wizNetworkSelect) return;
         this.wizNetworkSelect.innerHTML = '<option value="">Predeterminada (bridge)</option><option value="" disabled>Cargando redes...</option>';
         if (!vmName) {
-            this.wizNetworkSelect.innerHTML = '<option value="">Predeterminada (bridge)</option>';
+            this.wizNetworkSelect.innerHTML = '<option value="">Predeterminada (bridge)</option><option value="host">host (Red del host)</option><option value="none">none (Sin red / Aislada)</option>';
             return;
         }
 
         try {
             const nets = await this.fetchVmNetworks(vmName);
             let opts = '<option value="">Predeterminada (bridge)</option>';
+
+            const customNetworks = [];
             if (Array.isArray(nets)) {
                 nets.forEach((n) => {
-                    const isSelected = selectNetworkName && (n.name === selectNetworkName);
-                    opts += `<option value="${this.escapeAttr(n.name)}" ${isSelected ? 'selected' : ''}>${this.escapeHTML(n.name)} (${this.escapeHTML(n.driver)})</option>`;
+                    const lower = (n.name || '').toLowerCase().trim();
+                    if (lower === 'bridge' || lower === 'host' || lower === 'none') {
+                        return;
+                    }
+                    customNetworks.push(n);
                 });
             }
+
+            const isHostSelected = (selectNetworkName || '').toLowerCase() === 'host';
+            const isNoneSelected = (selectNetworkName || '').toLowerCase() === 'none';
+
+            opts += `<option value="host" ${isHostSelected ? 'selected' : ''}>host (Red del host)</option>`;
+            opts += `<option value="none" ${isNoneSelected ? 'selected' : ''}>none (Sin red / Aislada)</option>`;
+
+            customNetworks.forEach((n) => {
+                const isSelected = selectNetworkName && (n.name === selectNetworkName);
+                opts += `<option value="${this.escapeAttr(n.name)}" ${isSelected ? 'selected' : ''}>${this.escapeHTML(n.name)} (${this.escapeHTML(n.driver || 'bridge')})</option>`;
+            });
+
             this.wizNetworkSelect.innerHTML = opts;
             if (selectNetworkName) {
                 this.wizNetworkSelect.value = selectNetworkName;
             }
         } catch (e) {
             console.warn('Error actualizando selector de redes del wizard:', e);
-            this.wizNetworkSelect.innerHTML = '<option value="">Predeterminada (bridge)</option>';
+            this.wizNetworkSelect.innerHTML = '<option value="">Predeterminada (bridge)</option><option value="host">host (Red del host)</option><option value="none">none (Sin red / Aislada)</option>';
         }
     }
 

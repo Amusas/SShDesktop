@@ -238,8 +238,9 @@ body {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: min(880px, 94vw);
-    max-height: 88vh;
+    width: min(1200px, 95vw);
+    height: 90vh;
+    max-height: 92vh;
     z-index: 100;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
@@ -365,8 +366,7 @@ body {
     gap: 14px;
     flex: 1 1 auto;
     min-height: 0;
-    overflow-y: auto;
-    padding-right: 4px;
+    overflow: hidden;
 }
 
 .sidebar-view-header {
@@ -586,19 +586,29 @@ body {
     margin-top: 4px;
 }
 
-/* Lista de Máquinas Virtuales */
+/* Listas dentro del Sidebar */
 .vm-list-wrapper {
     overflow-y: auto;
-    max-height: calc(100vh - 280px);
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    padding-right: 4px;
 }
 
-.vm-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+.vm-list,
+.containers-list,
+.images-list,
+.volumes-list,
+.networks-list,
+.keys-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 12px;
+    align-items: stretch;
 }
 
 .empty-vm-list {
+    grid-column: 1 / -1;
     text-align: center;
     padding: 24px 10px;
     color: var(--text-muted);
@@ -699,11 +709,6 @@ body {
     font-weight: 600;
 }
 
-.keys-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
 
 .key-card {
     border: 1px solid var(--border);
@@ -1520,20 +1525,17 @@ body {
 }
 
 .containers-list {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
     padding: 6px 2px 24px 2px;
 }
 
 .container-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 18px 20px;
+    border-radius: 10px;
+    padding: 14px 16px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 10px;
     transition: all 0.2s ease;
 }
 
@@ -2077,20 +2079,14 @@ body {
 /* ==========================================================================
    Docker Images Management
    ========================================================================== */
-.images-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
 .image-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 16px 18px;
+    border-radius: 10px;
+    padding: 14px 16px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     transition: all 0.2s ease;
 }
 
