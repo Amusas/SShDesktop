@@ -115,12 +115,19 @@ type Image struct {
 	VMName     string `json:"vmName"`
 }
 
+// BuildFile representa un archivo adjunto que formará parte del contexto de construcción del Dockerfile
+type BuildFile struct {
+	Name    string `json:"name"`
+	Content string `json:"content"` // Base64 encoded
+}
+
 // BuildImageRequest contiene los datos para construir una imagen desde un Dockerfile
 type BuildImageRequest struct {
-	VMName     string `json:"vmName"`
-	ImageName  string `json:"imageName"`
-	Tag        string `json:"tag,omitempty"`
-	Dockerfile string `json:"dockerfile"`
+	VMName     string      `json:"vmName"`
+	ImageName  string      `json:"imageName"`
+	Tag        string      `json:"tag,omitempty"`
+	Dockerfile string      `json:"dockerfile"`
+	Files      []BuildFile `json:"files,omitempty"`
 }
 
 // BuildImageResponse entrega el resultado de la construcción de la imagen

@@ -71,7 +71,13 @@ func TestImageAPIEndpoints(t *testing.T) {
 		VMName:     "test-vm",
 		ImageName:  "my-app",
 		Tag:        "latest",
-		Dockerfile: "FROM alpine:latest\nCMD [\"echo\", \"ok\"]",
+		Dockerfile: "FROM alpine:latest\nCOPY script.sh .\nCMD [\"sh\", \"script.sh\"]",
+		Files: []docker.BuildFile{
+			{
+				Name:    "script.sh",
+				Content: "ZWNobyAnaGVsbG8nCg==",
+			},
+		},
 	}
 	bodyBytes, _ := json.Marshal(buildReq)
 	reqBuild := httptest.NewRequest(http.MethodPost, "/api/images/build", bytes.NewReader(bodyBytes))

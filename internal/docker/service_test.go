@@ -2,6 +2,8 @@ package docker
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -471,4 +473,100 @@ func TestServiceNetworkOperations(t *testing.T) {
 		t.Fatalf("error eliminando red personalizada: %v", err)
 	}
 }
+
+func TestBuildImageWithFiles(t *testing.T) {
+	var executedCommands []string
+	runner := func(ctx context.Context, vmName string, command string) (string, error) {
+		executedCommands = append(executedCommands, command)
+		if strings.Contains(command, "docker build") {
+			return "Successfully built 1234567890ab\nSuccessfully tagged test-app:1.0", nil
+		}
+		return "", nil
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewService(runner, logger)
+
+	fileB64 := base64.StdEncoding.EncodeToString([]byte("console.log('hello world');"))
+	req := BuildImageRequest{
+		VMName:     "my-vm",
+		ImageName:  "test-app",
+		Tag:        "1.0",
+		Dockerfile: "FROM node:18\nCOPY app.js .\nCMD [\"node\", \"app.js\"]",
+		Files: []BuildFile{
+			{
+				Name:    "app.js",
+				Content: fileB64,
+			},
+		},
+	}
+
+	res, err := svc.BuildImage(context.Background(), req)
+	if err != nil {
+		t.Fatalf("error inesperado en BuildImage: %v", err)
+	}
+	if !res.Success || res.Image != "test-app:1.0" {
+		t.Errorf("resultado inesperado: %+v", res)
+	}
+
+	foundAppJs := false
+	for _, cmd := range executedCommands {
+		if strings.Contains(cmd, "app.js") && strings.Contains(cmd, fileB64) {
+			foundAppJs = true
+			break
+		}
+	}
+	if !foundAppJs {
+		t.Errorf("no se encontró comando para escribir app.js en el contexto: %v", executedCommands)
+	}
+
+	// Probar validación de traversal
+	badReq := req
+	badReq.Files = []BuildFile{{Name: "../etc/passwd", Content: "dGVzdA=="}}
+	if _, err := svc.BuildImage(context.Background(), badReq); err == nil {
+		t.Errorf("se esperaba error por path traversal pero fue aceptado")
+	}
+
+	// Probar error de COPY faltante
+	failRunner := func(ctx context.Context, vmName string, command string) (string, error) {
+		if strings.Contains(command, "docker build") {
+			return "Step 1/2 : FROM node:18\nStep 2/2 : COPY missing.js .\nCOPY failed: file not found in build context or excluded by .dockerignore: stat missing.js: file does not exist", fmt.Errorf("exit status 1")
+		}
+		return "", nil
+	}
+	svcFail := NewService(failRunner, logger)
+	_, errFail := svcFail.BuildImage(context.Background(), req)
+	if errFail == nil {
+		t.Fatalf("se esperaba error pero la compilación tuvo éxito")
+	}
+	if !strings.Contains(errFail.Error(), "falta un archivo en el contexto") {
+		t.Errorf("el mensaje de error no identificó la falta de archivo: %v", errFail)
+	}
+}
+
+func TestAnalyzeBuildError(t *testing.T) {
+	tag := "my-image:latest"
+
+	// Caso 1: COPY clásico
+	outCopy := "Step 2/2 : COPY script.sh .\nCOPY failed: file not found in build context or excluded by .dockerignore: stat script.sh: file does not exist"
+	msgCopy := AnalyzeBuildError(outCopy, tag)
+	if !strings.Contains(msgCopy, "falta un archivo en el contexto") {
+		t.Errorf("esperaba detección de falta de archivo para COPY, obtenido: %s", msgCopy)
+	}
+
+	// Caso 2: BuildKit not found
+	outBuildKit := "ERROR: failed to solve: failed to compute cache key: failed to walk /var/lib/docker/tmp: not found"
+	msgBuildKit := AnalyzeBuildError(outBuildKit, tag)
+	if !strings.Contains(msgBuildKit, "falta un archivo en el contexto") {
+		t.Errorf("esperaba detección de falta de archivo para BuildKit, obtenido: %s", msgBuildKit)
+	}
+
+	// Caso 3: Error de sintaxis o ejecución general
+	outSyntax := "Step 2/3 : RUN npm install\nnpm ERR! code ENOENT"
+	msgSyntax := AnalyzeBuildError(outSyntax, tag)
+	if !strings.Contains(msgSyntax, "npm ERR! code ENOENT") {
+		t.Errorf("esperaba extraer última línea de error, obtenido: %s", msgSyntax)
+	}
+}
+
 

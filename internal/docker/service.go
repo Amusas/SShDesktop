@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path"
 	"strings"
 	"time"
 )
@@ -430,7 +431,7 @@ func (s *Service) ListImages(ctx context.Context, vmName string) ([]Image, error
 	return images, nil
 }
 
-// BuildImage crea una imagen a partir de un Dockerfile dentro de la VM Linux
+// BuildImage crea una imagen a partir de un Dockerfile y archivos de contexto dentro de la VM Linux
 func (s *Service) BuildImage(ctx context.Context, req BuildImageRequest) (*BuildImageResponse, error) {
 	if strings.TrimSpace(req.VMName) == "" {
 		return nil, fmt.Errorf("el nombre de la máquina virtual (VM) es obligatorio")
@@ -447,6 +448,34 @@ func (s *Service) BuildImage(ctx context.Context, req BuildImageRequest) (*Build
 	}
 	if err := ValidateDockerfile(req.Dockerfile); err != nil {
 		return nil, err
+	}
+
+	// Validar y preparar archivos adicionales del contexto de compilación
+	type preparedFile struct {
+		relPath string
+		content string
+	}
+	var validFiles []preparedFile
+	for _, f := range req.Files {
+		name := strings.TrimSpace(f.Name)
+		if name == "" {
+			continue
+		}
+		cleanName := path.Clean(strings.ReplaceAll(name, "\\", "/"))
+		if cleanName == "." || cleanName == "/" || cleanName == ".." || strings.HasPrefix(cleanName, "../") || strings.HasPrefix(cleanName, "/") {
+			return nil, fmt.Errorf("nombre de archivo adjunto inválido o inseguro: '%s'", f.Name)
+		}
+		if strings.EqualFold(cleanName, "Dockerfile") {
+			return nil, fmt.Errorf("el archivo 'Dockerfile' debe definirse en el contenido principal, no en los archivos adjuntos")
+		}
+		// Validar contenido Base64
+		if _, err := base64.StdEncoding.DecodeString(f.Content); err != nil {
+			return nil, fmt.Errorf("el contenido del archivo adjunto '%s' no es base64 válido: %w", f.Name, err)
+		}
+		validFiles = append(validFiles, preparedFile{
+			relPath: cleanName,
+			content: f.Content,
+		})
 	}
 
 	fullTag := fmt.Sprintf("%s:%s", strings.TrimSpace(req.ImageName), tag)
@@ -473,17 +502,32 @@ func (s *Service) BuildImage(ctx context.Context, req BuildImageRequest) (*Build
 		return nil, fmt.Errorf("preparando contexto de compilación en VM '%s': %w", req.VMName, err)
 	}
 
+	// Escribir los archivos adicionales en el contexto de compilación dentro de la VM
+	for _, vf := range validFiles {
+		targetPath := fmt.Sprintf("%s/%s", buildDir, vf.relPath)
+		targetDir := path.Dir(targetPath)
+		writeTargetCmd := fmt.Sprintf("mkdir -p %s && echo %s | base64 -d > %s",
+			EscapeShellArg(targetDir),
+			EscapeShellArg(vf.content),
+			EscapeShellArg(targetPath),
+		)
+		if _, err := s.runner(ctx, req.VMName, writeTargetCmd); err != nil {
+			return nil, fmt.Errorf("escribiendo archivo '%s' en el contexto de compilación: %w", vf.relPath, err)
+		}
+	}
+
 	// Ejecutar docker build
 	buildCmd := fmt.Sprintf("sudo docker build -t %s %s 2>&1", EscapeShellArg(fullTag), EscapeShellArg(buildDir))
-	s.log.Info("construyendo imagen Docker en VM", "vm", req.VMName, "tag", fullTag)
+	s.log.Info("construyendo imagen Docker en VM", "vm", req.VMName, "tag", fullTag, "attached_files", len(validFiles))
 
 	out, err := s.runner(ctx, req.VMName, buildCmd)
 	if err != nil {
+		userErrMsg := AnalyzeBuildError(out, fullTag)
 		return &BuildImageResponse{
 			Success: false,
 			Image:   fullTag,
 			Output:  out,
-		}, fmt.Errorf("error compilando imagen '%s': %s", fullTag, strings.TrimSpace(out))
+		}, fmt.Errorf("%s", userErrMsg)
 	}
 
 	return &BuildImageResponse{
@@ -491,6 +535,37 @@ func (s *Service) BuildImage(ctx context.Context, req BuildImageRequest) (*Build
 		Image:   fullTag,
 		Output:  out,
 	}, nil
+}
+
+// AnalyzeBuildError analiza la salida de docker build para generar un mensaje de error claro y descriptivo
+func AnalyzeBuildError(output string, fullTag string) string {
+	trimmed := strings.TrimSpace(output)
+	lower := strings.ToLower(trimmed)
+
+	// Detección de falta de archivos para COPY o ADD
+	if strings.Contains(lower, "copy failed") ||
+		strings.Contains(lower, "add failed") ||
+		(strings.Contains(lower, "failed to compute cache key") && (strings.Contains(lower, "not found") || strings.Contains(lower, "no such file"))) ||
+		(strings.Contains(lower, "failed to solve") && (strings.Contains(lower, "not found") || strings.Contains(lower, "no such file"))) ||
+		strings.Contains(lower, "file not found in build context") ||
+		(strings.Contains(lower, "stat ") && strings.Contains(lower, "no such file or directory")) {
+		return fmt.Sprintf("Error compilando imagen '%s': falta un archivo en el contexto de compilación requerido por COPY o ADD en el Dockerfile. Asegúrate de adjuntar todos los archivos necesarios.", fullTag)
+	}
+
+	// Si hay un error general, extraer la última línea informativa
+	lines := strings.Split(trimmed, "\n")
+	var lastLine string
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := strings.TrimSpace(lines[i])
+		if l != "" {
+			lastLine = l
+			break
+		}
+	}
+	if lastLine != "" {
+		return fmt.Sprintf("Error compilando imagen '%s': %s", fullTag, lastLine)
+	}
+	return fmt.Sprintf("Error compilando imagen '%s'", fullTag)
 }
 
 // DeleteImage elimina una imagen Docker en la VM (con opción de forzado)

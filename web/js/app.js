@@ -133,6 +133,13 @@ class TerminalApp {
         this.dfFileInput = document.getElementById('df-file-input');
         this.dfFileDropzone = document.getElementById('df-file-dropzone');
         this.dfFileName = document.getElementById('df-file-name');
+        this.dfExtraFilesInput = document.getElementById('df-extra-files-input');
+        this.dfContextDropzone = document.getElementById('df-context-dropzone');
+        this.dfAttachedCount = document.getElementById('df-attached-count');
+        this.dfAttachmentsContainer = document.getElementById('df-attachments-container');
+        this.dfAttachmentsList = document.getElementById('df-attachments-list');
+        this.dfClearAllBtn = document.getElementById('df-clear-all-btn');
+        this.attachedBuildFiles = [];
         this.buildDockerfileContent = document.getElementById('build-dockerfile-content');
         this.buildImageFeedback = document.getElementById('build-image-feedback');
         this.buildLogContainer = document.getElementById('build-log-container');
@@ -887,8 +894,9 @@ class TerminalApp {
         if (this.dfFileDropzone && this.dfFileInput) {
             this.dfFileDropzone.addEventListener('click', () => this.dfFileInput.click());
             this.dfFileInput.addEventListener('change', (e) => {
-                const file = e.target.files && e.target.files[0];
-                if (file) this.handleDockerfileUpload(file);
+                if (e.target.files && e.target.files.length > 0) {
+                    this.handlePrimaryFilesUpload(e.target.files);
+                }
             });
             this.dfFileDropzone.addEventListener('dragover', (e) => {
                 e.preventDefault();
@@ -900,8 +908,38 @@ class TerminalApp {
             this.dfFileDropzone.addEventListener('drop', (e) => {
                 e.preventDefault();
                 this.dfFileDropzone.classList.remove('dragover');
-                const file = e.dataTransfer.files && e.dataTransfer.files[0];
-                if (file) this.handleDockerfileUpload(file);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    this.handlePrimaryFilesUpload(e.dataTransfer.files);
+                }
+            });
+        }
+        if (this.dfContextDropzone && this.dfExtraFilesInput) {
+            this.dfContextDropzone.addEventListener('click', () => this.dfExtraFilesInput.click());
+            this.dfExtraFilesInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                    this.addAttachedFiles(e.target.files);
+                    this.dfExtraFilesInput.value = '';
+                }
+            });
+            this.dfContextDropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                this.dfContextDropzone.classList.add('dragover');
+            });
+            this.dfContextDropzone.addEventListener('dragleave', () => {
+                this.dfContextDropzone.classList.remove('dragover');
+            });
+            this.dfContextDropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                this.dfContextDropzone.classList.remove('dragover');
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    this.addAttachedFiles(e.dataTransfer.files);
+                }
+            });
+        }
+        if (this.dfClearAllBtn) {
+            this.dfClearAllBtn.addEventListener('click', () => {
+                this.attachedBuildFiles = [];
+                this.renderAttachedFiles();
             });
         }
         if (this.submitImageBuildBtn) {
@@ -3505,6 +3543,9 @@ class TerminalApp {
         if (this.buildImageTag) this.buildImageTag.value = '';
         if (this.dfFileName) this.dfFileName.textContent = '';
         if (this.dfFileInput) this.dfFileInput.value = '';
+        if (this.dfExtraFilesInput) this.dfExtraFilesInput.value = '';
+        this.attachedBuildFiles = [];
+        this.renderAttachedFiles();
         this.switchDfTab('paste');
 
         this.imageBuildModal.classList.remove('hidden');
@@ -3530,19 +3571,146 @@ class TerminalApp {
         }
     }
 
+    handlePrimaryFilesUpload(filesList) {
+        if (!filesList || filesList.length === 0) return;
+        const files = Array.from(filesList);
+
+        // Buscar si entre los archivos seleccionados está el Dockerfile
+        let dockerfileIdx = files.findIndex(f => {
+            const name = f.name.toLowerCase();
+            return name === 'dockerfile' || name.endsWith('.dockerfile');
+        });
+
+        // Si ninguno se llama Dockerfile y solo hay 1 archivo, ese es el Dockerfile
+        if (dockerfileIdx === -1) {
+            dockerfileIdx = 0;
+        }
+
+        const dockerfileObj = files[dockerfileIdx];
+        this.handleDockerfileUpload(dockerfileObj);
+
+        // El resto de los archivos se agregan al contexto de compilación
+        const extraFiles = files.filter((_, idx) => idx !== dockerfileIdx);
+        if (extraFiles.length > 0) {
+            this.addAttachedFiles(extraFiles);
+        }
+    }
+
     handleDockerfileUpload(file) {
         if (!file) return;
         if (this.dfFileName) {
-            this.dfFileName.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+            this.dfFileName.textContent = `✓ ${file.name} (${this.formatBytes(file.size)}) - Listo`;
         }
         const reader = new FileReader();
         reader.onload = (e) => {
             if (this.buildDockerfileContent) {
                 this.buildDockerfileContent.value = e.target.result || '';
             }
-            this.switchDfTab('paste');
         };
         reader.readAsText(file);
+    }
+
+    readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const dataUrl = reader.result;
+                const base64Index = dataUrl.indexOf(';base64,');
+                if (base64Index !== -1) {
+                    resolve(dataUrl.substring(base64Index + 8));
+                } else {
+                    const commaIndex = dataUrl.indexOf(',');
+                    resolve(commaIndex !== -1 ? dataUrl.substring(commaIndex + 1) : '');
+                }
+            };
+            reader.onerror = (err) => reject(err);
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async addAttachedFiles(fileList) {
+        if (!fileList || fileList.length === 0) return;
+        const files = Array.from(fileList);
+        for (const file of files) {
+            const cleanName = file.name.trim();
+            if (!cleanName || cleanName.toLowerCase() === 'dockerfile') continue;
+            try {
+                const b64 = await this.readFileAsBase64(file);
+                const existingIdx = this.attachedBuildFiles.findIndex(f => f.name === cleanName);
+                const item = {
+                    name: cleanName,
+                    size: file.size,
+                    content: b64
+                };
+                if (existingIdx !== -1) {
+                    this.attachedBuildFiles[existingIdx] = item;
+                } else {
+                    this.attachedBuildFiles.push(item);
+                }
+            } catch (err) {
+                console.error('Error leyendo archivo para contexto:', file.name, err);
+            }
+        }
+        this.renderAttachedFiles();
+    }
+
+    removeAttachedFile(idx) {
+        if (idx >= 0 && idx < this.attachedBuildFiles.length) {
+            this.attachedBuildFiles.splice(idx, 1);
+            this.renderAttachedFiles();
+        }
+    }
+
+    renderAttachedFiles() {
+        if (!this.dfAttachmentsList || !this.dfAttachmentsContainer || !this.dfAttachedCount) return;
+        const count = this.attachedBuildFiles.length;
+        this.dfAttachedCount.textContent = `${count} ${count === 1 ? 'archivo' : 'archivos'}`;
+
+        if (count === 0) {
+            this.dfAttachmentsContainer.classList.add('hidden');
+            this.dfAttachmentsList.innerHTML = '';
+            return;
+        }
+
+        this.dfAttachmentsContainer.classList.remove('hidden');
+        this.dfAttachmentsList.innerHTML = this.attachedBuildFiles.map((file, idx) => `
+            <div class="df-attached-item">
+                <div class="df-attached-info">
+                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="1.8" fill="none">
+                        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                        <polyline points="13 2 13 9 20 9"></polyline>
+                    </svg>
+                    <span class="df-attached-name" title="${this.escapeHtml(file.name)}">${this.escapeHtml(file.name)}</span>
+                    <span class="df-attached-size">(${this.formatBytes(file.size)})</span>
+                </div>
+                <button type="button" class="df-attached-remove-btn" title="Quitar archivo" data-index="${idx}">&times;</button>
+            </div>
+        `).join('');
+
+        this.dfAttachmentsList.querySelectorAll('.df-attached-remove-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const idx = parseInt(btn.dataset.index, 10);
+                this.removeAttachedFile(idx);
+            });
+        });
+    }
+
+    formatBytes(bytes) {
+        if (!bytes || bytes === 0) return '0 B';
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 
     setButtonLoading(btn, isLoading) {
@@ -3590,7 +3758,11 @@ class TerminalApp {
                     vmName,
                     imageName,
                     tag: tag || 'latest',
-                    dockerfile
+                    dockerfile,
+                    files: this.attachedBuildFiles.map(f => ({
+                        name: f.name,
+                        content: f.content
+                    }))
                 })
             });
 
@@ -3600,7 +3772,18 @@ class TerminalApp {
                     this.buildLogOutput.textContent = data.output;
                     this.buildLogContainer.classList.remove('hidden');
                 }
-                throw new Error(data.error || 'Error construyendo la imagen');
+                const isMissingFileError = /falta un archivo|not found|no such file|file not found/i.test(data.error || '') ||
+                                          /failed to compute cache key.*not found/i.test(data.output || '') ||
+                                          /copy failed/i.test(data.output || '');
+                if (isMissingFileError) {
+                    this.showBuildImageFeedback(
+                        'No se pudo crear la imagen: falta un archivo en el contexto de compilación requerido por COPY o ADD en el Dockerfile. Adjunta los archivos necesarios en la sección de archivos adjuntos antes de compilar.',
+                        'error'
+                    );
+                } else {
+                    this.showBuildImageFeedback(data.error || 'Error construyendo la imagen', 'error');
+                }
+                return;
             }
 
             this.closeBuildImageModal();
