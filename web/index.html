@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SSH Terminal</title>
-    <link rel="stylesheet" href="/css/style.css?v=24">
+    <link rel="stylesheet" href="/css/style.css?v=34">
 </head>
 <body>
     <div id="app">
@@ -730,17 +730,16 @@
                         <div id="wiz-volumes-container" class="dynamic-rows-container"></div>
                     </div>
 
-                    <!-- Red Docker -->
+                    <!-- Redes Docker -->
                     <div class="form-field">
                         <div class="dynamic-section-head">
-                            <label for="wiz-network">Red Docker</label>
-                            <button type="button" id="wiz-add-network-btn" class="btn btn-ghost btn-sm">+ Nueva red</button>
+                            <label>Redes Docker</label>
+                            <div style="display:flex; gap:6px;">
+                                <button type="button" id="wiz-add-network-row-btn" class="btn btn-ghost btn-sm">+ Red</button>
+                                <button type="button" id="wiz-add-network-btn" class="btn btn-ghost btn-sm">+ Nueva red</button>
+                            </div>
                         </div>
-                        <div class="vol-source-wrap">
-                            <select id="wiz-network" class="form-select">
-                                <option value="">Predeterminada (bridge)</option>
-                            </select>
-                        </div>
+                        <div id="wiz-networks-container" class="dynamic-rows-container"></div>
                     </div>
                 </div>
 
@@ -1337,8 +1336,8 @@ CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
     </div>
 
 
-    <script src="/js/ansi.js?v=33"></script>
-    <script src="/js/websocket.js?v=33"></script>
-    <script src="/js/app.js?v=33"></script>
+    <script src="/js/ansi.js?v=34"></script>
+    <script src="/js/websocket.js?v=34"></script>
+    <script src="/js/app.js?v=34"></script>
 </body>
 </html>

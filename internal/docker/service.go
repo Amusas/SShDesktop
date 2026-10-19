@@ -156,6 +156,12 @@ func (s *Service) InspectContainer(ctx context.Context, vmName string, container
 			Ports     map[string][]struct {
 				HostPort string `json:"HostPort"`
 			} `json:"Ports"`
+			Networks map[string]struct {
+				IPAddress  string `json:"IPAddress"`
+				Gateway    string `json:"Gateway"`
+				MacAddress string `json:"MacAddress"`
+				NetworkID  string `json:"NetworkID"`
+			} `json:"Networks"`
 		} `json:"NetworkSettings"`
 	}
 
@@ -185,6 +191,20 @@ func (s *Service) InspectContainer(ctx context.Context, vmName string, container
 			FinishedAt: item.State.FinishedAt,
 			Error:      item.State.Error,
 		},
+	}
+
+	// Mapear redes
+	for netName, netData := range item.NetworkSettings.Networks {
+		inspect.Networks = append(inspect.Networks, ContainerNetworkInfo{
+			Name:       netName,
+			IPAddress:  netData.IPAddress,
+			Gateway:    netData.Gateway,
+			MacAddress: netData.MacAddress,
+			NetworkID:  netData.NetworkID,
+		})
+		if inspect.IPAddress == "" && netData.IPAddress != "" {
+			inspect.IPAddress = netData.IPAddress
+		}
 	}
 
 	// Mapear puertos
@@ -251,11 +271,35 @@ func (s *Service) CreateContainer(ctx context.Context, req CreateContainerReques
 	}
 	args = append(args, "--restart", EscapeShellArg(policy))
 
+	var allNets []string
 	if strings.TrimSpace(req.Network) != "" {
-		if err := ValidateNetworkName(req.Network); err != nil {
+		allNets = append(allNets, strings.TrimSpace(req.Network))
+	}
+	for _, n := range req.Networks {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		exists := false
+		for _, prev := range allNets {
+			if strings.EqualFold(prev, n) {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			allNets = append(allNets, n)
+		}
+	}
+
+	for _, n := range allNets {
+		if err := ValidateNetworkName(n); err != nil {
 			return nil, fmt.Errorf("nombre de red inválido: %w", err)
 		}
-		args = append(args, "--network", EscapeShellArg(req.Network))
+	}
+
+	if len(allNets) > 0 {
+		args = append(args, "--network", EscapeShellArg(allNets[0]))
 	}
 
 	for _, p := range req.Ports {
@@ -312,6 +356,16 @@ func (s *Service) CreateContainer(ctx context.Context, req CreateContainerReques
 	out, err := s.runner(ctx, req.VMName, runCmd)
 	if err != nil {
 		return nil, fmt.Errorf("creando contenedor '%s' en VM '%s': %w", req.Name, req.VMName, err)
+	}
+
+	// Conectar redes adicionales si fueron especificadas
+	if len(allNets) > 1 {
+		for _, addNet := range allNets[1:] {
+			connectCmd := fmt.Sprintf("sudo docker network connect %s %s", EscapeShellArg(addNet), EscapeShellArg(req.Name))
+			if _, connErr := s.runner(ctx, req.VMName, connectCmd); connErr != nil {
+				s.log.Warn("no se pudo conectar contenedor a red adicional", "vm", req.VMName, "container", req.Name, "network", addNet, "error", connErr)
+			}
+		}
 	}
 
 	cid := strings.TrimSpace(out)

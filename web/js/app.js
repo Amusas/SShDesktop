@@ -100,7 +100,8 @@ class TerminalApp {
         this.wizAddPortBtn = document.getElementById('wiz-add-port-btn');
         this.wizAddEnvBtn = document.getElementById('wiz-add-env-btn');
         this.wizAddVolumeBtn = document.getElementById('wiz-add-volume-btn');
-        this.wizNetworkSelect = document.getElementById('wiz-network');
+        this.wizNetworksContainer = document.getElementById('wiz-networks-container');
+        this.wizAddNetworkRowBtn = document.getElementById('wiz-add-network-row-btn');
         this.wizAddNetworkBtn = document.getElementById('wiz-add-network-btn');
         this.wizSummaryCard = document.getElementById('wiz-summary-card');
         this.wizFeedback = document.getElementById('wiz-feedback');
@@ -850,7 +851,12 @@ class TerminalApp {
             this.confirmDeleteNetworkBtn.addEventListener('click', () => this.executeDeleteNetwork());
         }
 
-        // Evento botón + Nueva red dentro del Asistente de Contenedores
+        // Eventos de Redes dentro del Asistente de Contenedores
+        if (this.wizAddNetworkRowBtn) {
+            this.wizAddNetworkRowBtn.addEventListener('click', () => {
+                this.addWizNetworkRow();
+            });
+        }
         if (this.wizAddNetworkBtn) {
             this.wizAddNetworkBtn.addEventListener('click', () => {
                 const vm = this.wizVmSelect ? this.wizVmSelect.value.trim() : '';
@@ -859,10 +865,26 @@ class TerminalApp {
                     return;
                 }
                 this.openCreateNetworkDialog(vm, (newNetName) => {
-                    this.updateWizardNetworks(vm, newNetName);
+                    this.addWizNetworkRow(newNetName);
                 });
             });
+        if (this.wizVmSelect) {
+            this.wizVmSelect.addEventListener('change', () => {
+                const currentVm = this.wizVmSelect.value.trim();
+                if (this.wizardSource === 'images') {
+                    this.loadWizardImages();
+                }
+                this.updateWizardNetworks(currentVm);
+            });
         }
+
+        // Cerrar menús desplegables al hacer click fuera
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.card-dropdown')) {
+                document.querySelectorAll('.card-dropdown-menu.show').forEach((m) => m.classList.remove('show'));
+                document.querySelectorAll('.btn-dots.active').forEach((b) => b.classList.remove('active'));
+            }
+        });
 
         // Eventos de Detalles de Contenedor
         if (this.closeContainerDetailsBtn) {
@@ -2923,11 +2945,11 @@ class TerminalApp {
         }
     }
 
-    async updateWizardNetworks(vmName, selectNetworkName = '') {
-        if (!this.wizNetworkSelect) return;
-        this.wizNetworkSelect.innerHTML = '<option value="">Predeterminada (bridge)</option><option value="" disabled>Cargando redes...</option>';
+    async populateNetworkSelect(selectEl, vmName, selectNetworkName = '') {
+        if (!selectEl) return;
+        selectEl.innerHTML = '<option value="">Predeterminada (bridge)</option><option value="" disabled>Cargando redes...</option>';
         if (!vmName) {
-            this.wizNetworkSelect.innerHTML = '<option value="">Predeterminada (bridge)</option><option value="host">host (Red del host)</option><option value="none">none (Sin red / Aislada)</option>';
+            selectEl.innerHTML = '<option value="">Predeterminada (bridge)</option><option value="host">host (Red del host)</option><option value="none">none (Sin red / Aislada)</option>';
             return;
         }
 
@@ -2957,14 +2979,72 @@ class TerminalApp {
                 opts += `<option value="${this.escapeAttr(n.name)}" ${isSelected ? 'selected' : ''}>${this.escapeHTML(n.name)} (${this.escapeHTML(n.driver || 'bridge')})</option>`;
             });
 
-            this.wizNetworkSelect.innerHTML = opts;
+            selectEl.innerHTML = opts;
             if (selectNetworkName) {
-                this.wizNetworkSelect.value = selectNetworkName;
+                selectEl.value = selectNetworkName;
             }
         } catch (e) {
-            console.warn('Error actualizando selector de redes del wizard:', e);
-            this.wizNetworkSelect.innerHTML = '<option value="">Predeterminada (bridge)</option><option value="host">host (Red del host)</option><option value="none">none (Sin red / Aislada)</option>';
+            console.warn('Error poblando selector de redes:', e);
+            selectEl.innerHTML = '<option value="">Predeterminada (bridge)</option><option value="host">host (Red del host)</option><option value="none">none (Sin red / Aislada)</option>';
         }
+    }
+
+    async addWizNetworkRow(selectedNet = '') {
+        if (!this.wizNetworksContainer) return;
+        const row = document.createElement('div');
+        row.className = 'dynamic-row wiz-net-row';
+        row.innerHTML = `
+            <div class="vol-source-wrap" style="flex: 1;">
+                <select class="wiz-network-select form-select">
+                    <option value="">Predeterminada (bridge)</option>
+                    <option value="" disabled>Cargando redes...</option>
+                </select>
+                <button type="button" class="btn-inline-add" title="Crear nueva red en esta VM">+</button>
+            </div>
+            <button type="button" class="btn-remove-row" title="Eliminar fila de red">&times;</button>
+        `;
+
+        const netSelect = row.querySelector('.wiz-network-select');
+        const btnInlineAdd = row.querySelector('.btn-inline-add');
+        const btnRemove = row.querySelector('.btn-remove-row');
+
+        const currentVm = this.wizVmSelect ? this.wizVmSelect.value.trim() : '';
+        this.populateNetworkSelect(netSelect, currentVm, selectedNet);
+
+        btnInlineAdd.addEventListener('click', () => {
+            const vm = this.wizVmSelect ? this.wizVmSelect.value.trim() : '';
+            if (!vm) {
+                this.showWizFeedback('Selecciona una máquina virtual primero.', 'error');
+                return;
+            }
+            this.openCreateNetworkDialog(vm, (newNetName) => {
+                this.populateNetworkSelect(netSelect, vm, newNetName);
+            });
+        });
+
+        btnRemove.addEventListener('click', () => {
+            const allRows = this.wizNetworksContainer.querySelectorAll('.wiz-net-row');
+            if (allRows.length > 1) {
+                row.remove();
+            } else {
+                netSelect.value = '';
+            }
+        });
+
+        this.wizNetworksContainer.appendChild(row);
+    }
+
+    async updateWizardNetworks(vmName, selectNetworkName = '') {
+        if (!this.wizNetworksContainer) return;
+        const selects = this.wizNetworksContainer.querySelectorAll('.wiz-network-select');
+        if (selects.length === 0) {
+            await this.addWizNetworkRow(selectNetworkName);
+            return;
+        }
+        selects.forEach((sel, idx) => {
+            const val = (idx === 0 && selectNetworkName) ? selectNetworkName : sel.value;
+            this.populateNetworkSelect(sel, vmName, val);
+        });
     }
 
     async loadContainers(vmFilter) {
@@ -3045,7 +3125,47 @@ class TerminalApp {
                             <span class="container-name">${this.escapeHTML(c.name || c.id)}</span>
                             <span class="vm-badge" title="Máquina Virtual">${this.escapeHTML(c.vmName || 'VM')}</span>
                         </div>
-                        <span class="container-state-pill ${stateClass}">${this.escapeHTML(c.state || 'desconocido')}</span>
+                        <div class="container-head-right">
+                            <span class="container-state-pill ${stateClass}">${this.escapeHTML(c.state || 'desconocido')}</span>
+                            <div class="card-dropdown">
+                                <button type="button" class="btn-dots" title="Más opciones" onclick="event.stopPropagation(); window.terminalApp.toggleContainerMenu(this)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="1.5"></circle>
+                                        <circle cx="19" cy="12" r="1.5"></circle>
+                                        <circle cx="5" cy="12" r="1.5"></circle>
+                                    </svg>
+                                </button>
+                                <div class="card-dropdown-menu">
+                                    <button type="button" class="dropdown-item" onclick="window.terminalApp.openContainerDetails('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                                        Detalles
+                                    </button>
+                                    <button type="button" class="dropdown-item" onclick="window.terminalApp.openContainerLogs('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', '${this.escapeAttr(c.name || c.id)}')">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                                        Ver logs
+                                    </button>
+                                    ${
+                                        isRunning
+                                            ? `
+                                    <button type="button" class="dropdown-item" onclick="window.terminalApp.restartContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                                        Reiniciar
+                                    </button>
+                                    `
+                                            : ''
+                                    }
+                                    <button type="button" class="dropdown-item" onclick="window.terminalApp.openCommitContainerModal('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', '${this.escapeAttr(c.name || c.id)}')">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                                        Crear imagen
+                                    </button>
+                                    <div class="dropdown-divider"></div>
+                                    <button type="button" class="dropdown-item danger" onclick="window.terminalApp.openDeleteContainerModal('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', '${this.escapeAttr(c.name || c.id)}')">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                        Eliminar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="container-meta">
                         <span class="container-image" title="Imagen Docker">${this.escapeHTML(c.image || '')}</span>
@@ -3059,9 +3179,6 @@ class TerminalApp {
                             <button type="button" class="btn btn-secondary btn-sm" title="Consola interactiva" onclick="window.terminalApp.connectContainerTerminal('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.name || c.id)}')">
                                 Consola
                             </button>
-                            <button type="button" class="btn btn-secondary btn-sm" title="Reiniciar contenedor" onclick="window.terminalApp.restartContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
-                                Reiniciar
-                            </button>
                             <button type="button" class="btn btn-secondary btn-sm" title="Detener contenedor" onclick="window.terminalApp.stopContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
                                 Detener
                             </button>
@@ -3072,23 +3189,27 @@ class TerminalApp {
                             </button>
                         `
                         }
-                        <button type="button" class="btn btn-ghost btn-sm" title="Ver logs" onclick="window.terminalApp.openContainerLogs('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', '${this.escapeAttr(c.name || c.id)}')">
-                            Logs
-                        </button>
-                        <button type="button" class="btn btn-ghost btn-sm" title="Ver detalles" onclick="window.terminalApp.openContainerDetails('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
-                            Detalles
-                        </button>
-                        <button type="button" class="btn btn-secondary btn-sm" title="Crear imagen a partir de este contenedor" onclick="window.terminalApp.openCommitContainerModal('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', '${this.escapeAttr(c.name || c.id)}')">
-                            Crear imagen
-                        </button>
-                        <button type="button" class="btn btn-danger btn-sm" title="Eliminar contenedor" onclick="window.terminalApp.openDeleteContainerModal('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', '${this.escapeAttr(c.name || c.id)}')">
-                            Eliminar
-                        </button>
                     </div>
                 </div>
             `;
             })
             .join('');
+    }
+
+    toggleContainerMenu(btn) {
+        const menu = btn.nextElementSibling;
+        if (!menu) return;
+        const isShown = menu.classList.contains('show');
+        document.querySelectorAll('.card-dropdown-menu.show').forEach((m) => {
+            m.classList.remove('show');
+            if (m.previousElementSibling) {
+                m.previousElementSibling.classList.remove('active');
+            }
+        });
+        if (!isShown) {
+            menu.classList.add('show');
+            btn.classList.add('active');
+        }
     }
 
     connectContainerTerminal(vmName, containerIdOrName) {
@@ -3414,46 +3535,90 @@ class TerminalApp {
         const mountsStr = (info.mounts || []).map((m) => `${m.hostPath} &rarr; ${m.containerPath}`).join('<br>') || 'Ninguno';
         const envStr = (info.env || []).join('<br>') || 'Ninguna';
 
+        let networksHtml = '';
+        if (info.networks && info.networks.length > 0) {
+            networksHtml = `
+                <div class="vm-detail-item" style="grid-column: 1 / -1;">
+                    <span class="vm-detail-key">Redes Docker Conectadas</span>
+                    <table class="container-networks-table">
+                        <thead>
+                            <tr>
+                                <th>Red</th>
+                                <th>Dirección IP</th>
+                                <th>Gateway</th>
+                                <th>Dirección MAC</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${info.networks.map((n) => `
+                                <tr>
+                                    <td><span class="container-net-badge">${this.escapeHTML(n.name || 'default')}</span></td>
+                                    <td>${this.escapeHTML(n.ipAddress || 'Sin IP')}</td>
+                                    <td>${this.escapeHTML(n.gateway || '-')}</td>
+                                    <td style="color:#8da2bd; font-size:11px;">${this.escapeHTML(n.macAddress || '-')}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } else if (info.network || info.ipAddress) {
+            networksHtml = `
+                <div class="vm-detail-item">
+                    <span class="vm-detail-key">Red Docker</span>
+                    <span class="vm-detail-val">${this.escapeHTML(info.network || 'bridge')}</span>
+                </div>
+                <div class="vm-detail-item">
+                    <span class="vm-detail-key">Dirección IP</span>
+                    <span class="vm-detail-val">${this.escapeHTML(info.ipAddress || 'Sin IP')}</span>
+                </div>
+            `;
+        } else {
+            networksHtml = `
+                <div class="vm-detail-item" style="grid-column: 1 / -1;">
+                    <span class="vm-detail-key">Redes Docker</span>
+                    <span class="vm-detail-val" style="color:var(--text-muted)">Ninguna red conectada</span>
+                </div>
+            `;
+        }
+
         this.containerDetailsContent.innerHTML = `
             <div class="vm-detail-item">
-                <span class="vm-detail-label">Nombre</span>
+                <span class="vm-detail-key">Nombre</span>
                 <span class="vm-detail-val highlight">${this.escapeHTML(info.name || '')}</span>
             </div>
             <div class="vm-detail-item">
-                <span class="vm-detail-label">ID Contenedor</span>
-                <span class="vm-detail-val">${this.escapeHTML(info.id || '')}</span>
+                <span class="vm-detail-key">ID Contenedor</span>
+                <span class="vm-detail-val" style="font-family:var(--font-mono); font-size:12px;">${this.escapeHTML(info.id || '')}</span>
             </div>
             <div class="vm-detail-item">
-                <span class="vm-detail-label">Máquina Virtual</span>
+                <span class="vm-detail-key">Máquina Virtual</span>
                 <span class="vm-detail-val">${this.escapeHTML(info.vmName || '')}</span>
             </div>
             <div class="vm-detail-item">
-                <span class="vm-detail-label">Imagen</span>
+                <span class="vm-detail-key">Imagen</span>
                 <span class="vm-detail-val">${this.escapeHTML(info.image || '')}</span>
             </div>
             <div class="vm-detail-item">
-                <span class="vm-detail-label">Estado</span>
+                <span class="vm-detail-key">Estado</span>
                 <span class="vm-detail-val">${this.escapeHTML(info.state ? info.state.status : '')}</span>
             </div>
             <div class="vm-detail-item">
-                <span class="vm-detail-label">Dirección IP en VM</span>
-                <span class="vm-detail-val">${this.escapeHTML(info.ipAddress || 'Host bridge')}</span>
-            </div>
-            <div class="vm-detail-item">
-                <span class="vm-detail-label">Política de Reinicio</span>
+                <span class="vm-detail-key">Política de Reinicio</span>
                 <span class="vm-detail-val">${this.escapeHTML(info.restartPolicy || 'no')}</span>
             </div>
-            <div class="vm-detail-item">
-                <span class="vm-detail-label">Puertos Mapeados</span>
+            <div class="vm-detail-item" style="grid-column: 1 / -1;">
+                <span class="vm-detail-key">Puertos Mapeados</span>
                 <span class="vm-detail-val">${this.escapeHTML(portsStr)}</span>
             </div>
-            <div class="vm-detail-item">
-                <span class="vm-detail-label">Montajes de Volúmenes</span>
+            ${networksHtml}
+            <div class="vm-detail-item" style="grid-column: 1 / -1;">
+                <span class="vm-detail-key">Montajes de Volúmenes</span>
                 <span class="vm-detail-val" style="font-size:11px;">${mountsStr}</span>
             </div>
             <div class="vm-detail-item" style="grid-column: 1 / -1;">
-                <span class="vm-detail-label">Variables de Entorno</span>
-                <span class="vm-detail-val" style="font-size:11px; max-height:120px; overflow-y:auto; display:block;">${envStr}</span>
+                <span class="vm-detail-key">Variables de Entorno</span>
+                <span class="vm-detail-val" style="font-size:11px; max-height:120px; overflow-y:auto; display:block; font-family:var(--font-mono);">${envStr}</span>
             </div>
         `;
     }
@@ -3973,6 +4138,10 @@ class TerminalApp {
         if (this.wizPortsContainer) this.wizPortsContainer.innerHTML = '';
         if (this.wizEnvContainer) this.wizEnvContainer.innerHTML = '';
         if (this.wizVolumesContainer) this.wizVolumesContainer.innerHTML = '';
+        if (this.wizNetworksContainer) {
+            this.wizNetworksContainer.innerHTML = '';
+            await this.addWizNetworkRow();
+        }
 
         this.selectWizardSource(this.wizardSource || 'images');
         this.goToWizardStep(1);
@@ -4429,6 +4598,19 @@ class TerminalApp {
             })
             .filter(Boolean);
 
+        // Recopilar redes
+        const netSelects = Array.from(document.querySelectorAll('.wiz-net-row .wiz-network-select'));
+        const chosenNetworks = [];
+        netSelects.forEach((sel) => {
+            const val = sel.value.trim();
+            if (val && !chosenNetworks.includes(val)) {
+                chosenNetworks.push(val);
+            }
+        });
+        const networksSummaryText = chosenNetworks.length > 0
+            ? chosenNetworks.map((n) => `<span class="container-net-badge">${this.escapeHTML(n)}</span>`).join(' ')
+            : 'Predeterminada (bridge)';
+
         this.wizSummaryCard.innerHTML = `
             <div class="summary-row">
                 <span class="summary-label">Máquina:</span>
@@ -4459,8 +4641,8 @@ class TerminalApp {
                 <span class="summary-val">${vols.length > 0 ? vols.join(', ') : 'Ninguno'}</span>
             </div>
             <div class="summary-row">
-                <span class="summary-label">Red:</span>
-                <span class="summary-val highlight">${this.escapeHTML(this.wizNetworkSelect && this.wizNetworkSelect.value ? this.wizNetworkSelect.value : 'Predeterminada (bridge)')}</span>
+                <span class="summary-label">Redes:</span>
+                <span class="summary-val">${networksSummaryText}</span>
             </div>
         `;
     }
@@ -4470,7 +4652,17 @@ class TerminalApp {
         const name = this.wizNameInput ? this.wizNameInput.value.trim() : '';
         const image = this.wizImageInput ? this.wizImageInput.value.trim() : '';
         const restartPolicy = this.wizRestartSelect ? this.wizRestartSelect.value : 'unless-stopped';
-        const network = this.wizNetworkSelect ? this.wizNetworkSelect.value.trim() : '';
+
+        // Recopilar redes (soporte multi-red)
+        const netSelects = Array.from(document.querySelectorAll('.wiz-net-row .wiz-network-select'));
+        const networks = [];
+        netSelects.forEach((sel) => {
+            const val = sel.value.trim();
+            if (val && !networks.includes(val)) {
+                networks.push(val);
+            }
+        });
+        const network = networks.length > 0 ? networks[0] : '';
 
         if (!vmName || !name || !image) {
             this.showWizFeedback('Faltan campos obligatorios para crear el contenedor.', 'error');
@@ -4511,6 +4703,7 @@ class TerminalApp {
             image,
             restartPolicy,
             network,
+            networks,
             ports,
             env,
             volumes,

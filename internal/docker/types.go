@@ -42,24 +42,35 @@ type CreateContainerRequest struct {
 	Volumes       []VolumeMount `json:"volumes,omitempty"`
 	Env           []EnvVar      `json:"env,omitempty"`
 	RestartPolicy string        `json:"restartPolicy,omitempty"` // unless-stopped, always, on-failure, no
-	Network       string        `json:"network,omitempty"`       // Red Docker a la que conectar el contenedor
+	Network       string        `json:"network,omitempty"`  // Red Docker a la que conectar el contenedor
+	Networks      []string      `json:"networks,omitempty"` // Múltiples redes Docker adicionales o lista de redes
 	Command       string        `json:"command,omitempty"`
+}
+
+// ContainerNetworkInfo describe la conexión de un contenedor a una red específica
+type ContainerNetworkInfo struct {
+	Name       string `json:"name"`
+	IPAddress  string `json:"ipAddress,omitempty"`
+	Gateway    string `json:"gateway,omitempty"`
+	MacAddress string `json:"macAddress,omitempty"`
+	NetworkID  string `json:"networkID,omitempty"`
 }
 
 // ContainerInspect contiene detalles completos de inspección de un contenedor
 type ContainerInspect struct {
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	VMName        string            `json:"vmName"`
-	Created       string            `json:"created"`
-	Image         string            `json:"image"`
-	State         InspectState      `json:"state"`
-	RestartPolicy string            `json:"restartPolicy"`
-	IPAddress     string            `json:"ipAddress,omitempty"`
-	Ports         []PortMapping     `json:"ports"`
-	Mounts        []VolumeMount     `json:"mounts"`
-	Env           []string          `json:"env"`
-	Labels        map[string]string `json:"labels,omitempty"`
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	VMName        string                 `json:"vmName"`
+	Created       string                 `json:"created"`
+	Image         string                 `json:"image"`
+	State         InspectState           `json:"state"`
+	RestartPolicy string                 `json:"restartPolicy"`
+	IPAddress     string                 `json:"ipAddress,omitempty"`
+	Networks      []ContainerNetworkInfo `json:"networks,omitempty"`
+	Ports         []PortMapping          `json:"ports"`
+	Mounts        []VolumeMount          `json:"mounts"`
+	Env           []string               `json:"env"`
+	Labels        map[string]string      `json:"labels,omitempty"`
 }
 
 // InspectState encapsula el estado detallado de ejecución

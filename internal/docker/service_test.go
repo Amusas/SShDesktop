@@ -146,6 +146,64 @@ func TestServiceListAndCreate(t *testing.T) {
 	if !strings.Contains(executedCmd, "-e 'ENV_NAME=prod'") {
 		t.Errorf("variable de entorno no incluida correctamente en comando: %s", executedCmd)
 	}
+
+	// Probar creación con múltiples redes
+	var capturedCommands []string
+	multiNetRunner := func(ctx context.Context, vmName string, cmd string) (string, error) {
+		capturedCommands = append(capturedCommands, cmd)
+		return "abc123456789\n", nil
+	}
+	multiSvc := NewService(multiNetRunner, discardLog)
+	multiReq := CreateContainerRequest{
+		VMName:   "test-vm",
+		Name:     "web-service",
+		Image:    "nginx:alpine",
+		Networks: []string{"frontend_net", "backend_net"},
+	}
+	_, err = multiSvc.CreateContainer(context.Background(), multiReq)
+	if err != nil {
+		t.Fatalf("error creando contenedor con múltiples redes: %v", err)
+	}
+	if len(capturedCommands) < 2 {
+		t.Fatalf("se esperaban al menos 2 comandos (run y network connect), se obtuvieron %d: %v", len(capturedCommands), capturedCommands)
+	}
+	if !strings.Contains(capturedCommands[0], "--network 'frontend_net'") {
+		t.Errorf("primer comando docker run no incluyó frontend_net: %s", capturedCommands[0])
+	}
+	if !strings.Contains(capturedCommands[1], "docker network connect 'backend_net' 'web-service'") {
+		t.Errorf("segundo comando no conectó backend_net: %s", capturedCommands[1])
+	}
+
+	// Probar InspectContainer con redes
+	inspectJSON := `[{
+		"Id": "abc123456789",
+		"Name": "/web-service",
+		"Created": "2026-10-18T20:00:00Z",
+		"State": { "Status": "running", "Running": true },
+		"Config": { "Image": "nginx:alpine", "Env": [] },
+		"HostConfig": { "RestartPolicy": { "Name": "unless-stopped" } },
+		"NetworkSettings": {
+			"IPAddress": "",
+			"Networks": {
+				"frontend_net": { "IPAddress": "172.20.0.2", "Gateway": "172.20.0.1", "MacAddress": "02:42:ac:14:00:02", "NetworkID": "net1" },
+				"backend_net": { "IPAddress": "172.21.0.5", "Gateway": "172.21.0.1", "MacAddress": "02:42:ac:15:00:05", "NetworkID": "net2" }
+			}
+		}
+	}]`
+	inspectRunner := func(ctx context.Context, vmName string, cmd string) (string, error) {
+		return inspectJSON, nil
+	}
+	inspSvc := NewService(inspectRunner, discardLog)
+	insp, err := inspSvc.InspectContainer(context.Background(), "test-vm", "web-service")
+	if err != nil {
+		t.Fatalf("error en InspectContainer: %v", err)
+	}
+	if len(insp.Networks) != 2 {
+		t.Errorf("se esperaban 2 redes en inspect, se obtuvieron: %d", len(insp.Networks))
+	}
+	if insp.IPAddress != "172.20.0.2" && insp.IPAddress != "172.21.0.5" {
+		t.Errorf("IPAddress principal no asignada desde redes: %s", insp.IPAddress)
+	}
 }
 
 func TestImageValidation(t *testing.T) {
