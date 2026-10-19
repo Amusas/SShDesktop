@@ -1433,7 +1433,7 @@ body {
     text-overflow: ellipsis;
 }
 
-.prompt-char {
+#input-area .prompt-char {
     color: var(--accent-green);
     font-weight: bold;
     font-size: 14px;

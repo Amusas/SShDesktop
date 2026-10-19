@@ -88,20 +88,69 @@ const AnsiParser = (() => {
         return s;
     }
 
-    // Detectar secuencias ANSI de borrado de pantalla (cls / clear)
+    // Detectar secuencias ANSI incompletas al final de un fragmento de stream
+    const INCOMPLETE_ANSI_REGEX = /\x1b(?:\[[\x30-\x3f]*[\x20-\x2f]*|\][^\x07\x1b\r\n]*|P[^\x07\x1b\r\n]*|[\^_X][^\x07\x1b\r\n]*|[()#%*+\-\/])?$/;
+
+    function splitIncompleteAnsi(text) {
+        if (!text) return { complete: '', remainder: '' };
+        const match = text.match(INCOMPLETE_ANSI_REGEX);
+        if (match && match[0]) {
+            return {
+                complete: text.slice(0, match.index),
+                remainder: match[0],
+            };
+        }
+        return { complete: text, remainder: '' };
+    }
+
+    // Pre-procesa el flujo bruto antes de separar por \r y \n para evitar que secuencias
+    // de cursor de ConPTY (\r\x1b[?25l\n, \x1b[1B, \x1b[4C) rompan saltos de línea o borren líneas
+    function prepareStreamText(text) {
+        if (!text) return '';
+        let s = text
+            .replace(OSC_REGEX, '')
+            .replace(DCS_REGEX, '');
+
+        // Convertir posicionamiento de cursor a columna 1 (\x1b[<fila>;1H) en salto de línea
+        s = s.replace(/\x1b\[\d+;1[Hf]/g, '\n');
+
+        // Convertir movimiento de cursor hacia abajo / siguiente línea (\x1b[B, \x1b[1B, \x1b[1E) en salto de línea
+        s = s.replace(/\x1b\[(\d*)[BE]/g, (_, n) => {
+            const count = Math.min(Math.max(parseInt(n || '1', 10), 1), 5);
+            return '\n'.repeat(count);
+        });
+
+        // Convertir avance horizontal de cursor (\x1b[nC) en espacios para preservar columnas en dir/tablas
+        s = s.replace(/\x1b\[(\d*)C/g, (_, n) => {
+            const count = Math.min(Math.max(parseInt(n || '1', 10), 1), 40);
+            return ' '.repeat(count);
+        });
+
+        // Eliminar el resto de secuencias CSI que no son de color/estilo (como \x1b[?25l, \x1b[K, etc.)
+        s = s
+            .replace(NON_SGR_CSI_REGEX, '')
+            .replace(OTHER_ESCAPES_REGEX, '')
+            .replace(/[\x00-\x07\x0b\x0e-\x1a\x1c-\x1f\x7f]/g, '');
+
+        return s;
+    }
+
+    // Detectar secuencias ANSI de borrado total de pantalla (cls / clear)
+    // Nota: No incluir \x1b[J ni \x1b[0J porque ConPTY y bash los usan para limpiar debajo del cursor sin borrar la pantalla
     function hasClearScreen(text) {
         if (!text) return false;
-        return text.includes('\x1b[2J') || 
-               text.includes('\x1b[3J') || 
-               text.includes('\x0c') || 
-               text.includes('\f') ||
-               /\x1b\[[0-9;]*[Jj]/.test(text);
+        return text.includes('\x1b[2J') ||
+               text.includes('\x1b[3J') ||
+               text.includes('\x1bc') ||
+               text.includes('\x0c') ||
+               text.includes('\f');
     }
 
     function removeClearScreen(text) {
         if (!text) return '';
         return text
-            .replace(/\x1b\[[0-9;]*[Jj]/g, '')
+            .replace(/\x1b\[[23][Jj]/g, '')
+            .replace(/\x1bc/g, '')
             .replace(/\x1b\[(?:H|1;1H|2;0H|[0-9;]*[fH])/g, '')
             .replace(/[\x0c\f]/g, '');
     }
@@ -208,8 +257,7 @@ const AnsiParser = (() => {
             return html;
         }
 
-        // 3. Unix / Linux: "user@host:~$ command" o "user@host:/var/log# command"
-        // Maneja opcionalmente si se filtró un prefijo repetido del título de ventana (ej. "user@host:~ user@host:~$")
+        // 3. Unix / Linux / Docker: "user@host:~$ command" o "root@container:/var/log# command"
         const unixMatch = plain.match(/^(\s*)(?:[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:[^\r\n$#>]*\s+)?([a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+)(:)([^:$#\r\n\s]+)([$#])\s*(.*)$/);
         if (unixMatch) {
             const indent = unixMatch[1] || '';
@@ -223,6 +271,24 @@ const AnsiParser = (() => {
             html += `<span class="prompt-user">${escapeHTML(userHost, [])}</span>`;
             html += `<span class="prompt-sep">${escapeHTML(sep, [])}</span>`;
             html += `<span class="prompt-path-highlight">${escapeHTML(pathPart, [])}</span>`;
+            html += `<span class="prompt-char">${escapeHTML(charPart, [])}</span>`;
+
+            if (cmdPart) {
+                html += ` <span class="line-command">${escapeHTML(cmdPart, [])}</span>`;
+            }
+            return html;
+        }
+
+        // 4. Contenedores Alpine / BusyBox / sh: "/ # command", "/app $ command", "sh-5.1# command"
+        const shMatch = plain.match(/^(\s*)(\/[^\s$#\r\n]*|(?:sh|bash|ash|dash)-[0-9.]+)\s*([$#])\s*(.*)$/);
+        if (shMatch) {
+            const indent = shMatch[1] || '';
+            const pathOrShell = shMatch[2];
+            const charPart = shMatch[3];
+            const cmdPart = shMatch[4] ? shMatch[4].trim() : '';
+
+            let html = indent;
+            html += `<span class="prompt-path-highlight">${escapeHTML(pathOrShell, [])}</span> `;
             html += `<span class="prompt-char">${escapeHTML(charPart, [])}</span>`;
 
             if (cmdPart) {
@@ -319,10 +385,16 @@ const AnsiParser = (() => {
             return winMatch[1].trim();
         }
 
-        // Prompt de Unix/Linux: "usuario@servidor:/ruta$" o "usuario@servidor:~$ "
+        // Prompt de Unix/Linux/Docker: "usuario@servidor:/ruta$" o "root@contenedor:/ruta# "
         const unixMatch = plain.match(/(?:[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+:)([^$#\r\n\s]+)\s*[$#]/);
         if (unixMatch && unixMatch[1]) {
             return unixMatch[1].trim();
+        }
+
+        // Prompt de contenedor sh/Alpine: "/ruta # " o "/ # "
+        const shPathMatch = plain.match(/(?:^|\n)\s*(\/[^\s$#\r\n]*)\s+[$#]\s*$/);
+        if (shPathMatch && shPathMatch[1]) {
+            return shPathMatch[1].trim();
         }
 
         return null;
@@ -330,6 +402,8 @@ const AnsiParser = (() => {
 
     return {
         stripAnsi,
+        splitIncompleteAnsi,
+        prepareStreamText,
         hasClearScreen,
         removeClearScreen,
         sanitizeText,

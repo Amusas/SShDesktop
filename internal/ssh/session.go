@@ -143,6 +143,7 @@ type Session struct {
 	closed      atomic.Bool
 	wg          sync.WaitGroup
 	onOutput    func([]byte)
+	onClose     func()
 }
 
 // Config contiene las credenciales y parametros para establecer la sesion SSH
@@ -237,7 +238,7 @@ func NewSession(ctx context.Context, cfg Config, log *slog.Logger) (*Session, er
 		gossh.TTY_OP_OSPEED: 14400,
 	}
 
-	if err := session.RequestPty("xterm-256color", 24, 80, modes); err != nil {
+	if err := session.RequestPty("xterm-256color", 1000, 120, modes); err != nil {
 		session.Close()
 		client.Close()
 		return nil, fmt.Errorf("solicitando PTY: %w", err)
@@ -256,6 +257,14 @@ func NewSession(ctx context.Context, cfg Config, log *slog.Logger) (*Session, er
 		session.Close()
 		client.Close()
 		return nil, fmt.Errorf("abriendo canal stdout: %w", err)
+	}
+
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		stdin.Close()
+		session.Close()
+		client.Close()
+		return nil, fmt.Errorf("abriendo canal stderr: %w", err)
 	}
 
 	shellType := strings.ToLower(strings.TrimSpace(cfg.Shell))
@@ -321,8 +330,9 @@ func NewSession(ctx context.Context, cfg Config, log *slog.Logger) (*Session, er
 	}
 	log.Info("sesion SSH establecida", "direccion", addrDisplay, "shell", cfg.Shell)
 
-	s.wg.Add(1)
+	s.wg.Add(2)
 	go s.pumpOutput(ctx, stdout, "stdout")
+	go s.pumpOutput(ctx, stderr, "stderr")
 
 	go func() {
 		<-ctx.Done()
@@ -336,6 +346,10 @@ func (s *Session) SetOutputHandler(fn func([]byte)) {
 	s.onOutput = fn
 }
 
+func (s *Session) SetCloseHandler(fn func()) {
+	s.onClose = fn
+}
+
 func (s *Session) Write(data []byte) error {
 	if s.closed.Load() {
 		return fmt.Errorf("la sesion esta cerrada")
@@ -347,6 +361,12 @@ func (s *Session) Write(data []byte) error {
 func (s *Session) Resize(cols, rows int) error {
 	if s.closed.Load() {
 		return fmt.Errorf("la sesion esta cerrada")
+	}
+	if cols < 80 {
+		cols = 80
+	}
+	if rows < 1000 {
+		rows = 1000
 	}
 	s.log.Debug("redimensionando PTY", "columnas", cols, "filas", rows)
 	return s.session.WindowChange(rows, cols)
@@ -379,6 +399,9 @@ func (s *Session) pumpOutput(ctx context.Context, reader io.Reader, stream strin
 				s.log.Warn("error de lectura en bomba de salida", "flujo", stream, "error", err)
 			}
 			s.log.Debug("bomba de salida finalizada", "flujo", stream)
+			if stream == "stdout" && !s.closed.Load() && s.onClose != nil {
+				s.onClose()
+			}
 			return
 		}
 	}

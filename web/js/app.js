@@ -309,9 +309,14 @@ class TerminalApp {
         this.activeClasses = [];
         this.currentLineEl = null;
         this.pendingText = '';
+        this.ansiRemainder = '';
+        this.lastKnownPromptText = '';
         this.currentPath = '~';
         this.isClearingScreen = false;
         this.ignoreEchoCommand = null;
+        this.currentVM = null;
+        this.currentContainer = null;
+        this.containerSessionOpened = false;
 
         // Configuracion por defecto y activa
         this.defaultConfig = null;
@@ -323,10 +328,21 @@ class TerminalApp {
         this.ws = new TerminalWebSocket('/ws', {
             onStatusChange: (status) => this.setStatus(status),
             onOpen: () => {
+                if (this.currentContainer) {
+                    this.containerSessionOpened = true;
+                }
                 this.handleResize();
             },
             onMessage: (data) => this.handleOutput(data),
-            onClose: () => {},
+            onClose: () => {
+                if (this.currentContainer && this.containerSessionOpened) {
+                    const closedContainer = this.currentContainer.container;
+                    this.currentContainer = null;
+                    this.containerSessionOpened = false;
+                    this.appendInfoLine(`[Sesión en contenedor '${closedContainer}' finalizada. Reconectando al host principal...]`);
+                    this.connectCurrent();
+                }
+            },
         });
 
         window.terminalApp = this;
@@ -513,11 +529,15 @@ class TerminalApp {
 
     connectCurrent() {
         this.currentVM = null;
+        this.currentContainer = null;
+        this.containerSessionOpened = false;
         this.updateTargetPill(this.currentConfig);
-        const promptChar = document.querySelector('.prompt-char');
+        const promptChar = document.querySelector('#input-area .prompt-char');
         if (promptChar) {
             promptChar.textContent = '>';
         }
+        this.currentPath = '';
+        this.updateCurrentPath(this.currentConfig.sshStartPath || '~');
         const shell = this.currentConfig.sshShell || 'powershell';
         const params = {
             host: this.currentConfig.sshHost || '',
@@ -1720,6 +1740,8 @@ class TerminalApp {
         this.appendInfoLine(`[Terminal VM] Conectando terminal SSH interactivo a '${name}'...`);
         this.toggleSidebar(false);
         this.currentVM = name;
+        this.currentContainer = null;
+        this.containerSessionOpened = false;
         if (this.targetUserHostEl) {
             this.targetUserHostEl.textContent = `[VM] ${name}`;
             this.targetUserHostEl.title = `Conectado a la máquina virtual ${name}`;
@@ -1728,10 +1750,12 @@ class TerminalApp {
             this.targetShellBadgeEl.textContent = 'bash';
             this.targetShellBadgeEl.className = 'badge-shell bash';
         }
-        const promptChar = document.querySelector('.prompt-char');
+        const promptChar = document.querySelector('#input-area .prompt-char');
         if (promptChar) {
             promptChar.textContent = '$';
         }
+        this.currentPath = '';
+        this.updateCurrentPath('~');
         this.ws.reconnectWith({ vm: name });
     }
 
@@ -2010,10 +2034,51 @@ class TerminalApp {
             case 'l':
                 if (e.ctrlKey) {
                     e.preventDefault();
-                    this.clearOutput();
+                    this.clearResultsKeepPath();
                 }
                 break;
         }
+    }
+
+    getActivePromptText() {
+        if (this.currentLineEl) {
+            const curr = AnsiParser.stripAnsi(this.pendingText || this.currentLineEl.textContent || '').trim();
+            if (curr && (curr.endsWith('>') || curr.endsWith('$') || curr.endsWith('#'))) {
+                return curr;
+            }
+        }
+        if (this.lastKnownPromptText) {
+            return this.lastKnownPromptText;
+        }
+        const path = this.currentPath || '~';
+        if (this.currentContainer) {
+            return `root@${this.currentContainer.container}:${path}#`;
+        }
+        if (this.currentVM) {
+            return `${this.currentVM}:${path}$`;
+        }
+        const shell = (this.currentConfig.sshShell || 'powershell').toLowerCase();
+        if (shell === 'powershell' || shell === 'pwsh') {
+            return `PS ${path}>`;
+        }
+        const user = this.currentConfig.sshUser || '';
+        const host = this.currentConfig.sshHost || '';
+        return user && host ? `${user}@${host} ${path}>` : `${path}>`;
+    }
+
+    clearResultsKeepPath() {
+        const promptToKeep = this.getActivePromptText();
+        this.outputEl.innerHTML = '';
+        this.activeClasses = [];
+        this.ansiRemainder = '';
+        this.isClearingScreen = false;
+        this.ignoreEchoCommand = null;
+
+        this.currentLineEl = this.createLineElement();
+        this.pendingText = promptToKeep;
+        const result = AnsiParser.renderToHTML(promptToKeep, []);
+        this.currentLineEl.innerHTML = result.html;
+        this.outputEl.appendChild(this.currentLineEl);
     }
 
     submitCommand() {
@@ -2026,12 +2091,12 @@ class TerminalApp {
         const cmdTrimmed = command.trim();
         const cmdLower = cmdTrimmed.toLowerCase();
 
+        // clear / cls solo borra los resultados anteriores y conserva únicamente la ruta/prompt actual
         if (cmdLower === 'cls' || cmdLower === 'clear') {
-            this.clearOutput();
-            this.isClearingScreen = true;
-            this.ws.sendInput(cmdTrimmed + '\r\n');
+            this.clearResultsKeepPath();
             this.inputEl.value = '';
             this.autoScroll = true;
+            this.scrollToBottom();
             return;
         }
 
@@ -2041,6 +2106,7 @@ class TerminalApp {
         if (this.currentLineEl) {
             const promptText = AnsiParser.stripAnsi(this.pendingText || this.currentLineEl.textContent || '').trim();
             if (promptText && (promptText.endsWith('>') || promptText.endsWith('$') || promptText.endsWith('#'))) {
+                this.lastKnownPromptText = promptText;
                 this.lastSubmittedPrompt = promptText;
                 this.lastSubmittedCommand = cmdTrimmed;
                 this.currentLineEl.innerHTML = AnsiParser.renderPromptAndCommand(promptText, cmdTrimmed);
@@ -2048,9 +2114,29 @@ class TerminalApp {
             } else {
                 this.finishLine();
             }
+        } else {
+            const fallbackPrompt = this.getActivePromptText();
+            const line = this.createLineElement();
+            line.innerHTML = AnsiParser.renderPromptAndCommand(fallbackPrompt, cmdTrimmed);
+            this.outputEl.appendChild(line);
         }
 
-        this.ws.sendInput(command + '\r\n');
+        // Si estamos dentro de un contenedor o VM y el usuario escribe 'exit', cerrar y volver al host automáticamente
+        if (cmdLower === 'exit' && (this.currentContainer || this.currentVM)) {
+            const targetLabel = this.currentContainer
+                ? `contenedor '${this.currentContainer.container}'`
+                : `VM '${this.currentVM}'`;
+            this.currentContainer = null;
+            this.containerSessionOpened = false;
+            this.currentVM = null;
+            this.ws.sendInput('exit\r');
+            this.inputEl.value = '';
+            this.appendInfoLine(`[Cerrando sesión en ${targetLabel} y volviendo al host principal...]`);
+            setTimeout(() => this.connectCurrent(), 150);
+            return;
+        }
+
+        this.ws.sendInput(cmdTrimmed + '\r');
         this.inputEl.value = '';
         this.scrollToBottom();
     }
@@ -2086,27 +2172,26 @@ class TerminalApp {
             }
         }
 
-        if (AnsiParser.hasClearScreen(rawData)) {
-            this.clearOutput();
+        // Reensamblar secuencias ANSI que hayan quedado partidas entre fragmentos del WebSocket
+        let streamData = (this.ansiRemainder || '') + rawData;
+        const split = AnsiParser.splitIncompleteAnsi(streamData);
+        this.ansiRemainder = split.remainder;
+        streamData = split.complete;
+        if (!streamData) return;
+
+        if (AnsiParser.hasClearScreen(streamData)) {
+            this.clearResultsKeepPath();
             this.isClearingScreen = false;
-            rawData = AnsiParser.removeClearScreen(rawData);
-            if (!rawData || !rawData.trim()) return;
+            streamData = AnsiParser.removeClearScreen(streamData);
+            if (!streamData || !AnsiParser.stripAnsi(streamData).trim()) return;
         }
 
-        if (this.isClearingScreen) {
-            const stripped = AnsiParser.stripAnsi(rawData).trim().toLowerCase();
-            if (stripped === 'cls' || stripped === 'clear' || stripped === '') {
-                return;
-            }
-            this.isClearingScreen = false;
-        }
-
-        const detectedPath = AnsiParser.extractPath(rawData);
+        const detectedPath = AnsiParser.extractPath(streamData);
         if (detectedPath) {
             this.updateCurrentPath(detectedPath);
         }
 
-        this.processText(rawData);
+        this.processText(streamData);
     }
 
     removeBackspaces(str) {
@@ -2128,7 +2213,11 @@ class TerminalApp {
     processText(text) {
         if (!text) return;
 
-        const processed = this.removeBackspaces(text);
+        // Limpiar secuencias de cursor/control ANSI antes de procesar \r y \n
+        const prepared = AnsiParser.prepareStreamText(text);
+        if (!prepared) return;
+
+        const processed = this.removeBackspaces(prepared);
 
         // Normalizar saltos de línea evitando borrar accidentalmente el contenido previo
         const normalized = processed.replace(/\r+\n/g, '\n');
@@ -2137,13 +2226,21 @@ class TerminalApp {
         for (let i = 0; i < lines.length; i++) {
             let linePart = lines[i];
 
+            // Eliminar retornos de carro al final de la línea para no vaciar pendingText
+            linePart = linePart.replace(/\r+$/, '');
+
             if (linePart.includes('\r')) {
                 const subParts = linePart.split(/\r+/);
-                linePart = subParts[subParts.length - 1];
-                this.pendingText = '';
+                const nonEmpty = subParts.filter((seg) => AnsiParser.stripAnsi(seg).trim() !== '');
+                if (nonEmpty.length > 0) {
+                    linePart = nonEmpty[nonEmpty.length - 1];
+                    this.pendingText = '';
+                } else {
+                    linePart = subParts.join('');
+                }
             }
 
-            if (linePart) {
+            if (linePart && AnsiParser.stripAnsi(linePart).length > 0) {
                 this.appendToCurrentLine(linePart);
             }
 
@@ -2165,6 +2262,11 @@ class TerminalApp {
         const result = AnsiParser.renderToHTML(this.pendingText, []);
         this.activeClasses = result.classes;
         this.currentLineEl.innerHTML = result.html;
+
+        const plain = AnsiParser.stripAnsi(this.pendingText).trim();
+        if (plain && (plain.endsWith('>') || plain.endsWith('$') || plain.endsWith('#'))) {
+            this.lastKnownPromptText = plain;
+        }
     }
 
     normalizeLineForComparison(str) {
@@ -2183,12 +2285,15 @@ class TerminalApp {
             const trimmed = rawText.trim();
 
             if (trimmed === '') {
-                const prev = this.currentLineEl.previousElementSibling;
-                if (!prev || prev.textContent.trim() === '') {
-                    this.currentLineEl.remove();
-                }
+                this.currentLineEl.remove();
             } else {
-                const prev = this.currentLineEl.previousElementSibling;
+                let prev = this.currentLineEl.previousElementSibling;
+                while (prev && (prev.textContent || '').trim() === '') {
+                    const emptyPrev = prev;
+                    prev = prev.previousElementSibling;
+                    emptyPrev.remove();
+                }
+
                 if (prev) {
                     const normPrev = this.normalizeLineForComparison(prev.textContent);
                     const normCurr = this.normalizeLineForComparison(rawText);
@@ -2243,6 +2348,7 @@ class TerminalApp {
         this.outputEl.innerHTML = '';
         this.currentLineEl = null;
         this.pendingText = '';
+        this.ansiRemainder = '';
         this.activeClasses = [];
         this.ignoreEchoCommand = null;
     }
@@ -3214,27 +3320,51 @@ class TerminalApp {
         }
     }
 
-    connectContainerTerminal(vmName, containerIdOrName) {
+    connectContainerTerminal(vmName, containerIdOrName, showLogs = false) {
         if (!vmName || !containerIdOrName) return;
+
+        document.querySelectorAll('.card-dropdown-menu.show').forEach((m) => {
+            m.classList.remove('show');
+            if (m.previousElementSibling) {
+                m.previousElementSibling.classList.remove('active');
+            }
+        });
+
         this.clearOutput();
-        this.appendInfoLine(`[Iniciando consola interactiva en contenedor '${containerIdOrName}' (${vmName})...]`);
+        this.appendInfoLine(`[Conectando al contenedor '${containerIdOrName}' (${vmName}) — escribe 'exit' para volver al host...]`);
+
+        this.currentVM = null;
+        this.currentContainer = { vm: vmName, container: containerIdOrName };
+        this.containerSessionOpened = false;
 
         if (this.targetUserHostEl) {
             this.targetUserHostEl.textContent = `${vmName}:${containerIdOrName}`;
+            this.targetUserHostEl.title = `Conectado al contenedor ${containerIdOrName} en ${vmName}`;
         }
         if (this.targetShellBadgeEl) {
             this.targetShellBadgeEl.textContent = 'docker';
             this.targetShellBadgeEl.className = 'badge-shell';
         }
-        this.currentPath = `/${containerIdOrName}`;
-        this.updateCurrentPath(this.currentPath);
+        const promptChar = document.querySelector('#input-area .prompt-char');
+        if (promptChar) {
+            promptChar.textContent = '#';
+        }
+        this.currentPath = '';
+        this.updateCurrentPath(`/${containerIdOrName}`);
+        this.lastKnownPromptText = `root@${containerIdOrName}:/#`;
 
         this.toggleSidebar(false);
+        setTimeout(() => {
+            if (this.inputEl) this.inputEl.focus();
+        }, 50);
 
         const params = {
             vm: vmName,
             container: containerIdOrName,
         };
+        if (showLogs) {
+            params.logs = '1';
+        }
         this.ws.reconnectWith(params);
     }
 
@@ -3464,17 +3594,7 @@ class TerminalApp {
     }
 
     openContainerLogs(vmName, containerId, containerName) {
-        this.activeLogsTarget = { vm: vmName, id: containerId, name: containerName };
-        if (this.containerLogsTitle) {
-            this.containerLogsTitle.textContent = `Logs: ${containerName || containerId}`;
-        }
-        if (this.containerLogsSubtitle) {
-            this.containerLogsSubtitle.textContent = `VM: ${vmName} (${containerId})`;
-        }
-        if (this.containerLogsModal) {
-            this.containerLogsModal.classList.remove('hidden');
-        }
-        this.refreshContainerLogs();
+        this.connectContainerTerminal(vmName, containerName || containerId, true);
     }
 
     closeContainerLogs() {

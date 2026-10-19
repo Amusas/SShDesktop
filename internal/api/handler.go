@@ -802,7 +802,19 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		if containerTarget != "" {
 			if err := docker.ValidateContainerName(containerTarget); err == nil || len(containerTarget) >= 6 {
-				sshTargetCfg.ExecCommand = fmt.Sprintf("sudo docker exec -it %s /bin/sh -c 'if [ -x /bin/bash ]; then exec /bin/bash; else exec /bin/sh; fi'", docker.EscapeShellArg(containerTarget))
+				escapedTarget := docker.EscapeShellArg(containerTarget)
+				showLogs := q.Get("logs") == "1"
+				if showLogs {
+					sshTargetCfg.ExecCommand = fmt.Sprintf(
+						"sudo docker start %s >/dev/null 2>&1 || true; echo '--- Logs recientes del contenedor ---'; sudo docker logs --tail 100 %s 2>&1 || true; echo '-------------------------------------'; sudo docker exec -it %s /bin/sh -c 'stty -echo 2>/dev/null; export TERM=xterm-256color; if [ -x /bin/bash ]; then export PS1=\"\\u@\\h:\\w# \"; exec /bin/bash --norc -i; else export PS1=\"root@$(hostname 2>/dev/null || echo container):\\w# \"; exec /bin/sh -i; fi'",
+						escapedTarget, escapedTarget, escapedTarget,
+					)
+				} else {
+					sshTargetCfg.ExecCommand = fmt.Sprintf(
+						"sudo docker start %s >/dev/null 2>&1 || true; sudo docker exec -it %s /bin/sh -c 'stty -echo 2>/dev/null; export TERM=xterm-256color; if [ -x /bin/bash ]; then export PS1=\"\\u@\\h:\\w# \"; exec /bin/bash --norc -i; else export PS1=\"root@$(hostname 2>/dev/null || echo container):\\w# \"; exec /bin/sh -i; fi'",
+						escapedTarget, escapedTarget,
+					)
+				}
 			}
 		}
 	}
@@ -817,6 +829,10 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer session.Close()
 
 	var writeMu sync.Mutex
+
+	session.SetCloseHandler(func() {
+		cancel()
+	})
 
 	session.SetOutputHandler(func(data []byte) {
 		writeMu.Lock()

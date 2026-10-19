@@ -263,7 +263,7 @@ func (s *Service) CreateContainer(ctx context.Context, req CreateContainerReques
 	}
 
 	var args []string
-	args = append(args, "sudo", "docker", "run", "-d", "--name", EscapeShellArg(req.Name))
+	args = append(args, "sudo", "docker", "run", "-d", "-i", "-t", "--name", EscapeShellArg(req.Name))
 
 	policy := req.RestartPolicy
 	if policy == "" {
