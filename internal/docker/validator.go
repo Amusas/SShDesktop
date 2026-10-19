@@ -158,13 +158,13 @@ func ValidateNetworkName(name string) error {
 	return nil
 }
 
-// ValidateNetworkDriver verifica que el driver de red sea compatible (bridge o overlay)
+// ValidateNetworkDriver verifica que el driver de red sea compatible (bridge, host, none, macvlan, ipvlan o overlay)
 func ValidateNetworkDriver(driver string) error {
 	driver = strings.ToLower(strings.TrimSpace(driver))
-	if driver == "" || driver == "bridge" || driver == "macvlan" || driver == "ipvlan" || driver == "overlay" {
+	if driver == "" || driver == "bridge" || driver == "host" || driver == "none" || driver == "macvlan" || driver == "ipvlan" || driver == "overlay" {
 		return nil
 	}
-	return fmt.Errorf("driver de red no soportado: '%s' (permitidos: bridge, macvlan, ipvlan, overlay)", driver)
+	return fmt.Errorf("driver de red no soportado: '%s' (permitidos: bridge, host, none, macvlan, ipvlan, overlay)", driver)
 }
 
 // ValidateCIDR verifica que la cadena sea una subred válida en formato CIDR (ej. 172.20.0.0/16)

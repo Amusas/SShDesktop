@@ -258,6 +258,14 @@ class TerminalApp {
         this.createNetworkVm = document.getElementById('create-network-vm');
         this.createNetworkName = document.getElementById('create-network-name');
         this.createNetworkDriver = document.getElementById('create-network-driver');
+        this.toggleNetworkAdvancedBtn = document.getElementById('toggle-network-advanced-btn');
+        this.networkAdvancedFields = document.getElementById('network-advanced-fields');
+        this.networkAdvancedArrow = document.getElementById('network-advanced-arrow');
+        this.createNetworkSubnet = document.getElementById('create-network-subnet');
+        this.createNetworkGateway = document.getElementById('create-network-gateway');
+        this.createNetworkIpRange = document.getElementById('create-network-iprange');
+        this.createNetworkInternal = document.getElementById('create-network-internal');
+        this.createNetworkAttachable = document.getElementById('create-network-attachable');
         this.createNetworkFeedback = document.getElementById('create-network-feedback');
         this.submitCreateNetworkBtn = document.getElementById('submit-create-network-btn');
 
@@ -801,6 +809,15 @@ class TerminalApp {
             this.createNetworkForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 this.submitCreateNetwork();
+            });
+        }
+        if (this.toggleNetworkAdvancedBtn) {
+            this.toggleNetworkAdvancedBtn.addEventListener('click', () => {
+                if (!this.networkAdvancedFields) return;
+                const isHidden = this.networkAdvancedFields.classList.toggle('hidden');
+                if (this.networkAdvancedArrow) {
+                    this.networkAdvancedArrow.textContent = isHidden ? '▶' : '▼';
+                }
             });
         }
         if (this.refreshNetworksBtn) {
@@ -2698,6 +2715,13 @@ class TerminalApp {
     openCreateNetworkDialog(presetVm = '', onCreatedCallback = null) {
         if (this.createNetworkForm) this.createNetworkForm.reset();
         if (this.createNetworkFeedback) this.createNetworkFeedback.classList.add('hidden');
+        if (this.networkAdvancedFields) this.networkAdvancedFields.classList.add('hidden');
+        if (this.networkAdvancedArrow) this.networkAdvancedArrow.textContent = '▶';
+        if (this.createNetworkSubnet) this.createNetworkSubnet.value = '';
+        if (this.createNetworkGateway) this.createNetworkGateway.value = '';
+        if (this.createNetworkIpRange) this.createNetworkIpRange.value = '';
+        if (this.createNetworkInternal) this.createNetworkInternal.checked = false;
+        if (this.createNetworkAttachable) this.createNetworkAttachable.checked = false;
 
         // Llenar select de VM
         if (this.createNetworkVm) {
@@ -2730,6 +2754,11 @@ class TerminalApp {
         const vmName = this.createNetworkVm.value;
         const name = this.createNetworkName.value.trim();
         const driver = this.createNetworkDriver ? this.createNetworkDriver.value : 'bridge';
+        const subnet = this.createNetworkSubnet ? this.createNetworkSubnet.value.trim() : '';
+        const gateway = this.createNetworkGateway ? this.createNetworkGateway.value.trim() : '';
+        const ipRange = this.createNetworkIpRange ? this.createNetworkIpRange.value.trim() : '';
+        const internal = this.createNetworkInternal ? this.createNetworkInternal.checked : false;
+        const attachable = this.createNetworkAttachable ? this.createNetworkAttachable.checked : false;
 
         if (!vmName || !name) return;
 
@@ -2746,6 +2775,11 @@ class TerminalApp {
                     vmName,
                     name,
                     driver,
+                    subnet,
+                    gateway,
+                    ipRange,
+                    internal,
+                    attachable,
                 }),
             });
             const data = await res.json();

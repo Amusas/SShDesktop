@@ -350,6 +350,18 @@ func TestNetworkValidation(t *testing.T) {
 	if err := ValidateNetworkDriver("bridge"); err != nil {
 		t.Errorf("driver bridge rechazado: %v", err)
 	}
+	if err := ValidateNetworkDriver("host"); err != nil {
+		t.Errorf("driver host rechazado: %v", err)
+	}
+	if err := ValidateNetworkDriver("none"); err != nil {
+		t.Errorf("driver none rechazado: %v", err)
+	}
+	if err := ValidateNetworkDriver("macvlan"); err != nil {
+		t.Errorf("driver macvlan rechazado: %v", err)
+	}
+	if err := ValidateNetworkDriver("ipvlan"); err != nil {
+		t.Errorf("driver ipvlan rechazado: %v", err)
+	}
 	if err := ValidateNetworkDriver("overlay"); err != nil {
 		t.Errorf("driver overlay rechazado: %v", err)
 	}

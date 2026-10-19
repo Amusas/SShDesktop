@@ -1220,8 +1220,44 @@ CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
                     <label for="create-network-driver">Driver</label>
                     <select id="create-network-driver" name="driver" class="form-select">
                         <option value="bridge" selected>bridge (Red local estándar)</option>
-                        <option value="overlay" disabled title="Requiere entorno Docker Swarm">overlay (Requiere Docker Swarm)</option>
+                        <option value="host">host (Red del host)</option>
+                        <option value="none">none (Sin red / Aislada)</option>
+                        <option value="macvlan">macvlan (Dirección MAC física)</option>
+                        <option value="ipvlan">ipvlan (Sub-interfaz IP física)</option>
+                        <option value="overlay">overlay (Red distribuida Swarm)</option>
                     </select>
+                </div>
+
+                <!-- Configuración Avanzada Plegable -->
+                <div class="advanced-section-toggle" style="margin: 10px 0 4px 0;">
+                    <button type="button" id="toggle-network-advanced-btn" class="btn btn-ghost btn-sm" style="padding-left: 0; display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--accent);">
+                        <span id="network-advanced-arrow">▶</span> Configuración avanzada (IPAM / Opciones)
+                    </button>
+                </div>
+
+                <div id="network-advanced-fields" class="hidden" style="display: flex; flex-direction: column; gap: 10px; padding: 12px; background: rgba(0, 0, 0, 0.15); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px;">
+                    <div class="form-field">
+                        <label for="create-network-subnet">Subred (CIDR)</label>
+                        <input type="text" id="create-network-subnet" name="subnet" placeholder="ej. 172.20.0.0/16" autocomplete="off" />
+                    </div>
+                    <div class="form-field">
+                        <label for="create-network-gateway">Gateway</label>
+                        <input type="text" id="create-network-gateway" name="gateway" placeholder="ej. 172.20.0.1" autocomplete="off" />
+                    </div>
+                    <div class="form-field">
+                        <label for="create-network-iprange">Rango IP (IP Range CIDR)</label>
+                        <input type="text" id="create-network-iprange" name="ipRange" placeholder="ej. 172.20.10.0/24" autocomplete="off" />
+                    </div>
+                    <div style="display: flex; gap: 20px; align-items: center; margin-top: 4px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; color: var(--text-primary);">
+                            <input type="checkbox" id="create-network-internal" name="internal" />
+                            <span>Interna (Sin salida a Internet)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; color: var(--text-primary);">
+                            <input type="checkbox" id="create-network-attachable" name="attachable" />
+                            <span>Attachable</span>
+                        </label>
+                    </div>
                 </div>
                 
                 <div id="create-network-feedback" class="modal-feedback hidden"></div>
@@ -1301,8 +1337,8 @@ CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
     </div>
 
 
-    <script src="/js/ansi.js?v=32"></script>
-    <script src="/js/websocket.js?v=32"></script>
-    <script src="/js/app.js?v=32"></script>
+    <script src="/js/ansi.js?v=33"></script>
+    <script src="/js/websocket.js?v=33"></script>
+    <script src="/js/app.js?v=33"></script>
 </body>
 </html>
