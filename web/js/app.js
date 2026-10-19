@@ -868,6 +868,8 @@ class TerminalApp {
                     this.addWizNetworkRow(newNetName);
                 });
             });
+        }
+
         if (this.wizVmSelect) {
             this.wizVmSelect.addEventListener('change', () => {
                 const currentVm = this.wizVmSelect.value.trim();
