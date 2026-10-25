@@ -741,6 +741,20 @@
                         </div>
                         <div id="wiz-networks-container" class="dynamic-rows-container"></div>
                     </div>
+
+                    <!-- Capacidades de Red Avanzadas (NET_ADMIN) -->
+                    <div class="form-field">
+                        <label class="wiz-cap-card" for="wiz-net-admin">
+                            <input type="checkbox" id="wiz-net-admin" class="wiz-cap-checkbox" />
+                            <div class="wiz-cap-info">
+                                <div class="wiz-cap-header">
+                                    <span class="wiz-cap-title">Configuración avanzada de red</span>
+                                    <code class="wiz-cap-badge">--cap-add NET_ADMIN</code>
+                                </div>
+                                <span class="wiz-cap-desc">Permite administrar interfaces, tablas de enrutamiento, reglas de firewall (iptables) y parámetros de red dentro del contenedor.</span>
+                            </div>
+                        </label>
+                    </div>
                 </div>
 
                 <!-- Paso 4: Revisión y Confirmación -->
@@ -1336,8 +1350,8 @@ CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
     </div>
 
 
-    <script src="/js/ansi.js?v=36"></script>
-    <script src="/js/websocket.js?v=36"></script>
-    <script src="/js/app.js?v=36"></script>
+    <script src="/js/ansi.js?v=37"></script>
+    <script src="/js/websocket.js?v=37"></script>
+    <script src="/js/app.js?v=37"></script>
 </body>
 </html>

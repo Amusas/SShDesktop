@@ -44,6 +44,7 @@ type CreateContainerRequest struct {
 	RestartPolicy string        `json:"restartPolicy,omitempty"` // unless-stopped, always, on-failure, no
 	Network       string        `json:"network,omitempty"`  // Red Docker a la que conectar el contenedor
 	Networks      []string      `json:"networks,omitempty"` // Múltiples redes Docker adicionales o lista de redes
+	NetAdmin      bool          `json:"netAdmin,omitempty"` // Habilita --cap-add NET_ADMIN para configuración avanzada de red
 	Command       string        `json:"command,omitempty"`
 }
 

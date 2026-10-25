@@ -146,6 +146,30 @@ func TestServiceListAndCreate(t *testing.T) {
 	if !strings.Contains(executedCmd, "-e 'ENV_NAME=prod'") {
 		t.Errorf("variable de entorno no incluida correctamente en comando: %s", executedCmd)
 	}
+	if strings.Contains(executedCmd, "--cap-add NET_ADMIN") {
+		t.Errorf("no se esperaba --cap-add NET_ADMIN cuando NetAdmin es false: %s", executedCmd)
+	}
+
+	// Probar creación con capacidad NET_ADMIN habilitada (--cap-add NET_ADMIN)
+	reqNetAdmin := CreateContainerRequest{
+		VMName:   "test-vm",
+		Name:     "router-container",
+		Image:    "alpine:latest",
+		NetAdmin: true,
+	}
+	_, err = svc.CreateContainer(context.Background(), reqNetAdmin)
+	if err != nil {
+		t.Fatalf("error creando contenedor con NET_ADMIN: %v", err)
+	}
+	if !strings.Contains(executedCmd, "--cap-add NET_ADMIN") {
+		t.Errorf("se esperaba '--cap-add NET_ADMIN' en el comando ejecutado, se obtuvo: %s", executedCmd)
+	}
+	// Asegurar que --cap-add NET_ADMIN aparece antes de la imagen
+	capIdx := strings.Index(executedCmd, "--cap-add NET_ADMIN")
+	imgIdx := strings.Index(executedCmd, "'alpine:latest'")
+	if capIdx == -1 || imgIdx == -1 || capIdx > imgIdx {
+		t.Errorf("--cap-add NET_ADMIN debe ubicarse antes de la imagen en docker run: %s", executedCmd)
+	}
 
 	// Probar creación con múltiples redes
 	var capturedCommands []string

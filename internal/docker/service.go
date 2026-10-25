@@ -302,6 +302,10 @@ func (s *Service) CreateContainer(ctx context.Context, req CreateContainerReques
 		args = append(args, "--network", EscapeShellArg(allNets[0]))
 	}
 
+	if req.NetAdmin {
+		args = append(args, "--cap-add", "NET_ADMIN")
+	}
+
 	for _, p := range req.Ports {
 		if err := ValidatePort(p.HostPort); err != nil {
 			return nil, fmt.Errorf("puerto host inválido: %w", err)

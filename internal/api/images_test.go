@@ -137,3 +137,70 @@ func TestImageAPIEndpoints(t *testing.T) {
 		t.Errorf("respuesta de commit inesperada: %+v", commitResp)
 	}
 }
+
+func TestCreateContainerWithNetAdminAPI(t *testing.T) {
+	cfg := &config.Config{
+		SSHHost: "127.0.0.1",
+		SSHPort: 22,
+		SSHUser: "testuser",
+		SSHRoot: t.TempDir(),
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	var lastCommand string
+	mockRunner := func(ctx context.Context, vmName string, command string) (string, error) {
+		lastCommand = command
+		if strings.Contains(command, "docker run") {
+			return "abcdef1234567890", nil
+		}
+		return "", nil
+	}
+
+	h := &Handler{
+		cfg:       cfg,
+		log:       log,
+		vmSvc:     vm.NewService(cfg, log),
+		tplSvc:    template.NewService(cfg, log),
+		dockerSvc: docker.NewService(mockRunner, log),
+	}
+
+	// Caso 1: Crear contenedor con netAdmin: true
+	createReq := docker.CreateContainerRequest{
+		VMName:   "test-vm",
+		Name:     "net-admin-box",
+		Image:    "alpine:latest",
+		NetAdmin: true,
+	}
+	bodyBytes, _ := json.Marshal(createReq)
+	reqCreate := httptest.NewRequest(http.MethodPost, "/api/containers", bytes.NewReader(bodyBytes))
+	reqCreate.Header.Set("Content-Type", "application/json")
+	rrCreate := httptest.NewRecorder()
+	h.ServeHTTP(rrCreate, reqCreate)
+
+	if rrCreate.Code != http.StatusCreated {
+		t.Fatalf("se esperaba status 201 al crear contenedor, obtenido: %d, body: %s", rrCreate.Code, rrCreate.Body.String())
+	}
+	if !strings.Contains(lastCommand, "--cap-add NET_ADMIN") {
+		t.Errorf("el comando docker run generado por la API no contiene '--cap-add NET_ADMIN': %s", lastCommand)
+	}
+
+	// Caso 2: Crear contenedor con netAdmin: false (por defecto)
+	createReqStd := docker.CreateContainerRequest{
+		VMName:   "test-vm",
+		Name:     "std-box",
+		Image:    "alpine:latest",
+		NetAdmin: false,
+	}
+	bodyBytesStd, _ := json.Marshal(createReqStd)
+	reqCreateStd := httptest.NewRequest(http.MethodPost, "/api/containers", bytes.NewReader(bodyBytesStd))
+	reqCreateStd.Header.Set("Content-Type", "application/json")
+	rrCreateStd := httptest.NewRecorder()
+	h.ServeHTTP(rrCreateStd, reqCreateStd)
+
+	if rrCreateStd.Code != http.StatusCreated {
+		t.Fatalf("se esperaba status 201 al crear contenedor estándar, obtenido: %d", rrCreateStd.Code)
+	}
+	if strings.Contains(lastCommand, "--cap-add NET_ADMIN") {
+		t.Errorf("el comando docker run no debería incluir '--cap-add NET_ADMIN' cuando netAdmin es false: %s", lastCommand)
+	}
+}

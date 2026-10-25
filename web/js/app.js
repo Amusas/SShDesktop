@@ -103,6 +103,7 @@ class TerminalApp {
         this.wizNetworksContainer = document.getElementById('wiz-networks-container');
         this.wizAddNetworkRowBtn = document.getElementById('wiz-add-network-row-btn');
         this.wizAddNetworkBtn = document.getElementById('wiz-add-network-btn');
+        this.wizNetAdminCheckbox = document.getElementById('wiz-net-admin');
         this.wizSummaryCard = document.getElementById('wiz-summary-card');
         this.wizFeedback = document.getElementById('wiz-feedback');
         this.currentWizardStep = 1;
@@ -4260,6 +4261,7 @@ class TerminalApp {
         if (this.wizPortsContainer) this.wizPortsContainer.innerHTML = '';
         if (this.wizEnvContainer) this.wizEnvContainer.innerHTML = '';
         if (this.wizVolumesContainer) this.wizVolumesContainer.innerHTML = '';
+        if (this.wizNetAdminCheckbox) this.wizNetAdminCheckbox.checked = false;
         if (this.wizNetworksContainer) {
             this.wizNetworksContainer.innerHTML = '';
             await this.addWizNetworkRow();
@@ -4766,6 +4768,10 @@ class TerminalApp {
                 <span class="summary-label">Redes:</span>
                 <span class="summary-val">${networksSummaryText}</span>
             </div>
+            <div class="summary-row">
+                <span class="summary-label">Capacidad Red:</span>
+                <span class="summary-val">${this.wizNetAdminCheckbox && this.wizNetAdminCheckbox.checked ? '<span class="container-net-badge">NET_ADMIN (--cap-add NET_ADMIN)</span>' : 'Estándar'}</span>
+            </div>
         `;
     }
 
@@ -4785,6 +4791,7 @@ class TerminalApp {
             }
         });
         const network = networks.length > 0 ? networks[0] : '';
+        const netAdmin = this.wizNetAdminCheckbox ? this.wizNetAdminCheckbox.checked : false;
 
         if (!vmName || !name || !image) {
             this.showWizFeedback('Faltan campos obligatorios para crear el contenedor.', 'error');
@@ -4824,6 +4831,7 @@ class TerminalApp {
             name,
             image,
             restartPolicy,
+            netAdmin,
             network,
             networks,
             ports,
