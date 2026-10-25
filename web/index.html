@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SSH Terminal</title>
-    <link rel="stylesheet" href="/css/style.css?v=36">
+    <link rel="stylesheet" href="/css/style.css?v=41">
 </head>
 <body>
     <div id="app">
@@ -55,9 +55,9 @@
     <aside id="app-sidebar" class="app-sidebar hidden">
         <div class="sidebar-head">
             <div class="sidebar-title">
-                <span class="sidebar-label">SSH Terminal</span>
+            <!-- Eliminado título SSH Terminal para maximizar espacio de contenido -->
             </div>
-            <button id="close-sidebar-btn" class="sidebar-close" aria-label="Cerrar menú">&times;</button>
+            <button id="close-sidebar-btn-old" class="sidebar-close hidden" aria-label="Cerrar menú">&times;</button>
         </div>
 
         <nav class="sidebar-nav">
@@ -89,10 +89,12 @@
                 </svg>
                 <span>Llaves SSH</span>
             </button>
+            <button id="close-sidebar-btn" class="sidebar-close" aria-label="Cerrar menú" style="margin-left: auto;">&times;</button>
         </nav>
 
         <!-- Subnavegación de Docker: Contenedores e Imágenes -->
         <div id="docker-subnav" class="docker-subnav hidden">
+            <span class="docker-subnav-kicker">Docker &rsaquo;</span>
             <button class="docker-subnav-btn active" data-subview="containers" id="docker-subnav-containers">
                 <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
                     <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
@@ -262,6 +264,25 @@
                 </div>
 
                 <div class="containers-toolbar-actions">
+                <div class="images-subtabs" role="tablist">
+                    <button type="button" class="images-subtab-btn active" data-imagestab="images" id="images-tab-list-btn">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                            <polyline points="2 17 12 22 22 17"></polyline>
+                            <polyline points="2 12 12 17 22 12"></polyline>
+                        </svg>
+                        <span>Imágenes</span>
+                    </button>
+                    <button type="button" class="images-subtab-btn" data-imagestab="tars" id="images-tab-tars-btn">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <span>Archivos TAR</span>
+                    </button>
+                </div>
+
                     <button id="open-create-image-btn" class="btn btn-primary">
                         <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none">
                             <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -278,7 +299,10 @@
             </div>
 
             <div class="vm-list-wrapper">
+                <div id="images-export-feedback" class="modal-feedback hidden" style="margin-bottom: 10px;"></div>
+
                 <div id="images-list" class="images-list"></div>
+                <div id="images-tar-list" class="images-list hidden"></div>
             </div>
         </section>
 
@@ -1350,8 +1374,8 @@ CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
     </div>
 
 
-    <script src="/js/ansi.js?v=37"></script>
-    <script src="/js/websocket.js?v=37"></script>
-    <script src="/js/app.js?v=37"></script>
+    <script src="/js/ansi.js?v=39"></script>
+    <script src="/js/websocket.js?v=39"></script>
+    <script src="/js/app.js?v=41"></script>
 </body>
 </html>

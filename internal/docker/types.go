@@ -212,3 +212,32 @@ type CreateNetworkRequest struct {
 	Internal   bool   `json:"internal,omitempty"`
 	Attachable bool   `json:"attachable,omitempty"`
 }
+
+// ExportImageRequest contiene los parámetros para exportar una imagen Docker a un archivo .tar dentro de la VM
+type ExportImageRequest struct {
+	VMName   string `json:"vmName"`
+	ImageRef string `json:"image"`
+}
+
+// ExportImageResponse entrega el resultado de la exportación de una imagen Docker a archivo .tar
+type ExportImageResponse struct {
+	Success    bool   `json:"success"`
+	VMName     string `json:"vmName"`
+	Image      string `json:"image"`
+	FileName   string `json:"fileName"`
+	FilePath   string `json:"filePath"`
+	Size       string `json:"size"`
+	SizeBytes  int64  `json:"sizeBytes"`
+	ModifiedAt string `json:"modifiedAt,omitempty"`
+}
+
+// ExportedTarFile representa un archivo .tar existente en el directorio de exportaciones de la VM
+type ExportedTarFile struct {
+	FileName   string `json:"fileName"`
+	FilePath   string `json:"filePath"`
+	Size       string `json:"size"`
+	SizeBytes  int64  `json:"sizeBytes"`
+	ModifiedAt string `json:"modifiedAt"`
+	Status     string `json:"status"`
+	VMName     string `json:"vmName"`
+}

@@ -204,3 +204,78 @@ func TestCreateContainerWithNetAdminAPI(t *testing.T) {
 		t.Errorf("el comando docker run no debería incluir '--cap-add NET_ADMIN' cuando netAdmin es false: %s", lastCommand)
 	}
 }
+
+func TestImageExportAPIEndpoints(t *testing.T) {
+	cfg := &config.Config{
+		SSHHost: "127.0.0.1",
+		SSHPort: 22,
+		SSHUser: "testuser",
+		SSHRoot: t.TempDir(),
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	mockRunner := func(ctx context.Context, vmName string, command string) (string, error) {
+		if strings.Contains(command, "docker save -o") {
+			return "TAR_OK|/home/testuser/docker-image-exports/nginx_alpine_20261024_232000.tar|25165824|1792884000\n", nil
+		}
+		if strings.Contains(command, "find \"$EXPORT_DIR\"") {
+			return "/home/testuser/docker-image-exports/nginx_alpine_20261024_232000.tar|25165824|1792884000\n", nil
+		}
+		return "", nil
+	}
+
+	h := &Handler{
+		cfg:       cfg,
+		log:       log,
+		vmSvc:     vm.NewService(cfg, log),
+		tplSvc:    template.NewService(cfg, log),
+		dockerSvc: docker.NewService(mockRunner, log),
+	}
+
+	// 1. POST /api/images/export
+	exportPayload := docker.ExportImageRequest{
+		VMName:   "test-vm",
+		ImageRef: "nginx:alpine",
+	}
+	exportBytes, _ := json.Marshal(exportPayload)
+	reqExport := httptest.NewRequest(http.MethodPost, "/api/images/export", bytes.NewReader(exportBytes))
+	reqExport.Header.Set("Content-Type", "application/json")
+	rrExport := httptest.NewRecorder()
+	h.ServeHTTP(rrExport, reqExport)
+
+	if rrExport.Code != http.StatusCreated {
+		t.Fatalf("se esperaba status 201 en export, obtenido: %d, body: %s", rrExport.Code, rrExport.Body.String())
+	}
+	var exportResp docker.ExportImageResponse
+	if err := json.NewDecoder(rrExport.Body).Decode(&exportResp); err != nil {
+		t.Fatalf("error decodificando respuesta de export: %v", err)
+	}
+	if !exportResp.Success || exportResp.FileName != "nginx_alpine_20261024_232000.tar" || exportResp.SizeBytes != 25165824 {
+		t.Errorf("respuesta de export inesperada: %+v", exportResp)
+	}
+
+	// 2. GET /api/images/exports?vm=test-vm
+	reqListTars := httptest.NewRequest(http.MethodGet, "/api/images/exports?vm=test-vm", nil)
+	rrListTars := httptest.NewRecorder()
+	h.ServeHTTP(rrListTars, reqListTars)
+
+	if rrListTars.Code != http.StatusOK {
+		t.Fatalf("se esperaba status 200 en exports list, obtenido: %d, body: %s", rrListTars.Code, rrListTars.Body.String())
+	}
+	var tars []docker.ExportedTarFile
+	if err := json.NewDecoder(rrListTars.Body).Decode(&tars); err != nil {
+		t.Fatalf("error decodificando lista de tars: %v", err)
+	}
+	if len(tars) != 1 || tars[0].FileName != "nginx_alpine_20261024_232000.tar" || tars[0].Size != "24.0 MB" {
+		t.Errorf("lista de tars inesperada: %+v", tars)
+	}
+
+	// 3. DELETE /api/images/exports?vm=test-vm&file=nginx_alpine_20261024_232000.tar
+	reqDelTar := httptest.NewRequest(http.MethodDelete, "/api/images/exports?vm=test-vm&file=nginx_alpine_20261024_232000.tar", nil)
+	rrDelTar := httptest.NewRecorder()
+	h.ServeHTTP(rrDelTar, reqDelTar)
+
+	if rrDelTar.Code != http.StatusOK {
+		t.Fatalf("se esperaba status 200 al eliminar TAR, obtenido: %d, body: %s", rrDelTar.Code, rrDelTar.Body.String())
+	}
+}

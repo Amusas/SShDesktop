@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -649,6 +650,227 @@ func (s *Service) DeleteImage(ctx context.Context, vmName string, imageRef strin
 		}
 		return err
 	}
+	return nil
+}
+
+// ImageExportsDirName es el nombre del directorio dentro de $HOME en la VM donde se guardan las imágenes exportadas
+const ImageExportsDirName = "docker-image-exports"
+
+// FormatByteSize formatea un tamaño en bytes a una cadena legible (B, KB, MB, GB)
+func FormatByteSize(bytes int64) string {
+	if bytes <= 0 {
+		return "0 B"
+	}
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit && exp < 3; n /= unit {
+		div *= unit
+		exp++
+	}
+	units := []string{"KB", "MB", "GB", "TB"}
+	return fmt.Sprintf("%.1f %s", float64(bytes)/float64(div), units[exp])
+}
+
+// ExportImage exporta una imagen Docker existente a un archivo .tar dentro de ~/docker-image-exports/ en la VM
+func (s *Service) ExportImage(ctx context.Context, req ExportImageRequest) (*ExportImageResponse, error) {
+	vmName := strings.TrimSpace(req.VMName)
+	if vmName == "" {
+		return nil, fmt.Errorf("el nombre de la máquina virtual (VM) es obligatorio")
+	}
+
+	imageRef := strings.TrimSpace(req.ImageRef)
+	if imageRef == "" {
+		return nil, fmt.Errorf("la referencia de la imagen no puede estar vacía")
+	}
+	if err := ValidateImageName(imageRef); err != nil {
+		return nil, err
+	}
+
+	fileName := SanitizeTarFileName(imageRef, time.Now())
+
+	// Crear el directorio ~/docker-image-exports, evitar sobrescribir si ya existe el archivo,
+	// ejecutar sudo docker save -o, ajustar permisos del archivo resultante y verificar tamaño > 0.
+	exportScript := fmt.Sprintf(
+		`EXPORT_DIR="$HOME/%s" && `+
+			`mkdir -p "$EXPORT_DIR" && `+
+			`TARGET_FILE="$EXPORT_DIR/"%s && `+
+			`if [ -e "$TARGET_FILE" ]; then TARGET_FILE="${TARGET_FILE%%.tar}_$(date +%%s)_$$.tar"; fi && `+
+			`if ! sudo docker save -o "$TARGET_FILE" %s 2>&1; then sudo rm -f "$TARGET_FILE" 2>/dev/null || true; exit 1; fi && `+
+			`sudo chown "$(id -u):$(id -g)" "$TARGET_FILE" 2>/dev/null || true && `+
+			`sudo chmod 644 "$TARGET_FILE" 2>/dev/null || true && `+
+			`if [ ! -s "$TARGET_FILE" ]; then sudo rm -f "$TARGET_FILE" 2>/dev/null || true; echo "El archivo TAR generado no existe o está vacío (0 bytes)" >&2; exit 1; fi && `+
+			`stat -c 'TAR_OK|%%n|%%s|%%Y' "$TARGET_FILE"`,
+		ImageExportsDirName,
+		EscapeShellArg(fileName),
+		EscapeShellArg(imageRef),
+	)
+
+	s.log.Info("exportando imagen Docker a TAR en VM", "vm", vmName, "image", imageRef, "fileName", fileName)
+
+	out, err := s.runner(ctx, vmName, exportScript)
+	if err != nil {
+		outTrim := strings.TrimSpace(out)
+		lower := strings.ToLower(outTrim)
+		if strings.Contains(lower, "reference does not exist") || strings.Contains(lower, "no such image") {
+			return nil, fmt.Errorf("la imagen '%s' no existe en la VM '%s'", imageRef, vmName)
+		}
+		if strings.Contains(lower, "permission denied") {
+			return nil, fmt.Errorf("permisos insuficientes al exportar imagen '%s' en VM '%s': %s", imageRef, vmName, outTrim)
+		}
+		if outTrim != "" {
+			return nil, fmt.Errorf("error exportando imagen '%s': %s", imageRef, outTrim)
+		}
+		return nil, fmt.Errorf("error exportando imagen '%s' en VM '%s': %w", imageRef, vmName, err)
+	}
+
+	// Extraer y verificar la línea TAR_OK|<ruta>|<bytes>|<epoch>
+	var verifiedPath string
+	var verifiedSize int64
+	var verifiedMtime string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "TAR_OK|") {
+			parts := strings.Split(line, "|")
+			if len(parts) >= 4 {
+				verifiedPath = strings.TrimSpace(parts[1])
+				verifiedSize, _ = strconv.ParseInt(strings.TrimSpace(parts[2]), 10, 64)
+				if epochSec, parseErr := strconv.ParseInt(strings.TrimSpace(parts[3]), 10, 64); parseErr == nil && epochSec > 0 {
+					verifiedMtime = time.Unix(epochSec, 0).Format("2006-01-02 15:04:05")
+				}
+			}
+		}
+	}
+
+	if verifiedPath == "" || verifiedSize <= 0 || !strings.HasSuffix(strings.ToLower(verifiedPath), ".tar") {
+		return nil, fmt.Errorf("no se pudo verificar la creación del archivo TAR para '%s' o el archivo resultante tiene tamaño 0", imageRef)
+	}
+
+	actualFileName := path.Base(verifiedPath)
+	return &ExportImageResponse{
+		Success:    true,
+		VMName:     vmName,
+		Image:      imageRef,
+		FileName:   actualFileName,
+		FilePath:   verifiedPath,
+		Size:       FormatByteSize(verifiedSize),
+		SizeBytes:  verifiedSize,
+		ModifiedAt: verifiedMtime,
+	}, nil
+}
+
+// ListExportedTars consulta los archivos .tar reales dentro de ~/docker-image-exports/ en la VM
+func (s *Service) ListExportedTars(ctx context.Context, vmName string) ([]ExportedTarFile, error) {
+	vmName = strings.TrimSpace(vmName)
+	if vmName == "" {
+		return nil, fmt.Errorf("el nombre de la VM no puede estar vacío")
+	}
+
+	listScript := fmt.Sprintf(
+		`EXPORT_DIR="$HOME/%s"; if [ -d "$EXPORT_DIR" ]; then find "$EXPORT_DIR" -maxdepth 1 -type f -name '*.tar' -exec stat -c '%%n|%%s|%%Y' {} + 2>/dev/null; fi`,
+		ImageExportsDirName,
+	)
+
+	out, err := s.runner(ctx, vmName, listScript)
+	if err != nil {
+		return nil, fmt.Errorf("consultando archivos TAR en VM '%s': %w", vmName, err)
+	}
+
+	type itemWithEpoch struct {
+		file  ExportedTarFile
+		epoch int64
+	}
+	var items []itemWithEpoch
+
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 3 {
+			continue
+		}
+		fullPath := strings.TrimSpace(parts[0])
+		sizeBytes, errSize := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+		if errSize != nil {
+			continue
+		}
+		epochSec, _ := strconv.ParseInt(strings.TrimSpace(parts[2]), 10, 64)
+		modTimeStr := ""
+		if epochSec > 0 {
+			modTimeStr = time.Unix(epochSec, 0).Format("2006-01-02 15:04:05")
+		}
+
+		status := "Verificado (TAR válido)"
+		if sizeBytes <= 0 {
+			status = "Incompleto (0 B)"
+		}
+
+		items = append(items, itemWithEpoch{
+			epoch: epochSec,
+			file: ExportedTarFile{
+				FileName:   path.Base(fullPath),
+				FilePath:   fullPath,
+				Size:       FormatByteSize(sizeBytes),
+				SizeBytes:  sizeBytes,
+				ModifiedAt: modTimeStr,
+				Status:     status,
+				VMName:     vmName,
+			},
+		})
+	}
+
+	// Ordenar por fecha de modificación descendente (más reciente primero)
+	for i := 0; i < len(items); i++ {
+		for j := i + 1; j < len(items); j++ {
+			if items[j].epoch > items[i].epoch {
+				items[i], items[j] = items[j], items[i]
+			}
+		}
+	}
+
+	tars := make([]ExportedTarFile, 0, len(items))
+	for _, it := range items {
+		tars = append(tars, it.file)
+	}
+
+	return tars, nil
+}
+
+// DeleteExportedTar elimina un archivo .tar del directorio ~/docker-image-exports/ en la VM
+func (s *Service) DeleteExportedTar(ctx context.Context, vmName string, fileName string) error {
+	vmName = strings.TrimSpace(vmName)
+	if vmName == "" {
+		return fmt.Errorf("el nombre de la VM no puede estar vacío")
+	}
+	fileName = strings.TrimSpace(fileName)
+	if err := ValidateTarFileName(fileName); err != nil {
+		return err
+	}
+
+	deleteScript := fmt.Sprintf(
+		`TARGET_FILE="$HOME/%s/"%s && `+
+			`if [ ! -f "$TARGET_FILE" ]; then echo "El archivo TAR no existe" >&2; exit 1; fi && `+
+			`(rm -f "$TARGET_FILE" 2>/dev/null || sudo rm -f "$TARGET_FILE" 2>&1) && `+
+			`if [ -e "$TARGET_FILE" ]; then echo "No se pudo eliminar el archivo TAR" >&2; exit 1; fi`,
+		ImageExportsDirName,
+		EscapeShellArg(fileName),
+	)
+
+	s.log.Info("eliminando archivo TAR exportado en VM", "vm", vmName, "fileName", fileName)
+
+	out, err := s.runner(ctx, vmName, deleteScript)
+	if err != nil {
+		outTrim := strings.TrimSpace(out)
+		if outTrim != "" {
+			return fmt.Errorf("error eliminando archivo TAR '%s': %s", fileName, outTrim)
+		}
+		return fmt.Errorf("error eliminando archivo TAR '%s' en VM '%s': %w", fileName, vmName, err)
+	}
+
 	return nil
 }
 

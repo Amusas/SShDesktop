@@ -5,6 +5,7 @@ import (
 	"net"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var (
@@ -247,4 +248,46 @@ func EscapeShellArg(arg string) string {
 	// Reemplaza comillas simples por '\'' para cerrar y reabrir comillas dentro de sh
 	return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
 }
+
+var unsafeTarFileCharsRegex = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+var multiUnderscoreRegex = regexp.MustCompile(`_+`)
+
+// SanitizeTarFileName genera un nombre de archivo .tar seguro en Linux a partir de una referencia de imagen y marca de tiempo
+func SanitizeTarFileName(imageRef string, ts time.Time) string {
+	cleaned := strings.TrimSpace(imageRef)
+	if strings.HasPrefix(strings.ToLower(cleaned), "sha256:") {
+		cleaned = cleaned[7:]
+		if len(cleaned) > 12 {
+			cleaned = cleaned[:12]
+		}
+	}
+
+	safeBase := unsafeTarFileCharsRegex.ReplaceAllString(cleaned, "_")
+	safeBase = multiUnderscoreRegex.ReplaceAllString(safeBase, "_")
+	safeBase = strings.Trim(safeBase, "_.")
+
+	if safeBase == "" {
+		safeBase = "docker_image"
+	}
+	if len(safeBase) > 80 {
+		safeBase = strings.TrimRight(safeBase[:80], "_.")
+	}
+
+	return fmt.Sprintf("%s_%s.tar", safeBase, ts.Format("20060102_150405"))
+}
+
+var safeTarFileNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,160}\.tar$`)
+
+// ValidateTarFileName verifica que el nombre de archivo TAR sea un nombre base seguro sin rutas relativas
+func ValidateTarFileName(fileName string) error {
+	fileName = strings.TrimSpace(fileName)
+	if fileName == "" {
+		return fmt.Errorf("el nombre del archivo TAR no puede estar vacío")
+	}
+	if strings.Contains(fileName, "..") || strings.ContainsAny(fileName, `/\`) || !safeTarFileNameRegex.MatchString(fileName) {
+		return fmt.Errorf("nombre de archivo TAR inválido o inseguro: '%s'", fileName)
+	}
+	return nil
+}
+
 

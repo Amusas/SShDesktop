@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidation(t *testing.T) {
@@ -660,6 +661,129 @@ func TestAnalyzeBuildError(t *testing.T) {
 	msgSyntax := AnalyzeBuildError(outSyntax, tag)
 	if !strings.Contains(msgSyntax, "npm ERR! code ENOENT") {
 		t.Errorf("esperaba extraer última línea de error, obtenido: %s", msgSyntax)
+	}
+}
+
+func TestExportImageAndListTars(t *testing.T) {
+	fixedTime := time.Date(2026, 10, 24, 23, 15, 30, 0, time.UTC)
+
+	// 1. Verificar sanitización de nombres de archivo TAR
+	fnSimple := SanitizeTarFileName("mi-api:1.0", fixedTime)
+	if fnSimple != "mi-api_1.0_20261024_231530.tar" {
+		t.Errorf("nombre TAR inesperado para mi-api:1.0: %s", fnSimple)
+	}
+
+	fnNamespace := SanitizeTarFileName("registry.local:5000/mi-org/servicio-web:v2.1-alpine", fixedTime)
+	if fnNamespace != "registry.local_5000_mi-org_servicio-web_v2.1-alpine_20261024_231530.tar" {
+		t.Errorf("nombre TAR inesperado para imagen con namespace: %s", fnNamespace)
+	}
+
+	fnSha := SanitizeTarFileName("sha256:1234567890abcdef1234567890abcdef", fixedTime)
+	if fnSha != "1234567890ab_20261024_231530.tar" {
+		t.Errorf("nombre TAR inesperado para sha256: %s", fnSha)
+	}
+
+	// 2. Probar ExportImage exitoso
+	var lastCmd string
+	runnerSuccess := func(ctx context.Context, vmName string, command string) (string, error) {
+		lastCmd = command
+		return "TAR_OK|/home/debian/docker-image-exports/mi-api_1.0_20261024_231530.tar|15728640|1792883730\n", nil
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := NewService(runnerSuccess, logger)
+
+	exportRes, err := svc.ExportImage(context.Background(), ExportImageRequest{
+		VMName:   "debian-vm",
+		ImageRef: "mi-api:1.0",
+	})
+	if err != nil {
+		t.Fatalf("error inesperado en ExportImage: %v", err)
+	}
+	if !exportRes.Success || exportRes.SizeBytes != 15728640 || exportRes.Size != "15.0 MB" {
+		t.Errorf("respuesta de exportación inesperada: %+v", exportRes)
+	}
+	if !strings.Contains(lastCmd, "sudo docker save -o") || !strings.Contains(lastCmd, "'mi-api:1.0'") {
+		t.Errorf("el comando ejecutado no contiene docker save con la referencia original: %s", lastCmd)
+	}
+	if !strings.Contains(lastCmd, "docker-image-exports") {
+		t.Errorf("el comando no utiliza el directorio docker-image-exports: %s", lastCmd)
+	}
+
+	// 3. Probar rechazo si el archivo generado tiene tamaño 0
+	runnerZero := func(ctx context.Context, vmName string, command string) (string, error) {
+		return "TAR_OK|/home/debian/docker-image-exports/vacio.tar|0|1792883730\n", nil
+	}
+	svcZero := NewService(runnerZero, logger)
+	if _, err := svcZero.ExportImage(context.Background(), ExportImageRequest{
+		VMName:   "debian-vm",
+		ImageRef: "mi-api:1.0",
+	}); err == nil {
+		t.Errorf("se esperaba error cuando el archivo TAR tiene tamaño 0 bytes")
+	}
+
+	// 4. Probar error cuando la imagen no existe en Docker
+	runnerNotFound := func(ctx context.Context, vmName string, command string) (string, error) {
+		return "Error response from daemon: reference does not exist", fmt.Errorf("exit status 1")
+	}
+	svcNotFound := NewService(runnerNotFound, logger)
+	_, errNotFound := svcNotFound.ExportImage(context.Background(), ExportImageRequest{
+		VMName:   "debian-vm",
+		ImageRef: "inexistente:latest",
+	})
+	if errNotFound == nil || !strings.Contains(errNotFound.Error(), "no existe") {
+		t.Errorf("se esperaba mensaje de imagen inexistente, obtenido: %v", errNotFound)
+	}
+
+	// 5. Probar rechazo de inyección en referencia de imagen
+	if _, err := svc.ExportImage(context.Background(), ExportImageRequest{
+		VMName:   "debian-vm",
+		ImageRef: "alpine;rm -rf /",
+	}); err == nil {
+		t.Errorf("se esperaba rechazo por referencia de imagen insegura")
+	}
+
+	// 6. Probar ListExportedTars ordenados por fecha de modificación
+	runnerList := func(ctx context.Context, vmName string, command string) (string, error) {
+		return "/home/debian/docker-image-exports/old_app_1.0.tar|2048|1792800000\n" +
+			"/home/debian/docker-image-exports/new_app_2.0.tar|1048576|1792890000\n", nil
+	}
+	svcList := NewService(runnerList, logger)
+	tars, err := svcList.ListExportedTars(context.Background(), "debian-vm")
+	if err != nil {
+		t.Fatalf("error inesperado listando archivos TAR: %v", err)
+	}
+	if len(tars) != 2 {
+		t.Fatalf("se esperaban 2 archivos TAR, obtenidos: %d", len(tars))
+	}
+	if tars[0].FileName != "new_app_2.0.tar" || tars[0].Size != "1.0 MB" || tars[0].VMName != "debian-vm" {
+		t.Errorf("primer archivo TAR inesperado (debe ser el más reciente): %+v", tars[0])
+	}
+	if tars[1].FileName != "old_app_1.0.tar" || tars[1].Size != "2.0 KB" {
+		t.Errorf("segundo archivo TAR inesperado: %+v", tars[1])
+	}
+
+	// 7. Probar ValidateTarFileName y DeleteExportedTar
+	if err := ValidateTarFileName("mi_api_1.0_20261024.tar"); err != nil {
+		t.Errorf("nombre de archivo TAR válido rechazado: %v", err)
+	}
+	for _, invalidFile := range []string{"", "../secret.tar", "sub/file.tar", "archivo.txt", "bad;rm.tar"} {
+		if err := ValidateTarFileName(invalidFile); err == nil {
+			t.Errorf("se esperaba rechazo para nombre TAR inválido '%s'", invalidFile)
+		}
+	}
+
+	var deletedCmd string
+	runnerDel := func(ctx context.Context, vmName string, command string) (string, error) {
+		deletedCmd = command
+		return "", nil
+	}
+	svcDel := NewService(runnerDel, logger)
+	if err := svcDel.DeleteExportedTar(context.Background(), "debian-vm", "new_app_2.0.tar"); err != nil {
+		t.Fatalf("error inesperado eliminando archivo TAR: %v", err)
+	}
+	if !strings.Contains(deletedCmd, "'new_app_2.0.tar'") || !strings.Contains(deletedCmd, "docker-image-exports") {
+		t.Errorf("comando de eliminación de TAR inesperado: %s", deletedCmd)
 	}
 }
 

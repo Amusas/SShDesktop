@@ -121,6 +121,11 @@ class TerminalApp {
         this.openCreateImageBtn = document.getElementById('open-create-image-btn');
         this.refreshImagesBtn = document.getElementById('refresh-images-btn');
         this.images = [];
+        this.imagesTarListEl = document.getElementById('images-tar-list');
+        this.imagesExportFeedbackEl = document.getElementById('images-export-feedback');
+        this.imagesSubtabBtns = Array.from(document.querySelectorAll('.images-subtab-btn'));
+        this.activeImagesSubtab = 'images';
+        this.exportedTars = [];
 
         // Modal de Creación / Compilación de Imagen
         this.imageBuildModal = document.getElementById('image-build-modal');
@@ -940,6 +945,28 @@ class TerminalApp {
         if (this.imagesVmFilter) {
             this.imagesVmFilter.addEventListener('change', () => {
                 this.loadImages(this.imagesVmFilter.value);
+            });
+        }
+
+        if (this.imagesSubtabBtns) {
+            this.imagesSubtabBtns.forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    this.switchImagesSubtab(btn.dataset.imagestab);
+                });
+            });
+        }
+        if (this.refreshImagesBtn) {
+            this.refreshImagesBtn.addEventListener('click', () => {
+                if (this.activeImagesSubtab === 'tars') {
+                    this.loadExportedTars(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+                }
+            });
+        }
+        if (this.imagesVmFilter) {
+            this.imagesVmFilter.addEventListener('change', () => {
+                if (this.activeImagesSubtab === 'tars') {
+                    this.loadExportedTars(this.imagesVmFilter.value);
+                }
             });
         }
 
@@ -3840,6 +3867,14 @@ class TerminalApp {
                                 </svg>
                                 <span>Ejecutar</span>
                             </button>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="window.terminalApp.exportImageToTar('${this.escapeAttr(vmName)}', '${this.escapeAttr(img.id)}', '${this.escapeAttr(repo)}', '${this.escapeAttr(tag)}', this)" title="Exportar imagen a archivo .tar dentro de la VM">
+                                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                <span class="btn-text">Exportar TAR</span>
+                            </button>
                             <button type="button" class="btn btn-danger btn-sm" onclick="window.terminalApp.openDeleteImageModal('${this.escapeAttr(vmName)}', '${this.escapeAttr(img.id)}', '${this.escapeAttr(repo)}', '${this.escapeAttr(tag)}')" title="Eliminar imagen">
                                 <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none">
                                     <polyline points="3 6 5 6 21 6"></polyline>
@@ -3852,6 +3887,288 @@ class TerminalApp {
                 `;
             })
             .join('');
+    }
+
+    switchImagesSubtab(tab) {
+        this.activeImagesSubtab = tab || 'images';
+        if (this.imagesSubtabBtns) {
+            this.imagesSubtabBtns.forEach((b) => {
+                b.classList.toggle('active', b.dataset.imagestab === this.activeImagesSubtab);
+            });
+        }
+        if (this.imagesListEl) {
+            this.imagesListEl.classList.toggle('hidden', this.activeImagesSubtab !== 'images');
+        }
+        if (this.imagesTarListEl) {
+            this.imagesTarListEl.classList.toggle('hidden', this.activeImagesSubtab !== 'tars');
+        }
+        const filter = this.imagesVmFilter ? this.imagesVmFilter.value : '';
+        if (this.activeImagesSubtab === 'tars') {
+            this.loadExportedTars(filter);
+        } else {
+            this.loadImages(filter);
+        }
+    }
+
+    showImagesExportFeedback(msg, type = 'success') {
+        if (!this.imagesExportFeedbackEl) return;
+        if (this.exportFeedbackTimeout) {
+            clearTimeout(this.exportFeedbackTimeout);
+            this.exportFeedbackTimeout = null;
+        }
+        this.imagesExportFeedbackEl.textContent = msg;
+        this.imagesExportFeedbackEl.className = `modal-feedback ${type}`;
+        this.imagesExportFeedbackEl.classList.remove('hidden');
+        this.exportFeedbackTimeout = setTimeout(() => {
+            this.hideImagesExportFeedback();
+        }, 8000);
+    }
+
+    hideImagesExportFeedback() {
+        if (this.exportFeedbackTimeout) {
+            clearTimeout(this.exportFeedbackTimeout);
+            this.exportFeedbackTimeout = null;
+        }
+        if (!this.imagesExportFeedbackEl) return;
+        this.imagesExportFeedbackEl.classList.add('hidden');
+        this.imagesExportFeedbackEl.textContent = '';
+    }
+
+    formatTarDate(dateStr) {
+        if (!dateStr || dateStr === 'n/a') return 'Sin fecha';
+        try {
+            const isoCandidate = String(dateStr).trim().replace(' ', 'T');
+            const parsed = new Date(isoCandidate);
+            if (!isNaN(parsed.getTime())) {
+                return parsed.toLocaleString('es-ES', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+        } catch (_) {}
+        return dateStr;
+    }
+
+    async exportImageToTar(vmName, id, repo, tag, btnEl) {
+        const ref = (repo && repo !== '<none>')
+            ? `${repo}:${(tag && tag !== '<none>') ? tag : 'latest'}`
+            : id;
+
+        if (!vmName || !ref) {
+            this.showImagesExportFeedback('Faltan datos de la máquina virtual o de la imagen para exportar.', 'error');
+            return;
+        }
+
+        this.hideImagesExportFeedback();
+        if (btnEl) {
+            this.setButtonLoading(btnEl, true);
+        }
+
+        try {
+            const res = await fetch('/api/images/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    vmName,
+                    image: ref
+                })
+            });
+
+            const text = await res.text();
+            let data = {};
+            try {
+                data = JSON.parse(text);
+            } catch (_) {
+                data = { error: text };
+            }
+
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || this.parseApiError(text) || `Error ${res.status}`);
+            }
+
+            this.showImagesExportFeedback(
+                `Imagen '${ref}' exportada exitosamente: ${data.fileName} (${data.size}) en ${data.filePath}`,
+                'success'
+            );
+            this.appendInfoLine(`[Docker TAR] Imagen '${ref}' exportada en VM '${vmName}' -> ${data.filePath} (${data.size})`);
+
+            if (this.activeImagesSubtab === 'tars') {
+                this.loadExportedTars(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+            }
+        } catch (e) {
+            console.error('Error exportando imagen a TAR:', e);
+            this.showImagesExportFeedback(`Error al exportar '${ref}': ${e.message}`, 'error');
+        } finally {
+            if (btnEl) {
+                this.setButtonLoading(btnEl, false);
+            }
+        }
+    }
+
+    async loadExportedTars(vmFilter) {
+        if (!this.imagesTarListEl) return;
+        this.imagesTarListEl.innerHTML = `
+            <div class="empty-vm-list">
+                <span class="btn-spinner"></span>
+                <span>Consultando archivos TAR en la VM...</span>
+            </div>
+        `;
+
+        const filter = (vmFilter || '').trim();
+        const url = filter ? `/api/images/exports?vm=${encodeURIComponent(filter)}` : '/api/images/exports';
+
+        try {
+            const res = await fetch(url);
+            const text = await res.text();
+            if (!res.ok) {
+                let errMsg = text;
+                try {
+                    const parsed = JSON.parse(text);
+                    if (parsed && parsed.error) errMsg = parsed.error;
+                } catch (_) {}
+                throw new Error(errMsg || `Error ${res.status}`);
+            }
+            const tars = JSON.parse(text);
+            this.exportedTars = Array.isArray(tars) ? tars : [];
+            this.renderExportedTars(this.exportedTars);
+        } catch (e) {
+            console.error('Error cargando archivos TAR:', e);
+            this.imagesTarListEl.innerHTML = `
+                <div class="empty-vm-list" style="color:var(--accent-red)">
+                    <p>No se pudieron consultar los archivos TAR en la VM.</p>
+                    <span class="empty-subtext">${this.escapeHTML(e.message)}</span>
+                </div>
+            `;
+        }
+    }
+
+    renderExportedTars(tars) {
+        if (!this.imagesTarListEl) return;
+        if (!Array.isArray(tars) || tars.length === 0) {
+            this.imagesTarListEl.innerHTML = `
+                <div class="empty-vm-list">
+                    <p>No hay archivos TAR exportados en ~/docker-image-exports/.</p>
+                    <span class="empty-subtext">Usa el botón "Exportar TAR" en cualquier imagen disponible para generar un archivo .tar dentro de la VM.</span>
+                </div>
+            `;
+            return;
+        }
+
+        this.imagesTarListEl.innerHTML = tars
+            .map((tar) => {
+                const fileName = tar.fileName || 'archivo.tar';
+                const filePath = tar.filePath || '~/docker-image-exports/' + fileName;
+                const size = tar.size || '0 B';
+                const formattedDate = this.formatTarDate(tar.modifiedAt);
+                const status = tar.status || 'Verificado';
+                const vmName = tar.vmName || '';
+
+                return `
+                    <div class="tar-card" data-tar="${this.escapeAttr(fileName)}">
+                        <div class="tar-card-head">
+                            <div class="tar-card-icon">
+                                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                            </div>
+                            <div class="tar-card-title-col">
+                                <div class="tar-card-filename">${this.escapeHTML(fileName)}</div>
+                                <div class="tar-card-badges">
+                                    ${vmName ? `<span class="vm-source-tag">${this.escapeHTML(vmName)}</span>` : ''}
+                                    <span class="tar-status-badge">${this.escapeHTML(status)}</span>
+                                    <span class="image-size-badge" title="${Number(tar.sizeBytes || 0).toLocaleString()} bytes">${this.escapeHTML(size)}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="tar-card-details">
+                            <div class="tar-detail-row-inline">
+                                <span class="image-info-label">Fecha de exportación</span>
+                                <span class="image-info-value">${this.escapeHTML(formattedDate)}</span>
+                            </div>
+                            <div class="tar-detail-path-block">
+                                <span class="image-info-label">Ruta en la VM</span>
+                                <div class="tar-path-value">${this.escapeHTML(filePath)}</div>
+                            </div>
+                        </div>
+
+                        <div class="tar-card-actions">
+                            <button class="btn btn-primary btn-sm" onclick="window.terminalApp.downloadExportedTar('${this.escapeAttr(vmName)}', '${this.escapeAttr(fileName)}')" title="Descargar archivo TAR al equipo local">
+                                <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                <span>Descargar</span>
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="window.terminalApp.deleteExportedTar('${this.escapeAttr(vmName)}', '${this.escapeAttr(fileName)}', this)" title="Eliminar archivo TAR de la VM">
+                                <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                                <span>Eliminar</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            })
+            .join('');
+    }
+
+    downloadExportedTar(vmName, fileName) {
+        if (!vmName || !fileName) {
+            this.showImagesExportFeedback('Faltan datos de la VM o del archivo TAR para iniciar la descarga.', 'error');
+            return;
+        }
+        const url = `/api/images/exports/download?vm=${encodeURIComponent(vmName)}&file=${encodeURIComponent(fileName)}`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        this.showImagesExportFeedback(`Iniciando descarga de '${fileName}' desde la VM '${vmName}'...`, 'success');
+    }
+
+    async deleteExportedTar(vmName, fileName, btnEl) {
+        if (!vmName || !fileName) {
+            this.showImagesExportFeedback('Faltan datos de la VM o del archivo TAR para eliminar.', 'error');
+            return;
+        }
+
+        if (btnEl) {
+            this.setButtonLoading(btnEl, true);
+        }
+
+        try {
+            const url = `/api/images/exports?vm=${encodeURIComponent(vmName)}&file=${encodeURIComponent(fileName)}`;
+            const res = await fetch(url, { method: 'DELETE' });
+            const text = await res.text();
+            let data = {};
+            try {
+                data = JSON.parse(text);
+            } catch (_) {
+                data = { error: text };
+            }
+
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || this.parseApiError(text) || `Error ${res.status}`);
+            }
+
+            this.showImagesExportFeedback(`Archivo TAR '${fileName}' eliminado de la VM '${vmName}'.`, 'success');
+            this.loadExportedTars(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+        } catch (e) {
+            console.error('Error eliminando archivo TAR:', e);
+            this.showImagesExportFeedback(`No se pudo eliminar '${fileName}': ${e.message}`, 'error');
+            if (btnEl) {
+                this.setButtonLoading(btnEl, false);
+            }
+        }
     }
 
     async runImage(vmName, repo, tag) {

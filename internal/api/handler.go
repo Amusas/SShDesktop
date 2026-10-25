@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -133,6 +134,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.URL.Path == "/api/images":
 		h.handleImages(w, r)
+		return
+	case r.URL.Path == "/api/images/export":
+		h.handleImageExport(w, r)
+		return
+	case r.URL.Path == "/api/images/exports":
+		h.handleImageExports(w, r)
+		return
+	case r.URL.Path == "/api/images/exports/download":
+		h.handleImageExportDownload(w, r)
 		return
 	case r.URL.Path == "/api/images/build":
 		h.handleImageBuild(w, r)
@@ -967,6 +977,56 @@ func (h *Handler) executeVMCommand(ctx context.Context, vmName string, command s
 	return ssh.ExecuteCommandContext(ctx, vmTargetCfg, command, h.log)
 }
 
+func (h *Handler) streamVMCommand(ctx context.Context, vmName string, command string, stdout io.Writer) error {
+	vmRec, err := h.vmSvc.Get(vmName)
+	if err != nil {
+		return fmt.Errorf("máquina virtual '%s' no encontrada: %w", vmName, err)
+	}
+	if vmRec.HostPort <= 0 {
+		return fmt.Errorf("la máquina virtual '%s' no tiene puerto NAT asignado", vmName)
+	}
+
+	h.cfgMu.RLock()
+	hostCfg := ssh.Config{
+		Host:    h.cfg.SSHHost,
+		Port:    h.cfg.SSHPort,
+		User:    h.cfg.SSHUser,
+		KeyPath: h.cfg.SSHKeyPath,
+	}
+	sshRoot := h.cfg.SSHRoot
+	h.cfgMu.RUnlock()
+
+	keyPath := vmRec.PrivateKeyPath
+	if keyPath == "" {
+		keyPath = filepath.Join(sshRoot, "vms", vmRec.Name, "id_ed25519")
+	}
+
+	if _, statErr := os.Stat(keyPath); os.IsNotExist(statErr) {
+		if kRec, kErr := h.vmSvc.KeyStore().Get(vmRec.Name); kErr == nil && strings.TrimSpace(kRec.PrivateKey) != "" {
+			_ = os.MkdirAll(filepath.Dir(keyPath), 0700)
+			_ = os.WriteFile(keyPath, []byte(kRec.PrivateKey), 0600)
+			if kRec.PublicKey != "" {
+				_ = os.WriteFile(keyPath+".pub", []byte(kRec.PublicKey), 0644)
+			}
+		}
+	}
+
+	user := vmRec.SSHUser
+	if user == "" {
+		user = "bootstrap"
+	}
+
+	vmTargetCfg := ssh.Config{
+		Host:      "127.0.0.1",
+		Port:      vmRec.HostPort,
+		User:      user,
+		KeyPath:   keyPath,
+		ProxyHost: &hostCfg,
+	}
+
+	return ssh.StreamCommandContext(ctx, vmTargetCfg, command, stdout, h.log)
+}
+
 func (h *Handler) handleDockerCatalog(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodGet {
@@ -1259,6 +1319,166 @@ func (h *Handler) handleImageBuild(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(res)
+}
+
+func (h *Handler) handleImageExport(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"método no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req docker.ExportImageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"JSON inválido: %s"}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+
+	res, err := h.dockerSvc.ExportImage(r.Context(), req)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(res)
+}
+
+func (h *Handler) handleImageExports(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodDelete {
+		vmTarget := strings.TrimSpace(r.URL.Query().Get("vm"))
+		fileName := strings.TrimSpace(r.URL.Query().Get("file"))
+		if vmTarget == "" || fileName == "" {
+			http.Error(w, `{"error":"Los parámetros 'vm' y 'file' son obligatorios para eliminar un archivo TAR"}`, http.StatusBadRequest)
+			return
+		}
+		if err := h.dockerSvc.DeleteExportedTar(r.Context(), vmTarget, fileName); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": err.Error(),
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":  true,
+			"fileName": fileName,
+			"vm":       vmTarget,
+			"message":  "Archivo TAR eliminado correctamente",
+		})
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"método no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	vmTarget := strings.TrimSpace(r.URL.Query().Get("vm"))
+	if vmTarget != "" {
+		tars, err := h.dockerSvc.ListExportedTars(r.Context(), vmTarget)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": err.Error(),
+			})
+			return
+		}
+		if tars == nil {
+			tars = []docker.ExportedTarFile{}
+		}
+		json.NewEncoder(w).Encode(tars)
+		return
+	}
+
+	vms, err := h.vmSvc.List()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": fmt.Sprintf("Error listando VMs: %s", err.Error()),
+		})
+		return
+	}
+
+	var allTars []docker.ExportedTarFile
+	var lastErr error
+	for _, v := range vms {
+		tars, err := h.dockerSvc.ListExportedTars(r.Context(), v.Name)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if len(tars) > 0 {
+			allTars = append(allTars, tars...)
+		}
+	}
+
+	if len(vms) > 0 && len(allTars) == 0 && lastErr != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": lastErr.Error(),
+		})
+		return
+	}
+
+	if allTars == nil {
+		allTars = []docker.ExportedTarFile{}
+	}
+	json.NewEncoder(w).Encode(allTars)
+}
+
+func (h *Handler) handleImageExportDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, `{"error":"método no permitido"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	vmTarget := strings.TrimSpace(r.URL.Query().Get("vm"))
+	fileName := strings.TrimSpace(r.URL.Query().Get("file"))
+	if vmTarget == "" || fileName == "" {
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, `{"error":"Los parámetros 'vm' y 'file' son obligatorios para descargar un archivo TAR"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := docker.ValidateTarFileName(fileName); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	checkCmd := fmt.Sprintf(
+		`TARGET_FILE="$HOME/%s/"%s && if [ ! -s "$TARGET_FILE" ]; then echo "NOT_FOUND"; exit 1; fi && stat -c '%%s' "$TARGET_FILE"`,
+		docker.ImageExportsDirName,
+		docker.EscapeShellArg(fileName),
+	)
+	sizeOut, err := h.executeVMCommand(r.Context(), vmTarget, checkCmd)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": fmt.Sprintf("No se encontró el archivo TAR '%s' en la VM '%s'", fileName, vmTarget),
+		})
+		return
+	}
+
+	sizeStr := strings.TrimSpace(sizeOut)
+	if sizeBytes, parseErr := strconv.ParseInt(sizeStr, 10, 64); parseErr == nil && sizeBytes > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(sizeBytes, 10))
+	}
+
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
+
+	streamCmd := fmt.Sprintf(`cat "$HOME/%s/"%s`, docker.ImageExportsDirName, docker.EscapeShellArg(fileName))
+	if err := h.streamVMCommand(r.Context(), vmTarget, streamCmd, w); err != nil {
+		h.log.Warn("error transmitiendo archivo TAR desde VM", "vm", vmTarget, "file", fileName, "error", err)
+	}
 }
 
 func (h *Handler) handleImageItem(w http.ResponseWriter, r *http.Request) {

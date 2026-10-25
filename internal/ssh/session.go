@@ -125,6 +125,83 @@ func ExecuteCommandContext(ctx context.Context, cfg Config, command string, log 
 	return out, nil
 }
 
+// StreamCommandContext ejecuta un comando remoto por SSH y transmite su salida estándar directamente al io.Writer indicado
+func StreamCommandContext(ctx context.Context, cfg Config, command string, stdout io.Writer, log *slog.Logger) error {
+	authMethods, err := buildAuthMethods(cfg)
+	if err != nil {
+		return fmt.Errorf("construyendo metodos de autenticacion: %w", err)
+	}
+
+	clientConfig := &gossh.ClientConfig{
+		User:            cfg.User,
+		Auth:            authMethods,
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		Timeout:         20 * time.Second,
+	}
+
+	var client *gossh.Client
+	var proxyClient *gossh.Client
+
+	if cfg.ProxyHost != nil {
+		pClient, err := DialHost(*cfg.ProxyHost)
+		if err != nil {
+			return fmt.Errorf("conectando al host intermedio: %w", err)
+		}
+		proxyClient = pClient
+		defer proxyClient.Close()
+
+		targetAddr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
+		netConn, err := proxyClient.Dial("tcp", targetAddr)
+		if err != nil {
+			return fmt.Errorf("conectando a %s via tunel: %w", targetAddr, err)
+		}
+		sshConn, chans, reqs, err := gossh.NewClientConn(netConn, targetAddr, clientConfig)
+		if err != nil {
+			netConn.Close()
+			return fmt.Errorf("autenticando SSH con destino %s: %w", targetAddr, err)
+		}
+		client = gossh.NewClient(sshConn, chans, reqs)
+	} else {
+		addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+		c, err := gossh.Dial("tcp", addr, clientConfig)
+		if err != nil {
+			return fmt.Errorf("conectando al servidor SSH: %w", err)
+		}
+		client = c
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return fmt.Errorf("creando sesion SSH para streaming: %w", err)
+	}
+	defer session.Close()
+
+	var stderr bytes.Buffer
+	session.Stdout = stdout
+	session.Stderr = &stderr
+
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Run(command)
+	}()
+
+	select {
+	case <-ctx.Done():
+		_ = session.Signal(gossh.SIGKILL)
+		return ctx.Err()
+	case err := <-done:
+		if err != nil {
+			if stderr.Len() > 0 {
+				return fmt.Errorf("transmitiendo comando remoto: %w: %s", err, strings.TrimSpace(stderr.String()))
+			}
+			return fmt.Errorf("transmitiendo comando remoto: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func sanitizeToken(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	re := regexp.MustCompile(`[^a-z0-9._-]+`)
