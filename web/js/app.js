@@ -1303,8 +1303,7 @@ class TerminalApp {
             this.loadISOs();
             this.loadVirtualMachines();
             this.loadKeys();
-            await this.updateAllDockerVmFilters();
-            await this.updateAllDockerVmFilters();
+            this.updateAllDockerVmFilters();
         }
     }
 
@@ -1364,18 +1363,16 @@ class TerminalApp {
             }
         });
 
+        await this.updateAllDockerVmFilters();
+        const activeVm = this.selectedDockerVm || '';
         if (subview === 'containers') {
-            await this.updateAllDockerVmFilters();
-            this.loadContainers(this.selectedDockerVm || '');
+            this.loadContainers(activeVm);
         } else if (subview === 'images') {
-            await this.updateAllDockerVmFilters();
-            this.loadImages(this.selectedDockerVm || '');
+            this.loadImages(activeVm);
         } else if (subview === 'volumes') {
-            await this.updateAllDockerVmFilters();
-            this.loadVolumes(this.selectedDockerVm || '');
+            this.loadVolumes(activeVm);
         } else if (subview === 'networks') {
-            await this.updateAllDockerVmFilters();
-            this.loadNetworks(this.selectedDockerVm || '');
+            this.loadNetworks(activeVm);
         }
     }
 
