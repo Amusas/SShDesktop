@@ -737,7 +737,7 @@ class TerminalApp {
         }
         if (this.refreshContainersBtn) {
             this.refreshContainersBtn.addEventListener('click', () => {
-                this.loadContainers(this.selectedDockerVm || '');
+                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
             });
         }
         if (this.containersVmFilter) {
@@ -837,7 +837,7 @@ class TerminalApp {
 
         if (this.refreshVolumesBtn) {
             this.refreshVolumesBtn.addEventListener('click', () => {
-                this.loadVolumes(this.selectedDockerVm || '');
+                this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
             });
         }
         if (this.volumesVmFilter) {
@@ -886,7 +886,7 @@ class TerminalApp {
         }
         if (this.refreshNetworksBtn) {
             this.refreshNetworksBtn.addEventListener('click', () => {
-                this.loadNetworks(this.selectedDockerVm || '');
+                this.loadNetworks(this.networksVmFilter ? this.networksVmFilter.value : '');
             });
         }
         if (this.networksVmFilter) {
@@ -976,7 +976,7 @@ class TerminalApp {
         }
         if (this.refreshImagesBtn) {
             this.refreshImagesBtn.addEventListener('click', () => {
-                this.loadImages(this.selectedDockerVm || '');
+                this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
             });
         }
         if (this.imagesVmFilter) {
@@ -1303,7 +1303,8 @@ class TerminalApp {
             this.loadISOs();
             this.loadVirtualMachines();
             this.loadKeys();
-            this.updateAllDockerVmFilters();
+            this.updateContainersVmFilter();
+            this.updateImagesVmFilter();
         }
     }
 
@@ -2841,40 +2842,30 @@ class TerminalApp {
         return this.updateAllDockerVmFilters();
     }
 
-
-
-
-    async updateNetworksVmFilter() {
-        return this.updateAllDockerVmFilters();
-    }
-
-    // =========================================================================
-    // GestiÃ³n de VolÃºmenes Docker
-    // =========================================================================
     async loadVolumes(vmFilter) {
         if (!this.volumesListEl) return;
-        this.volumesListEl.innerHTML = <div class="empty-vm-list"><span class="btn-spinner"></span> Cargando volÃºmenes...</div>;
+        this.volumesListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando volúmenes...</div>`;
 
         const filter = (vmFilter || '').trim();
-        const url = filter ? /api/volumes?vm= : '/api/volumes';
+        const url = filter ? `/api/volumes?vm=${encodeURIComponent(filter)}` : '/api/volumes';
 
         try {
             const res = await fetch(url);
-            if (!res.ok) throw new Error('Error al listar volÃºmenes');
+            if (!res.ok) throw new Error('Error al listar volúmenes');
             let vols = await res.json();
             if (!vols) vols = [];
             this.volumes = vols;
             this.renderVolumes();
         } catch (e) {
             console.error('loadVolumes error:', e);
-            this.volumesListEl.innerHTML = <div class="empty-vm-list error">No se pudieron cargar los volÃºmenes.</div>;
+            this.volumesListEl.innerHTML = `<div class="empty-vm-list error">No se pudieron cargar los volúmenes.</div>`;
         }
     }
 
     renderVolumes() {
         if (!this.volumesListEl) return;
         if (!this.volumes || this.volumes.length === 0) {
-            this.volumesListEl.innerHTML = <div class="empty-vm-list">No hay volÃºmenes Docker disponibles.</div>;
+            this.volumesListEl.innerHTML = `<div class="empty-vm-list">No hay volúmenes Docker disponibles.</div>`;
             return;
         }
 
@@ -2883,35 +2874,35 @@ class TerminalApp {
             const isUsed = vol.status === 'En uso';
             const statusClass = isUsed ? 'state-running' : 'state-stopped';
 
-            html += 
+            html += `
                 <div class="vm-card">
                     <div class="vm-card-header">
                         <div class="vm-title-row">
-                            <h3 class="vm-name"></h3>
-                            <span class="vm-state-badge "></span>
+                            <h3 class="vm-name">${this.escapeHTML(vol.name)}</h3>
+                            <span class="vm-state-badge ${statusClass}">${this.escapeHTML(vol.status || 'Desconocido')}</span>
                         </div>
                         <div class="vm-state-actions">
-                            <button class="btn btn-danger btn-icon" onclick="window.terminalApp.promptDeleteVolume('', '')" title="Eliminar volumen">
+                            <button class="btn btn-danger btn-icon" onclick="window.terminalApp.promptDeleteVolume('${this.escapeAttr(vol.vmName)}', '${this.escapeAttr(vol.name)}')" title="Eliminar volumen">
                                 <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                             </button>
                         </div>
                     </div>
                     <div class="vm-details-grid">
                         <div class="vm-detail-item">
-                            <span class="vm-detail-label">MÃ¡quina Virtual</span>
-                            <span class="vm-detail-value"><span class="vm-source-tag"></span></span>
+                            <span class="vm-detail-label">Máquina Virtual</span>
+                            <span class="vm-detail-value"><span class="vm-source-tag">${this.escapeHTML(vol.vmName)}</span></span>
                         </div>
                         <div class="vm-detail-item">
                             <span class="vm-detail-label">Driver</span>
-                            <span class="vm-detail-value"></span>
+                            <span class="vm-detail-value">${this.escapeHTML(vol.driver)}</span>
                         </div>
                         <div class="vm-detail-item" style="grid-column: 1 / -1;">
                             <span class="vm-detail-label">Punto de montaje</span>
-                            <span class="vm-detail-value" style="font-family: monospace; font-size: 0.85rem; word-break: break-all;"></span>
+                            <span class="vm-detail-value" style="font-family: monospace; font-size: 0.85rem; word-break: break-all;">${this.escapeHTML(vol.mountpoint)}</span>
                         </div>
                     </div>
                 </div>
-            ;
+            `;
         });
         this.volumesListEl.innerHTML = html;
     }
@@ -2919,13 +2910,13 @@ class TerminalApp {
     async fetchVmVolumes(vmName) {
         if (!vmName) return [];
         try {
-            const res = await fetch(/api/volumes?vm=);
+            const res = await fetch(`/api/volumes?vm=${encodeURIComponent(vmName)}`);
             if (res.ok) {
                 const vols = await res.json();
                 return Array.isArray(vols) ? vols : [];
             }
         } catch (e) {
-            console.warn('Error obteniendo volÃºmenes de VM:', e);
+            console.warn('Error obteniendo volúmenes de VM:', e);
         }
         return [];
     }
@@ -2953,7 +2944,7 @@ class TerminalApp {
 
             this.createVolumeModal.classList.add('hidden');
             this.createVolumeForm.reset();
-            this.loadVolumes(this.selectedDockerVm || '');
+            this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
 
             if (typeof this._onVolumeCreatedCallback === 'function') {
                 const cb = this._onVolumeCreatedCallback;
@@ -2992,14 +2983,14 @@ class TerminalApp {
         this.confirmDeleteVolumeBtn.querySelector('.btn-spinner').classList.remove('hidden');
 
         try {
-            const res = await fetch(/api/volumes//, {
+            const res = await fetch(`/api/volumes/${encodeURIComponent(vmName)}/${encodeURIComponent(volumeName)}`, {
                 method: 'DELETE',
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Error al eliminar');
 
             this.closeDeleteVolumeModal();
-            this.loadVolumes(this.selectedDockerVm || '');
+            this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
         } catch (e) {
             this.deleteVolumeFeedback.textContent = e.message;
             this.deleteVolumeFeedback.className = 'modal-feedback error';
@@ -3008,6 +2999,13 @@ class TerminalApp {
             this.confirmDeleteVolumeBtn.disabled = false;
             this.confirmDeleteVolumeBtn.querySelector('.btn-spinner').classList.add('hidden');
         }
+    }
+
+    // =========================================================================
+    // Gestión de Redes Docker
+    // =========================================================================
+    async updateNetworksVmFilter() {
+        return this.updateAllDockerVmFilters();
     }
 
     async loadNetworks(vmFilter) {
@@ -3175,7 +3173,7 @@ class TerminalApp {
 
             this.createNetworkModal.classList.add('hidden');
             this.createNetworkForm.reset();
-            this.loadNetworks(this.selectedDockerVm || '');
+            this.loadNetworks(this.networksVmFilter ? this.networksVmFilter.value : '');
 
             if (typeof this._onNetworkCreatedCallback === 'function') {
                 const cb = this._onNetworkCreatedCallback;
@@ -3300,7 +3298,7 @@ class TerminalApp {
             if (!res.ok) throw new Error(data.error || 'Error al eliminar red');
 
             this.closeDeleteNetworkModal();
-            this.loadNetworks(this.selectedDockerVm || '');
+            this.loadNetworks(this.networksVmFilter ? this.networksVmFilter.value : '');
         } catch (e) {
             this.deleteNetworkFeedback.textContent = e.message;
             this.deleteNetworkFeedback.className = 'modal-feedback error';
@@ -3797,7 +3795,7 @@ class TerminalApp {
             const res = await fetch(url, { method: 'DELETE' });
             if (res.ok) {
                 this.closeDeleteContainerModal();
-                this.loadContainers(this.selectedDockerVm || '');
+                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
             } else {
                 const text = await res.text();
                 if (this.deleteContainerFeedback) {
@@ -4821,7 +4819,7 @@ class TerminalApp {
                 'success'
             );
             this.appendInfoLine(`[Docker Hub] Imagen '${sourceImage}' publicada como '${targetRef}' desde VM '${vmName}'`);
-            this.loadImages(this.selectedDockerVm || '');
+            this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
         } catch (e) {
             this.showDockerHubPublishFeedback(`Error de red al publicar la imagen: ${e.message}`, 'error');
         } finally {
@@ -5124,7 +5122,7 @@ class TerminalApp {
             }
 
             this.closeBuildImageModal();
-            this.loadImages(this.selectedDockerVm || '');
+            this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
 
             if (andRun) {
                 this.runImage(vmName, imageName, tag || 'latest');
@@ -5183,7 +5181,7 @@ class TerminalApp {
             }
 
             this.closeDeleteImageModal();
-            this.loadImages(this.selectedDockerVm || '');
+            this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
         } catch (e) {
             this.showDeleteImageFeedback(e.message, 'error');
         } finally {
