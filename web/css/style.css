@@ -3544,3 +3544,53 @@ body {
     font-family: var(--font-mono);
 }
 
+
+/* ==========================================================================
+   Vessel Brand Identity
+   ========================================================================== */
+.header-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 6px;
+    user-select: none;
+    cursor: default;
+}
+
+.brand-logo-img {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    display: block;
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+}
+
+.brand-logo-text {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    color: #f8fafc;
+}
+
+.sidebar-brand-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    user-select: none;
+    cursor: default;
+}
+
+.sidebar-brand-img {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+}
+
+.sidebar-brand-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #f8fafc;
+    letter-spacing: 0.6px;
+}

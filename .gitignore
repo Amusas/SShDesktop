@@ -5,6 +5,7 @@
 *.so
 *.dylib
 /ssh-web
+/vessel
 
 # Environment
 .env

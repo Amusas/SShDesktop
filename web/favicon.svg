@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="vesselGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="boxGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7dd3fc"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="boxGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#bae6fd"/>
+      <stop offset="100%" stop-color="#7dd3fc"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="256" height="256" rx="56" fill="url(#bgGrad)"/>
+  <rect x="6" y="6" width="244" height="244" rx="50" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-opacity="0.35"/>
+
+  <!-- Command Bridge / Control Cabin -->
+  <rect x="46" y="96" width="16" height="42" rx="3" fill="#64748b"/>
+  <rect x="42" y="88" width="20" height="8" rx="2" fill="#94a3b8"/>
+  <circle cx="52" cy="78" r="3.5" fill="#38bdf8"/>
+  <line x1="52" y1="81" x2="52" y2="88" stroke="#38bdf8" stroke-width="2"/>
+
+  <!-- Stacked Containers (Docker/K8s style pyramid) -->
+  <!-- Deck Row (3 containers) -->
+  <rect x="68" y="112" width="34" height="26" rx="4" fill="url(#boxGrad1)"/>
+  <rect x="108" y="112" width="34" height="26" rx="4" fill="url(#boxGrad1)"/>
+  <rect x="148" y="112" width="34" height="26" rx="4" fill="url(#boxGrad1)"/>
+
+  <!-- Second Row (2 containers) -->
+  <rect x="88" y="80" width="34" height="26" rx="4" fill="url(#boxGrad2)"/>
+  <rect x="128" y="80" width="34" height="26" rx="4" fill="url(#boxGrad2)"/>
+
+  <!-- Top Container -->
+  <rect x="108" y="48" width="34" height="26" rx="4" fill="#ffffff"/>
+
+  <!-- Vessel Hull -->
+  <path d="M 34 146 L 222 146 C 212 178, 180 196, 128 196 C 76 196, 44 178, 34 146 Z" fill="url(#vesselGrad)"/>
+  <!-- Keel accent -->
+  <path d="M 46 160 L 210 160 C 202 174, 176 186, 128 186 C 80 186, 54 174, 46 160 Z" fill="#0369a1" opacity="0.6"/>
+
+  <!-- Fluid wave lines -->
+  <path d="M 28 214 C 64 206, 94 220, 128 214 C 162 208, 192 220, 228 214" fill="none" stroke="#38bdf8" stroke-width="4.5" stroke-linecap="round" stroke-opacity="0.8"/>
+  <path d="M 48 226 C 76 220, 100 230, 128 226 C 156 222, 180 230, 208 226" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.4"/>
+</svg>

@@ -23,7 +23,7 @@ func main() {
 	}
 
 	log := logger.New(cfg.LogLevel)
-	log.Info("iniciando emulador de terminal ssh-web")
+	log.Info("iniciando servidor Vessel")
 
 	staticDir := "web"
 	if _, err := os.Stat(staticDir); os.IsNotExist(err) {
