@@ -1343,7 +1343,7 @@ class TerminalApp {
         }
     }
 
-    async switchDockerSubview(subview) {
+    switchDockerSubview(subview) {
         this.activeDockerSubnav = subview;
         if (this.dockerSubnavBtns) {
             this.dockerSubnavBtns.forEach((b) => b.classList.toggle('active', b.dataset.subview === subview));
@@ -1363,12 +1363,15 @@ class TerminalApp {
             }
         });
 
-        await this.updateAllDockerVmFilters();
         const activeVm = this.selectedDockerVm || '';
         if (subview === 'containers') {
             this.loadContainers(activeVm);
         } else if (subview === 'images') {
-            this.loadImages(activeVm);
+            if (this.activeImagesSubtab === 'exports') {
+                this.loadExportedTars(activeVm);
+            } else {
+                this.loadImages(activeVm);
+            }
         } else if (subview === 'volumes') {
             this.loadVolumes(activeVm);
         } else if (subview === 'networks') {
@@ -2836,6 +2839,175 @@ class TerminalApp {
 
     async updateVolumesVmFilter() {
         return this.updateAllDockerVmFilters();
+    }
+
+
+
+
+    async updateNetworksVmFilter() {
+        return this.updateAllDockerVmFilters();
+    }
+
+    // =========================================================================
+    // GestiÃ³n de VolÃºmenes Docker
+    // =========================================================================
+    async loadVolumes(vmFilter) {
+        if (!this.volumesListEl) return;
+        this.volumesListEl.innerHTML = <div class="empty-vm-list"><span class="btn-spinner"></span> Cargando volÃºmenes...</div>;
+
+        const filter = (vmFilter || '').trim();
+        const url = filter ? /api/volumes?vm= : '/api/volumes';
+
+        try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Error al listar volÃºmenes');
+            let vols = await res.json();
+            if (!vols) vols = [];
+            this.volumes = vols;
+            this.renderVolumes();
+        } catch (e) {
+            console.error('loadVolumes error:', e);
+            this.volumesListEl.innerHTML = <div class="empty-vm-list error">No se pudieron cargar los volÃºmenes.</div>;
+        }
+    }
+
+    renderVolumes() {
+        if (!this.volumesListEl) return;
+        if (!this.volumes || this.volumes.length === 0) {
+            this.volumesListEl.innerHTML = <div class="empty-vm-list">No hay volÃºmenes Docker disponibles.</div>;
+            return;
+        }
+
+        let html = '';
+        this.volumes.forEach((vol) => {
+            const isUsed = vol.status === 'En uso';
+            const statusClass = isUsed ? 'state-running' : 'state-stopped';
+
+            html += 
+                <div class="vm-card">
+                    <div class="vm-card-header">
+                        <div class="vm-title-row">
+                            <h3 class="vm-name"></h3>
+                            <span class="vm-state-badge "></span>
+                        </div>
+                        <div class="vm-state-actions">
+                            <button class="btn btn-danger btn-icon" onclick="window.terminalApp.promptDeleteVolume('', '')" title="Eliminar volumen">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="vm-details-grid">
+                        <div class="vm-detail-item">
+                            <span class="vm-detail-label">MÃ¡quina Virtual</span>
+                            <span class="vm-detail-value"><span class="vm-source-tag"></span></span>
+                        </div>
+                        <div class="vm-detail-item">
+                            <span class="vm-detail-label">Driver</span>
+                            <span class="vm-detail-value"></span>
+                        </div>
+                        <div class="vm-detail-item" style="grid-column: 1 / -1;">
+                            <span class="vm-detail-label">Punto de montaje</span>
+                            <span class="vm-detail-value" style="font-family: monospace; font-size: 0.85rem; word-break: break-all;"></span>
+                        </div>
+                    </div>
+                </div>
+            ;
+        });
+        this.volumesListEl.innerHTML = html;
+    }
+
+    async fetchVmVolumes(vmName) {
+        if (!vmName) return [];
+        try {
+            const res = await fetch(/api/volumes?vm=);
+            if (res.ok) {
+                const vols = await res.json();
+                return Array.isArray(vols) ? vols : [];
+            }
+        } catch (e) {
+            console.warn('Error obteniendo volÃºmenes de VM:', e);
+        }
+        return [];
+    }
+
+    async submitCreateVolume() {
+        const vmName = this.createVolumeVm.value;
+        const name = this.createVolumeName.value.trim();
+        const driver = 'local';
+
+        if (!vmName || !name) return;
+
+        this.submitCreateVolumeBtn.disabled = true;
+        this.submitCreateVolumeBtn.querySelector('.btn-spinner').classList.remove('hidden');
+        this.submitCreateVolumeBtn.querySelector('.btn-text').textContent = 'Creando...';
+        this.createVolumeFeedback.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/volumes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vmName, name, driver }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error creando volumen');
+
+            this.createVolumeModal.classList.add('hidden');
+            this.createVolumeForm.reset();
+            this.loadVolumes(this.selectedDockerVm || '');
+
+            if (typeof this._onVolumeCreatedCallback === 'function') {
+                const cb = this._onVolumeCreatedCallback;
+                this._onVolumeCreatedCallback = null;
+                cb(name, vmName);
+            }
+        } catch (e) {
+            this.createVolumeFeedback.textContent = e.message;
+            this.createVolumeFeedback.className = 'modal-feedback error';
+            this.createVolumeFeedback.classList.remove('hidden');
+        } finally {
+            this.submitCreateVolumeBtn.disabled = false;
+            this.submitCreateVolumeBtn.querySelector('.btn-spinner').classList.add('hidden');
+            this.submitCreateVolumeBtn.querySelector('.btn-text').textContent = 'Crear volumen';
+        }
+    }
+
+    promptDeleteVolume(vmName, volumeName) {
+        this.pendingDeleteVolume = { vmName, volumeName };
+        this.deleteVolumeNameEl.textContent = volumeName;
+        this.deleteVolumeVmTag.textContent = vmName;
+        this.deleteVolumeFeedback.classList.add('hidden');
+        this.deleteVolumeModal.classList.remove('hidden');
+    }
+
+    closeDeleteVolumeModal() {
+        this.deleteVolumeModal.classList.add('hidden');
+        this.pendingDeleteVolume = null;
+    }
+
+    async executeDeleteVolume() {
+        if (!this.pendingDeleteVolume) return;
+        const { vmName, volumeName } = this.pendingDeleteVolume;
+
+        this.confirmDeleteVolumeBtn.disabled = true;
+        this.confirmDeleteVolumeBtn.querySelector('.btn-spinner').classList.remove('hidden');
+
+        try {
+            const res = await fetch(/api/volumes//, {
+                method: 'DELETE',
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error al eliminar');
+
+            this.closeDeleteVolumeModal();
+            this.loadVolumes(this.selectedDockerVm || '');
+        } catch (e) {
+            this.deleteVolumeFeedback.textContent = e.message;
+            this.deleteVolumeFeedback.className = 'modal-feedback error';
+            this.deleteVolumeFeedback.classList.remove('hidden');
+        } finally {
+            this.confirmDeleteVolumeBtn.disabled = false;
+            this.confirmDeleteVolumeBtn.querySelector('.btn-spinner').classList.add('hidden');
+        }
     }
 
     async loadNetworks(vmFilter) {
