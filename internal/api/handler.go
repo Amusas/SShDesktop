@@ -503,6 +503,74 @@ func (h *Handler) handleVirtualMachines(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				http.Error(w, `{"error":"streaming no soportado"}`, http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+			w.Header().Set("X-Accel-Buffering", "no")
+
+			sendEvent := func(stage string, step int, total int, message string) {
+				select {
+				case <-r.Context().Done():
+					return
+				default:
+				}
+				evt := map[string]interface{}{
+					"stage":   stage,
+					"step":    step,
+					"total":   total,
+					"message": message,
+				}
+				data, _ := json.Marshal(evt)
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+			}
+
+			createdVM, err := h.vmSvc.CreateFromTemplateWithProgress(r.Context(), req, sendEvent)
+			if err != nil {
+				h.log.Warn("no se pudo crear maquina virtual", "error", err)
+				errEvt := map[string]interface{}{
+					"stage":   "error",
+					"error":   err.Error(),
+					"message": fmt.Sprintf("Error al crear la VM: %s", err.Error()),
+				}
+				data, _ := json.Marshal(errEvt)
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+				return
+			}
+
+			dockerMsg := "Docker configurado"
+			if h.dockerSvc != nil {
+				sendEvent("configuring_docker", 6, 6, "Verificando servicio Docker en la máquina virtual...")
+				if dStatus, err := h.dockerSvc.CheckDockerStatus(r.Context(), createdVM.Name); err == nil && dStatus != nil && dStatus.Available {
+					if dStatus.Version != "" {
+						dockerMsg = fmt.Sprintf("Docker activo (%s)", dStatus.Version)
+					} else {
+						dockerMsg = "Docker activo"
+					}
+				}
+			}
+
+			doneEvt := map[string]interface{}{
+				"stage":   "done",
+				"step":    6,
+				"total":   6,
+				"message": fmt.Sprintf("¡Máquina virtual '%s' creada y aprovisionada con éxito! (%s)", createdVM.Name, dockerMsg),
+				"vm":      createdVM,
+			}
+			data, _ := json.Marshal(doneEvt)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+			return
+		}
+
 		createdVM, err := h.vmSvc.CreateFromTemplate(r.Context(), req)
 		if err != nil {
 			h.log.Warn("no se pudo crear maquina virtual", "error", err)

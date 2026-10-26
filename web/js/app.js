@@ -30,6 +30,11 @@ class TerminalApp {
         this.vmListEl = document.getElementById('vm-list');
         this.vmFormWrap = document.getElementById('vm-form-wrap');
         this.vmFormFeedback = document.getElementById('vm-form-feedback');
+        this.vmCreateProgress = document.getElementById('vm-create-progress');
+        this.vmProgressStageTitle = document.getElementById('vm-progress-stage-title');
+        this.vmProgressBadge = document.getElementById('vm-progress-badge');
+        this.vmProgressBarFill = document.getElementById('vm-progress-bar-fill');
+        this.vmProgressMsg = document.getElementById('vm-progress-msg');
         this.openCreateVmBtn = document.getElementById('open-create-vm');
         this.closeVmFormBtn = document.getElementById('close-vm-form-btn');
         this.cancelVmFormBtn = document.getElementById('cancel-vm-form');
@@ -645,6 +650,7 @@ class TerminalApp {
         // Control del formulario de creación de VM
         this.openCreateVmBtn.addEventListener('click', () => {
             this.hideVMFeedback();
+            this.hideVMCreateProgress();
             this.vmFormWrap.classList.toggle('hidden');
             if (!this.vmFormWrap.classList.contains('hidden')) {
                 this.loadTemplates();
@@ -657,6 +663,7 @@ class TerminalApp {
                 this.vmFormWrap.classList.add('hidden');
                 this.vmForm.reset();
                 this.hideVMFeedback();
+                this.hideVMCreateProgress();
             });
         }
 
@@ -664,6 +671,7 @@ class TerminalApp {
             this.vmFormWrap.classList.add('hidden');
             this.vmForm.reset();
             this.hideVMFeedback();
+            this.hideVMCreateProgress();
         });
 
         this.refreshVmsBtn.addEventListener('click', () => {
@@ -1579,6 +1587,122 @@ class TerminalApp {
         this.vmDetailsModal.setAttribute('aria-hidden', 'true');
     }
 
+    initVMCreateProgress(vmName) {
+        if (!this.vmCreateProgress) return;
+        this.vmCreateProgress.classList.remove('hidden');
+        if (this.vmProgressBarFill) {
+            this.vmProgressBarFill.className = 'vm-progress-bar-fill';
+            this.vmProgressBarFill.style.width = '5%';
+        }
+        if (this.vmProgressBadge) {
+            this.vmProgressBadge.className = 'vm-progress-badge';
+            this.vmProgressBadge.textContent = 'Paso 1 de 6';
+        }
+        if (this.vmProgressStageTitle) {
+            this.vmProgressStageTitle.textContent = `Aprovisionando '${vmName}'...`;
+        }
+        if (this.vmProgressMsg) {
+            this.vmProgressMsg.textContent = 'Iniciando proceso de aprovisionamiento...';
+        }
+        const stepEls = this.vmCreateProgress.querySelectorAll('.vm-pstep');
+        stepEls.forEach((el) => {
+            el.className = 'vm-pstep';
+            const icon = el.querySelector('.vm-pstep-icon');
+            if (icon) icon.textContent = '○';
+        });
+        const firstStep = this.vmCreateProgress.querySelector('.vm-pstep[data-step="1"]');
+        if (firstStep) {
+            firstStep.className = 'vm-pstep active';
+            const icon = firstStep.querySelector('.vm-pstep-icon');
+            if (icon) icon.innerHTML = '<span class="vm-spinner-mini"></span>';
+        }
+    }
+
+    updateVMCreateProgress(evt) {
+        if (!this.vmCreateProgress) return;
+        const { stage, step, total, message, error } = evt;
+
+        if (this.vmProgressMsg && message) {
+            this.vmProgressMsg.textContent = message;
+        }
+
+        if (stage === 'error') {
+            if (this.vmProgressBarFill) {
+                this.vmProgressBarFill.className = 'vm-progress-bar-fill error';
+            }
+            if (this.vmProgressBadge) {
+                this.vmProgressBadge.textContent = 'Error';
+                this.vmProgressBadge.className = 'vm-progress-badge error';
+            }
+            if (this.vmProgressStageTitle) {
+                this.vmProgressStageTitle.textContent = 'Fallo en la creación';
+            }
+            const currentStepEl = this.vmCreateProgress.querySelector(`.vm-pstep[data-step="${step || 1}"]`);
+            if (currentStepEl) {
+                currentStepEl.className = 'vm-pstep failed';
+                const icon = currentStepEl.querySelector('.vm-pstep-icon');
+                if (icon) icon.textContent = '✕';
+            }
+            this.showVMCreateFeedback(`Error al crear VM: ${error || message}`, 'error');
+            return;
+        }
+
+        const pct = total ? Math.min(Math.round((step / total) * 100), 100) : 10;
+        if (this.vmProgressBarFill) {
+            this.vmProgressBarFill.style.width = `${pct}%`;
+            if (stage === 'done') {
+                this.vmProgressBarFill.className = 'vm-progress-bar-fill success';
+            }
+        }
+
+        if (this.vmProgressBadge) {
+            if (stage === 'done') {
+                this.vmProgressBadge.textContent = 'Completado (100%)';
+                this.vmProgressBadge.className = 'vm-progress-badge success';
+            } else if (step && total) {
+                this.vmProgressBadge.textContent = `Paso ${step} de ${total} (${pct}%)`;
+                this.vmProgressBadge.className = 'vm-progress-badge';
+            }
+        }
+
+        if (this.vmProgressStageTitle) {
+            if (stage === 'done') {
+                this.vmProgressStageTitle.textContent = '¡Máquina virtual lista!';
+            } else {
+                const titles = {
+                    validating: '1. Validando y generando claves Ed25519...',
+                    creating_vm: '2. Creando VM en VirtualBox...',
+                    starting_vm: '3. Iniciando máquina virtual...',
+                    waiting_ssh: '4. Esperando servicio SSH...',
+                    configuring_user: '5. Configurando usuario y accesos...',
+                    configuring_docker: '6. Configurando Docker y servicios...'
+                };
+                this.vmProgressStageTitle.textContent = titles[stage] || `Paso ${step}...`;
+            }
+        }
+
+        const stepEls = this.vmCreateProgress.querySelectorAll('.vm-pstep');
+        stepEls.forEach((el) => {
+            const s = parseInt(el.dataset.step, 10);
+            const icon = el.querySelector('.vm-pstep-icon');
+            if (stage === 'done' || s < step) {
+                el.className = 'vm-pstep completed';
+                if (icon) icon.textContent = '✓';
+            } else if (s === step) {
+                el.className = 'vm-pstep active';
+                if (icon) icon.innerHTML = '<span class="vm-spinner-mini"></span>';
+            } else {
+                el.className = 'vm-pstep pending';
+                if (icon) icon.textContent = '○';
+            }
+        });
+    }
+
+    hideVMCreateProgress() {
+        if (!this.vmCreateProgress) return;
+        this.vmCreateProgress.classList.add('hidden');
+    }
+
     async handleVMCreate(e) {
         e.preventDefault();
 
@@ -1604,24 +1728,80 @@ class TerminalApp {
 
         this.isCreatingVM = true;
         this.setCreateVMLoading(true);
-        this.showVMCreateFeedback('Aprovisionando máquina virtual en VirtualBox y configurando acceso SSH... Por favor espera (~1-2 min).', 'info');
+        this.hideVMFeedback();
+        this.initVMCreateProgress(name);
 
         try {
             const payload = { name, templateId, cores, memoryMB };
             const res = await fetch('/api/vms', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream, application/json'
+                },
                 body: JSON.stringify(payload),
             });
+
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('text/event-stream') && res.body) {
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let createdVMData = null;
+                let hasError = false;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (trimmed.startsWith('data:')) {
+                            try {
+                                const evt = JSON.parse(trimmed.substring(5).trim());
+                                this.updateVMCreateProgress(evt);
+                                if (evt.stage === 'error') {
+                                    hasError = true;
+                                } else if (evt.stage === 'done') {
+                                    createdVMData = evt.vm || { name, templateName: templateId };
+                                }
+                            } catch (parseErr) {
+                                console.warn('Error parseando SSE de creacion de VM:', parseErr, trimmed);
+                            }
+                        }
+                    }
+                }
+
+                if (!hasError && createdVMData) {
+                    this.showVMCreateFeedback(`¡Máquina virtual '${name}' creada y aprovisionada con éxito!`, 'success');
+                    this.appendInfoLine(`[Crear VM] '${name}' creada exitosamente con plantilla '${createdVMData.templateName || templateId}'. Usuario: ${createdVMData.sshUser || 'propio'}, Puerto SSH: ${createdVMData.hostPort || 'NAT'}`);
+
+                    setTimeout(() => {
+                        this.vmFormWrap.classList.add('hidden');
+                        this.vmForm.reset();
+                        this.hideVMFeedback();
+                        this.hideVMCreateProgress();
+                    }, 2200);
+
+                    await this.loadVirtualMachines();
+                    await this.loadKeys();
+                }
+                return;
+            }
 
             if (!res.ok) {
                 const text = await res.text();
                 const errMsg = this.parseApiError(text);
+                this.updateVMCreateProgress({ stage: 'error', error: errMsg, message: errMsg });
                 this.showVMCreateFeedback(`Error al crear VM: ${errMsg}`, 'error');
                 return;
             }
 
             const created = await res.json();
+            this.updateVMCreateProgress({ stage: 'done', step: 6, total: 6, message: `¡Máquina virtual '${name}' creada con éxito!` });
             this.showVMCreateFeedback(`¡Máquina virtual '${name}' creada y aprovisionada con éxito!`, 'success');
             this.appendInfoLine(`[Crear VM] '${name}' creada exitosamente con plantilla '${created.templateName || templateId}'. Usuario: ${created.sshUser || 'propio'}, Puerto SSH: ${created.hostPort || 'NAT'}`);
 
@@ -1629,12 +1809,14 @@ class TerminalApp {
                 this.vmFormWrap.classList.add('hidden');
                 this.vmForm.reset();
                 this.hideVMFeedback();
-            }, 1200);
+                this.hideVMCreateProgress();
+            }, 2200);
 
             await this.loadVirtualMachines();
             await this.loadKeys();
         } catch (err) {
             console.warn('Error al crear VM:', err);
+            this.updateVMCreateProgress({ stage: 'error', error: err.message, message: 'No se pudo conectar al servidor para crear la MV.' });
             this.showVMCreateFeedback('No se pudo conectar al servidor para crear la MV.', 'error');
         } finally {
             this.isCreatingVM = false;

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SSH Terminal</title>
-    <link rel="stylesheet" href="/css/style.css?v=51">
+    <link rel="stylesheet" href="/css/style.css?v=52">
 </head>
 <body>
     <div id="app">
@@ -173,6 +173,42 @@
                     <button type="button" id="close-vm-form-btn" class="modal-close-btn">&times;</button>
                 </div>
                 <div id="vm-form-feedback" class="vm-form-feedback hidden"></div>
+                <div id="vm-create-progress" class="vm-create-progress hidden">
+                    <div class="vm-progress-header">
+                        <span id="vm-progress-stage-title" class="vm-progress-stage-title">Creando máquina virtual...</span>
+                        <span id="vm-progress-badge" class="vm-progress-badge">Paso 1 de 6</span>
+                    </div>
+                    <div class="vm-progress-bar-container">
+                        <div id="vm-progress-bar-fill" class="vm-progress-bar-fill" style="width: 5%"></div>
+                    </div>
+                    <div id="vm-progress-msg" class="vm-progress-msg">Preparando recursos y claves SSH...</div>
+                    <div class="vm-progress-steps">
+                        <div class="vm-pstep" data-step="1">
+                            <span class="vm-pstep-icon">○</span>
+                            <span class="vm-pstep-name">Generar claves Ed25519</span>
+                        </div>
+                        <div class="vm-pstep" data-step="2">
+                            <span class="vm-pstep-icon">○</span>
+                            <span class="vm-pstep-name">Crear VM en VirtualBox</span>
+                        </div>
+                        <div class="vm-pstep" data-step="3">
+                            <span class="vm-pstep-icon">○</span>
+                            <span class="vm-pstep-name">Iniciar VM (headless)</span>
+                        </div>
+                        <div class="vm-pstep" data-step="4">
+                            <span class="vm-pstep-icon">○</span>
+                            <span class="vm-pstep-name">Esperar servicio SSH</span>
+                        </div>
+                        <div class="vm-pstep" data-step="5">
+                            <span class="vm-pstep-icon">○</span>
+                            <span class="vm-pstep-name">Configurar usuario y accesos</span>
+                        </div>
+                        <div class="vm-pstep" data-step="6">
+                            <span class="vm-pstep-icon">○</span>
+                            <span class="vm-pstep-name">Configurar Docker y servicios</span>
+                        </div>
+                    </div>
+                </div>
                 <form id="vm-form" class="vm-form">
                     <div class="form-field">
                         <label for="vm-name">Nombre de la MV <span class="req">*</span></label>
@@ -1498,6 +1534,6 @@ CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
 
     <script src="/js/ansi.js?v=39"></script>
     <script src="/js/websocket.js?v=39"></script>
-    <script src="/js/app.js?v=51"></script>
+    <script src="/js/app.js?v=52"></script>
 </body>
 </html>

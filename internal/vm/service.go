@@ -208,8 +208,16 @@ func (s *Service) Get(name string) (VMRecord, error) {
 	}, nil
 }
 
+// VMProgressCallback define la función que recibe notificaciones de avance en la creación de una VM.
+type VMProgressCallback func(stage string, step int, total int, message string)
+
 // CreateFromTemplate ejecuta el workflow completo de creacion de VM a partir de plantilla con disco Multiattach
 func (s *Service) CreateFromTemplate(ctx context.Context, req VMCreateTemplateRequest) (VMRecord, error) {
+	return s.CreateFromTemplateWithProgress(ctx, req, nil)
+}
+
+// CreateFromTemplateWithProgress ejecuta el workflow completo reportando el progreso de cada etapa.
+func (s *Service) CreateFromTemplateWithProgress(ctx context.Context, req VMCreateTemplateRequest, onProgress VMProgressCallback) (VMRecord, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return VMRecord{}, fmt.Errorf("el nombre de la máquina es obligatorio")
@@ -219,9 +227,17 @@ func (s *Service) CreateFromTemplate(ctx context.Context, req VMCreateTemplateRe
 		return VMRecord{}, fmt.Errorf("la plantilla es obligatoria")
 	}
 
+	notify := func(stage string, step int, total int, message string) {
+		if onProgress != nil {
+			onProgress(stage, step, total, message)
+		}
+	}
+
 	mu := s.getVMLock(name)
 	mu.Lock()
 	defer mu.Unlock()
+
+	notify("validating", 1, 6, "Validando plantilla base y generando claves Ed25519...")
 
 	// 1. Validar si la máquina ya existe en VirtualBox para evitar colisiones
 	if vms, err := ssh.ListVMs(s.SSHConfig(), s.log); err == nil {
@@ -280,6 +296,7 @@ func (s *Service) CreateFromTemplate(ctx context.Context, req VMCreateTemplateRe
 		GuestPort:    22,
 	}
 
+	notify("creating_vm", 2, 6, fmt.Sprintf("Creando máquina virtual '%s' en VirtualBox...", name))
 	if err := ssh.CreateVMFromTemplate(ctx, s.SSHConfig(), vboxReq, s.log); err != nil {
 		if !strings.Contains(err.Error(), "ya existe en VirtualBox") {
 			_ = keys.DeleteVMKeys(s.cfg.SSHRoot, name)
@@ -288,9 +305,13 @@ func (s *Service) CreateFromTemplate(ctx context.Context, req VMCreateTemplateRe
 	}
 
 	// 5. Iniciar VM en modo headless para aprovisionar
+	notify("starting_vm", 3, 6, "Iniciando máquina virtual en modo headless...")
 	if err := ssh.StartVM(s.SSHConfig(), name, s.log); err != nil {
 		_ = ssh.DeleteVM(s.SSHConfig(), name, s.log)
 		_ = keys.DeleteVMKeys(s.cfg.SSHRoot, name)
+		if strings.Contains(err.Error(), "Locking of attached media failed") {
+			return VMRecord{}, fmt.Errorf("el disco base de la plantilla está bloqueado por otra VM en ejecución en VirtualBox (ej. una VM previa encendida). Apaga las otras máquinas virtuales que usen esta plantilla o configura el disco base en modo 'multiattach'")
+		}
 		return VMRecord{}, fmt.Errorf("iniciando VM para provisioning: %w", err)
 	}
 
@@ -330,6 +351,7 @@ func (s *Service) CreateFromTemplate(ctx context.Context, req VMCreateTemplateRe
 
 	// 6. Esperar a que SSH este disponible en el puerto NAT forwardeado (via tunel)
 	// Timeout extendido a 240s (4 minutos) para dar margen holgado al primer arranque con GUI
+	notify("waiting_ssh", 4, 6, "Esperando inicio del sistema operativo y servicio SSH (~30-60s)...")
 	if err := ssh.WaitForSSH(ctx, s.SSHConfig(), hostPort, 240*time.Second, s.log); err != nil {
 		cancelBoot()
 		s.log.Error("timeout esperando SSH en VM, ejecutando rollback", "error", err)
@@ -340,6 +362,7 @@ func (s *Service) CreateFromTemplate(ctx context.Context, req VMCreateTemplateRe
 	cancelBoot()
 
 	// 7. Aprovisionar usuario unico con la clave bootstrap y eliminar bootstrap de la VM
+	notify("configuring_user", 5, 6, fmt.Sprintf("Configurando usuario único '%s' y accesos SSH...", identity.Username))
 	if err := ssh.ProvisionVMUser(ctx, s.SSHConfig(), hostPort, sshUser, s.cfg.BootstrapKeyPath, identity.Username, identity.PublicKey, s.log); err != nil {
 		s.log.Error("error en provisioning de usuario, ejecutando rollback", "error", err)
 		_ = ssh.DeleteVM(s.SSHConfig(), name, s.log)
@@ -348,6 +371,7 @@ func (s *Service) CreateFromTemplate(ctx context.Context, req VMCreateTemplateRe
 	}
 
 	// 8. Registrar la llave en el KeyStore para descarga desde la app
+	notify("configuring_docker", 6, 6, "Configurando permisos de Docker y registrando máquina virtual...")
 	keyID := fmt.Sprintf("key-%s-%d", keys.SanitizeName(name), time.Now().Unix())
 	keyName := fmt.Sprintf("id_ed25519_%s", keys.SanitizeName(name))
 	keyRec := keys.SSHKey{
@@ -397,6 +421,7 @@ func (s *Service) CreateFromTemplate(ctx context.Context, req VMCreateTemplateRe
 		return rec, nil
 	}
 
+	notify("done", 6, 6, fmt.Sprintf("¡Máquina virtual '%s' creada y aprovisionada con éxito!", name))
 	return savedRec, nil
 }
 
