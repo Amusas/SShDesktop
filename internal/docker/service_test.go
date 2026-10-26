@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -786,5 +787,122 @@ func TestExportImageAndListTars(t *testing.T) {
 		t.Errorf("comando de eliminación de TAR inesperado: %s", deletedCmd)
 	}
 }
+
+func TestDockerHubCredentialsAndPush(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	credsPath := filepath.Join(t.TempDir(), "dockerhub_credentials.json")
+
+	var executedCmds []string
+	var loginCmds []string
+	var loginStdins []string
+
+	runner := func(ctx context.Context, vmName string, command string) (string, error) {
+		executedCmds = append(executedCmds, command)
+		if strings.Contains(command, "sudo docker tag") {
+			return "", nil
+		}
+		if strings.Contains(command, "sudo docker push") {
+			return "The push refers to repository [docker.io/mi_usuario/mi-api]\nv1: digest: sha256:123456 size: 528", nil
+		}
+		return "", nil
+	}
+
+	stdinRunner := func(ctx context.Context, vmName string, command string, stdin string) (string, error) {
+		loginCmds = append(loginCmds, command)
+		loginStdins = append(loginStdins, stdin)
+		return "Login Succeeded\n", nil
+	}
+
+	svc := NewService(runner, logger)
+	svc.SetCredentialsPath(credsPath)
+	svc.SetStdinRunner(stdinRunner)
+
+	// 1. Sin credenciales configuradas, el estado debe ser Configured: false y PushImageToDockerHub debe fallar
+	st := svc.GetDockerHubCredentialsStatus()
+	if st.Configured {
+		t.Fatalf("no se esperaban credenciales configuradas inicialmente")
+	}
+
+	_, errNoCreds := svc.PushImageToDockerHub(context.Background(), PushImageRequest{
+		VMName:      "debian-vm",
+		SourceImage: "mi-api:1.0",
+		Repository:  "mi-api",
+		Tag:         "v1",
+	})
+	if errNoCreds == nil {
+		t.Fatalf("se esperaba error al publicar sin credenciales configuradas")
+	}
+
+	// 2. Guardar credenciales válidas y verificar que el token nunca se exponga en el estado
+	savedSt, errSave := svc.SaveDockerHubCredentials(SaveDockerHubCredentialsRequest{
+		Username:    "mi_usuario",
+		AccessToken: "dckr_pat_SUPER_SECRET_TOKEN_123",
+	})
+	if errSave != nil {
+		t.Fatalf("error inesperado guardando credenciales: %v", errSave)
+	}
+	if !savedSt.Configured || savedSt.Username != "mi_usuario" {
+		t.Fatalf("estado de credenciales inesperado: %+v", savedSt)
+	}
+
+	// 3. Primera publicación desde debian-vm: debe ejecutar docker login con --password-stdin, docker tag y docker push
+	pushRes, errPush := svc.PushImageToDockerHub(context.Background(), PushImageRequest{
+		VMName:      "debian-vm",
+		SourceImage: "mi-api:1.0",
+		Repository:  "mi-api",
+		Tag:         "v1",
+	})
+	if errPush != nil {
+		t.Fatalf("error inesperado en PushImageToDockerHub: %v", errPush)
+	}
+	if !pushRes.Success || pushRes.TargetImage != "mi_usuario/mi-api:v1" {
+		t.Errorf("respuesta de publicación inesperada: %+v", pushRes)
+	}
+	if len(loginCmds) != 1 {
+		t.Fatalf("se esperaba 1 llamada a docker login en la primera publicación, obtenidas: %d", len(loginCmds))
+	}
+	if !strings.Contains(loginCmds[0], "sudo docker login --username 'mi_usuario' --password-stdin") {
+		t.Errorf("comando de login inesperado: %s", loginCmds[0])
+	}
+	if strings.Contains(loginCmds[0], "dckr_pat_SUPER_SECRET_TOKEN_123") {
+		t.Errorf("el PAT NUNCA debe interpolarse dentro del comando: %s", loginCmds[0])
+	}
+	if loginStdins[0] != "dckr_pat_SUPER_SECRET_TOKEN_123" {
+		t.Errorf("el PAT enviado por stdin no coincide: %s", loginStdins[0])
+	}
+	if len(executedCmds) != 2 {
+		t.Fatalf("se esperaban 2 comandos (tag y push), obtenidos: %d", len(executedCmds))
+	}
+	if !strings.Contains(executedCmds[0], "sudo docker tag 'mi-api:1.0' 'mi_usuario/mi-api:v1'") {
+		t.Errorf("comando docker tag inesperado: %s", executedCmds[0])
+	}
+	if !strings.Contains(executedCmds[1], "sudo docker push 'mi_usuario/mi-api:v1'") {
+		t.Errorf("comando docker push inesperado: %s", executedCmds[1])
+	}
+
+	// 4. Segunda publicación en la misma VM ya autenticada: no debe repetir docker login
+	_, errPush2 := svc.PushImageToDockerHub(context.Background(), PushImageRequest{
+		VMName:      "debian-vm",
+		SourceImage: "mi-api:1.0",
+		Repository:  "mi-api",
+		Tag:         "v2",
+	})
+	if errPush2 != nil {
+		t.Fatalf("error en segunda publicación: %v", errPush2)
+	}
+	if len(loginCmds) != 1 {
+		t.Errorf("no debía repetirse docker login para VM ya autenticada, llamadas: %d", len(loginCmds))
+	}
+
+	// 5. Actualizar credenciales invalida el registro de VMs autenticadas
+	_, _ = svc.SaveDockerHubCredentials(SaveDockerHubCredentialsRequest{
+		Username:    "mi_usuario",
+		AccessToken: "dckr_pat_NEW_TOKEN_456",
+	})
+	if svc.isVMAuthenticated("debian-vm") {
+		t.Errorf("la VM no debería seguir marcada como autenticada tras cambiar credenciales")
+	}
+}
+
 
 

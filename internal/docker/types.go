@@ -241,3 +241,46 @@ type ExportedTarFile struct {
 	Status     string `json:"status"`
 	VMName     string `json:"vmName"`
 }
+
+// DockerHubCredentials almacena en disco las credenciales de Docker Hub y las VMs autenticadas
+type DockerHubCredentials struct {
+	Username         string   `json:"username"`
+	AccessToken      string   `json:"access_token"`
+	AuthenticatedVMs []string `json:"authenticated_vms,omitempty"`
+}
+
+// DockerHubCredentialsStatus expone el estado de configuración de Docker Hub sin incluir nunca el token
+type DockerHubCredentialsStatus struct {
+	Configured       bool     `json:"configured"`
+	Username         string   `json:"username,omitempty"`
+	AuthenticatedVMs []string `json:"authenticatedVMs,omitempty"`
+}
+
+// SaveDockerHubCredentialsRequest contiene los datos enviados desde la interfaz para guardar credenciales de Docker Hub
+type SaveDockerHubCredentialsRequest struct {
+	Username       string `json:"username"`
+	AccessToken    string `json:"access_token"`
+	AccessTokenAlt string `json:"accessToken,omitempty"`
+}
+
+// PushImageRequest contiene los datos para etiquetar y publicar una imagen Docker en Docker Hub
+type PushImageRequest struct {
+	VMName      string `json:"vmName"`
+	SourceImage string `json:"sourceImage"`
+	Repository  string `json:"repository"`
+	Tag         string `json:"tag"`
+}
+
+// PushImageResponse entrega el resultado de la publicación de una imagen en Docker Hub
+type PushImageResponse struct {
+	Success     bool   `json:"success"`
+	VMName      string `json:"vmName"`
+	SourceImage string `json:"sourceImage"`
+	TargetImage string `json:"targetImage"`
+	Repository  string `json:"repository"`
+	Tag         string `json:"tag"`
+	Username    string `json:"username"`
+	Output      string `json:"output,omitempty"`
+	AuthFailed  bool   `json:"authFailed,omitempty"`
+}
+

@@ -6,27 +6,51 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // CommandRunner define la función para ejecutar comandos de forma remota en una VM
 type CommandRunner func(ctx context.Context, vmName string, command string) (string, error)
 
+// CommandStdinRunner define la función para ejecutar comandos remotos enviando datos por stdin
+type CommandStdinRunner func(ctx context.Context, vmName string, command string, stdin string) (string, error)
+
+// DefaultDockerHubCredentialsPath es la ruta predeterminada para persistir las credenciales de Docker Hub
+const DefaultDockerHubCredentialsPath = "dockerhub_credentials.json"
+
 // Service gestiona el ciclo de vida y operaciones de contenedores Docker en VMs Linux
 type Service struct {
-	runner CommandRunner
-	log    *slog.Logger
+	runner          CommandRunner
+	stdinRunner     CommandStdinRunner
+	log             *slog.Logger
+	credsMu         sync.RWMutex
+	credentialsPath string
 }
 
 // NewService crea una nueva instancia del servicio Docker
 func NewService(runner CommandRunner, log *slog.Logger) *Service {
 	return &Service{
-		runner: runner,
-		log:    log,
+		runner:          runner,
+		log:             log,
+		credentialsPath: DefaultDockerHubCredentialsPath,
 	}
+}
+
+// SetStdinRunner configura el ejecutor de comandos remotos con soporte de escritura en stdin
+func (s *Service) SetStdinRunner(fn CommandStdinRunner) {
+	s.stdinRunner = fn
+}
+
+// SetCredentialsPath permite personalizar la ruta del archivo JSON de credenciales de Docker Hub
+func (s *Service) SetCredentialsPath(filePath string) {
+	s.credsMu.Lock()
+	defer s.credsMu.Unlock()
+	s.credentialsPath = filePath
 }
 
 // CheckDockerStatus comprueba si el daemon de Docker está activo y obtiene métricas en la VM
@@ -872,6 +896,373 @@ func (s *Service) DeleteExportedTar(ctx context.Context, vmName string, fileName
 	}
 
 	return nil
+}
+
+func sanitizeSecret(text string, secret string) string {
+	if secret == "" || text == "" {
+		return text
+	}
+	return strings.ReplaceAll(text, secret, "[REDACTED]")
+}
+
+func (s *Service) loadDockerHubCredentialsUnlocked() (DockerHubCredentials, error) {
+	credsPath := s.credentialsPath
+	if strings.TrimSpace(credsPath) == "" {
+		credsPath = DefaultDockerHubCredentialsPath
+	}
+
+	data, err := os.ReadFile(credsPath)
+	if err != nil {
+		return DockerHubCredentials{}, err
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return DockerHubCredentials{}, fmt.Errorf("el archivo de credenciales está vacío")
+	}
+
+	var creds DockerHubCredentials
+	if err := json.Unmarshal(data, &creds); err != nil {
+		return DockerHubCredentials{}, fmt.Errorf("formato inválido en credenciales de Docker Hub: %w", err)
+	}
+
+	creds.Username = strings.TrimSpace(creds.Username)
+	creds.AccessToken = strings.TrimSpace(creds.AccessToken)
+	if err := ValidateDockerHubUsername(creds.Username); err != nil {
+		return DockerHubCredentials{}, err
+	}
+	if creds.AccessToken == "" || strings.ContainsAny(creds.AccessToken, "\r\n") {
+		return DockerHubCredentials{}, fmt.Errorf("el Personal Access Token de Docker Hub no está configurado o es inválido")
+	}
+
+	return creds, nil
+}
+
+func (s *Service) saveDockerHubCredentialsUnlocked(creds DockerHubCredentials) error {
+	credsPath := s.credentialsPath
+	if strings.TrimSpace(credsPath) == "" {
+		credsPath = DefaultDockerHubCredentialsPath
+	}
+
+	data, err := json.MarshalIndent(creds, "", "  ")
+	if err != nil {
+		return fmt.Errorf("serializando credenciales de Docker Hub: %w", err)
+	}
+	return os.WriteFile(credsPath, append(data, '\n'), 0600)
+}
+
+// GetDockerHubCredentialsStatus devuelve si las credenciales están configuradas y el usuario activo (sin exponer el token)
+func (s *Service) GetDockerHubCredentialsStatus() DockerHubCredentialsStatus {
+	s.credsMu.RLock()
+	defer s.credsMu.RUnlock()
+
+	creds, err := s.loadDockerHubCredentialsUnlocked()
+	if err != nil {
+		return DockerHubCredentialsStatus{Configured: false}
+	}
+
+	return DockerHubCredentialsStatus{
+		Configured:       true,
+		Username:         creds.Username,
+		AuthenticatedVMs: append([]string(nil), creds.AuthenticatedVMs...),
+	}
+}
+
+// SaveDockerHubCredentials valida y guarda las credenciales de Docker Hub en el archivo JSON e invalida sesiones previas de VMs
+func (s *Service) SaveDockerHubCredentials(req SaveDockerHubCredentialsRequest) (*DockerHubCredentialsStatus, error) {
+	username := strings.TrimSpace(req.Username)
+	token := strings.TrimSpace(req.AccessToken)
+	if token == "" {
+		token = strings.TrimSpace(req.AccessTokenAlt)
+	}
+
+	if err := ValidateDockerHubUsername(username); err != nil {
+		return nil, err
+	}
+	if token == "" {
+		return nil, fmt.Errorf("el Personal Access Token (PAT) de Docker Hub no puede estar vacío")
+	}
+	if strings.ContainsAny(token, "\r\n") {
+		return nil, fmt.Errorf("el Personal Access Token contiene caracteres de salto de línea no permitidos")
+	}
+
+	s.credsMu.Lock()
+	defer s.credsMu.Unlock()
+
+	creds := DockerHubCredentials{
+		Username:         username,
+		AccessToken:      token,
+		AuthenticatedVMs: []string{},
+	}
+
+	if err := s.saveDockerHubCredentialsUnlocked(creds); err != nil {
+		return nil, fmt.Errorf("no se pudieron guardar las credenciales de Docker Hub: %w", err)
+	}
+
+	s.log.Info("credenciales de Docker Hub guardadas", "username", username)
+
+	return &DockerHubCredentialsStatus{
+		Configured:       true,
+		Username:         username,
+		AuthenticatedVMs: []string{},
+	}, nil
+}
+
+func isDockerHubAuthError(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "unauthorized") ||
+		strings.Contains(lower, "authentication required") ||
+		strings.Contains(lower, "incorrect username or password") ||
+		strings.Contains(lower, "access token") ||
+		strings.Contains(lower, "insufficient_scope") ||
+		strings.Contains(lower, "requested access to the resource is denied") ||
+		strings.Contains(lower, "access denied")
+}
+
+func (s *Service) isVMAuthenticated(vmName string) bool {
+	s.credsMu.RLock()
+	defer s.credsMu.RUnlock()
+
+	creds, err := s.loadDockerHubCredentialsUnlocked()
+	if err != nil {
+		return false
+	}
+	for _, v := range creds.AuthenticatedVMs {
+		if strings.EqualFold(strings.TrimSpace(v), vmName) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) setVMAuthenticated(vmName string, authenticated bool) {
+	s.credsMu.Lock()
+	defer s.credsMu.Unlock()
+
+	creds, err := s.loadDockerHubCredentialsUnlocked()
+	if err != nil {
+		return
+	}
+
+	var updated []string
+	found := false
+	for _, v := range creds.AuthenticatedVMs {
+		if strings.EqualFold(strings.TrimSpace(v), vmName) {
+			found = true
+			if authenticated {
+				updated = append(updated, vmName)
+			}
+		} else if strings.TrimSpace(v) != "" {
+			updated = append(updated, v)
+		}
+	}
+	if authenticated && !found {
+		updated = append(updated, vmName)
+	}
+	creds.AuthenticatedVMs = updated
+	_ = s.saveDockerHubCredentialsUnlocked(creds)
+}
+
+func (s *Service) loginDockerHubOnVM(ctx context.Context, vmName string, creds DockerHubCredentials) (string, bool, error) {
+	if s.stdinRunner == nil {
+		return "", false, fmt.Errorf("el ejecutor SSH con soporte de stdin no está disponible para iniciar sesión en Docker Hub")
+	}
+
+	loginCmd := fmt.Sprintf("sudo docker login --username %s --password-stdin 2>&1", EscapeShellArg(creds.Username))
+	s.log.Info("autenticando VM en Docker Hub", "vm", vmName, "username", creds.Username)
+
+	out, err := s.stdinRunner(ctx, vmName, loginCmd, creds.AccessToken)
+	safeOut := strings.TrimSpace(sanitizeSecret(out, creds.AccessToken))
+	safeErr := ""
+	if err != nil {
+		safeErr = sanitizeSecret(err.Error(), creds.AccessToken)
+	}
+
+	if err != nil || !strings.Contains(strings.ToLower(safeOut), "login succeeded") {
+		combined := safeOut
+		if combined == "" {
+			combined = safeErr
+		}
+		if isDockerHubAuthError(combined) {
+			return safeOut, true, fmt.Errorf("Docker Hub rechazó las credenciales para el usuario '%s'. Verifica tu Docker ID y que el Personal Access Token sea válido y tenga permisos de lectura y escritura", creds.Username)
+		}
+		lower := strings.ToLower(combined)
+		if strings.Contains(lower, "command not found") || strings.Contains(lower, "cannot connect to the docker daemon") {
+			return safeOut, false, fmt.Errorf("Docker no está disponible o no está en ejecución en la VM '%s'", vmName)
+		}
+		return safeOut, false, fmt.Errorf("no se pudo iniciar sesión en Docker Hub en la VM '%s': %s", vmName, combined)
+	}
+
+	s.setVMAuthenticated(vmName, true)
+	return safeOut, false, nil
+}
+
+// PushImageToDockerHub autentica la VM cuando es necesario, etiqueta la imagen local y ejecuta docker push hacia Docker Hub
+func (s *Service) PushImageToDockerHub(ctx context.Context, req PushImageRequest) (*PushImageResponse, error) {
+	vmName := strings.TrimSpace(req.VMName)
+	if vmName == "" {
+		return nil, fmt.Errorf("el nombre de la máquina virtual (VM) es obligatorio")
+	}
+
+	sourceImage := strings.TrimSpace(req.SourceImage)
+	if sourceImage == "" {
+		return nil, fmt.Errorf("la imagen de origen es obligatoria")
+	}
+	if err := ValidateImageName(sourceImage); err != nil {
+		return nil, err
+	}
+
+	s.credsMu.RLock()
+	creds, credsErr := s.loadDockerHubCredentialsUnlocked()
+	s.credsMu.RUnlock()
+	if credsErr != nil {
+		return &PushImageResponse{
+			Success:    false,
+			VMName:     vmName,
+			AuthFailed: true,
+		}, fmt.Errorf("credenciales de Docker Hub no configuradas: %w", credsErr)
+	}
+
+	repoName := strings.TrimSpace(req.Repository)
+	userPrefix := creds.Username + "/"
+	if strings.HasPrefix(strings.ToLower(repoName), strings.ToLower(userPrefix)) {
+		repoName = strings.TrimSpace(repoName[len(userPrefix):])
+	}
+	if err := ValidateDockerHubRepoName(repoName); err != nil {
+		return nil, err
+	}
+
+	tag := strings.TrimSpace(req.Tag)
+	if tag == "" {
+		tag = "latest"
+	}
+	if err := ValidateImageTag(tag); err != nil {
+		return nil, err
+	}
+
+	fullTargetRef := fmt.Sprintf("%s/%s:%s", creds.Username, repoName, tag)
+
+	wasAuthenticated := s.isVMAuthenticated(vmName)
+	if !wasAuthenticated {
+		loginOut, authFailed, loginErr := s.loginDockerHubOnVM(ctx, vmName, creds)
+		if loginErr != nil {
+			return &PushImageResponse{
+				Success:     false,
+				VMName:      vmName,
+				SourceImage: sourceImage,
+				TargetImage: fullTargetRef,
+				Repository:  repoName,
+				Tag:         tag,
+				Username:    creds.Username,
+				Output:      loginOut,
+				AuthFailed:  authFailed,
+			}, loginErr
+		}
+	}
+
+	// 1. Etiquetar imagen: sudo docker tag <sourceImage> <username>/<repo>:<tag>
+	tagCmd := fmt.Sprintf("sudo docker tag %s %s 2>&1", EscapeShellArg(sourceImage), EscapeShellArg(fullTargetRef))
+	s.log.Info("etiquetando imagen Docker para Docker Hub", "vm", vmName, "source", sourceImage, "target", fullTargetRef)
+
+	tagOut, tagErr := s.runner(ctx, vmName, tagCmd)
+	safeTagOut := strings.TrimSpace(sanitizeSecret(tagOut, creds.AccessToken))
+	if tagErr != nil {
+		lowerTag := strings.ToLower(safeTagOut)
+		if strings.Contains(lowerTag, "no such image") || strings.Contains(lowerTag, "reference does not exist") {
+			return &PushImageResponse{
+				Success:     false,
+				VMName:      vmName,
+				SourceImage: sourceImage,
+				TargetImage: fullTargetRef,
+				Repository:  repoName,
+				Tag:         tag,
+				Username:    creds.Username,
+				Output:      safeTagOut,
+			}, fmt.Errorf("la imagen local '%s' no existe en la VM '%s'", sourceImage, vmName)
+		}
+		errMsg := safeTagOut
+		if errMsg == "" {
+			errMsg = sanitizeSecret(tagErr.Error(), creds.AccessToken)
+		}
+		return &PushImageResponse{
+			Success:     false,
+			VMName:      vmName,
+			SourceImage: sourceImage,
+			TargetImage: fullTargetRef,
+			Repository:  repoName,
+			Tag:         tag,
+			Username:    creds.Username,
+			Output:      safeTagOut,
+		}, fmt.Errorf("error durante docker tag (%s -> %s): %s", sourceImage, fullTargetRef, errMsg)
+	}
+
+	// 2. Publicar imagen: sudo docker push <username>/<repo>:<tag>
+	pushCmd := fmt.Sprintf("sudo docker push %s 2>&1", EscapeShellArg(fullTargetRef))
+	s.log.Info("publicando imagen Docker en Docker Hub", "vm", vmName, "target", fullTargetRef)
+
+	pushOut, pushErr := s.runner(ctx, vmName, pushCmd)
+	safePushOut := strings.TrimSpace(sanitizeSecret(pushOut, creds.AccessToken))
+
+	// Si la VM figuraba como autenticada pero la sesión en la VM expiró o fue invalidada, reintentar login una vez
+	if pushErr != nil && wasAuthenticated && isDockerHubAuthError(safePushOut+" "+sanitizeSecret(pushErr.Error(), creds.AccessToken)) {
+		s.setVMAuthenticated(vmName, false)
+		loginOut, authFailed, loginErr := s.loginDockerHubOnVM(ctx, vmName, creds)
+		if loginErr != nil {
+			return &PushImageResponse{
+				Success:     false,
+				VMName:      vmName,
+				SourceImage: sourceImage,
+				TargetImage: fullTargetRef,
+				Repository:  repoName,
+				Tag:         tag,
+				Username:    creds.Username,
+				Output:      loginOut,
+				AuthFailed:  authFailed,
+			}, loginErr
+		}
+		pushOut, pushErr = s.runner(ctx, vmName, pushCmd)
+		safePushOut = strings.TrimSpace(sanitizeSecret(pushOut, creds.AccessToken))
+	}
+
+	if pushErr != nil {
+		combinedPushErr := safePushOut
+		if combinedPushErr == "" {
+			combinedPushErr = sanitizeSecret(pushErr.Error(), creds.AccessToken)
+		}
+		if isDockerHubAuthError(combinedPushErr) {
+			s.setVMAuthenticated(vmName, false)
+			return &PushImageResponse{
+				Success:     false,
+				VMName:      vmName,
+				SourceImage: sourceImage,
+				TargetImage: fullTargetRef,
+				Repository:  repoName,
+				Tag:         tag,
+				Username:    creds.Username,
+				Output:      safePushOut,
+				AuthFailed:  true,
+			}, fmt.Errorf("Docker Hub denegó la publicación de '%s'. Verifica que tu Personal Access Token tenga permisos de lectura y escritura (Read & Write) y que el repositorio pertenezca a '%s': %s", fullTargetRef, creds.Username, combinedPushErr)
+		}
+		return &PushImageResponse{
+			Success:     false,
+			VMName:      vmName,
+			SourceImage: sourceImage,
+			TargetImage: fullTargetRef,
+			Repository:  repoName,
+			Tag:         tag,
+			Username:    creds.Username,
+			Output:      safePushOut,
+		}, fmt.Errorf("error durante docker push de '%s': %s", fullTargetRef, combinedPushErr)
+	}
+
+	return &PushImageResponse{
+		Success:     true,
+		VMName:      vmName,
+		SourceImage: sourceImage,
+		TargetImage: fullTargetRef,
+		Repository:  repoName,
+		Tag:         tag,
+		Username:    creds.Username,
+		Output:      safePushOut,
+	}, nil
 }
 
 // CommitContainer crea una nueva imagen Docker a partir del estado actual de un contenedor en la VM

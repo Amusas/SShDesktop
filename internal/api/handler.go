@@ -74,6 +74,8 @@ func NewHandler(cfg *config.Config, log *slog.Logger, staticDir string) *Handler
 		hosts:     hosts,
 	}
 	handler.dockerSvc = docker.NewService(handler.executeVMCommand, log)
+	handler.dockerSvc.SetStdinRunner(handler.executeVMCommandWithStdin)
+	handler.dockerSvc.SetCredentialsPath(filepath.Join(".", docker.DefaultDockerHubCredentialsPath))
 	if _, err := os.Stat(hostsPath); os.IsNotExist(err) {
 		if err := saveHosts(hostsPath, hosts); err != nil {
 			log.Warn("no se pudo crear hosts.json", "error", err)
@@ -143,6 +145,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case r.URL.Path == "/api/images/exports/download":
 		h.handleImageExportDownload(w, r)
+		return
+	case r.URL.Path == "/api/dockerhub/credentials":
+		h.handleDockerHubCredentials(w, r)
+		return
+	case r.URL.Path == "/api/images/push":
+		h.handleImagePush(w, r)
 		return
 	case r.URL.Path == "/api/images/build":
 		h.handleImageBuild(w, r)
@@ -977,6 +985,56 @@ func (h *Handler) executeVMCommand(ctx context.Context, vmName string, command s
 	return ssh.ExecuteCommandContext(ctx, vmTargetCfg, command, h.log)
 }
 
+func (h *Handler) executeVMCommandWithStdin(ctx context.Context, vmName string, command string, stdinData string) (string, error) {
+	vmRec, err := h.vmSvc.Get(vmName)
+	if err != nil {
+		return "", fmt.Errorf("máquina virtual '%s' no encontrada: %w", vmName, err)
+	}
+	if vmRec.HostPort <= 0 {
+		return "", fmt.Errorf("la máquina virtual '%s' no tiene puerto NAT asignado", vmName)
+	}
+
+	h.cfgMu.RLock()
+	hostCfg := ssh.Config{
+		Host:    h.cfg.SSHHost,
+		Port:    h.cfg.SSHPort,
+		User:    h.cfg.SSHUser,
+		KeyPath: h.cfg.SSHKeyPath,
+	}
+	sshRoot := h.cfg.SSHRoot
+	h.cfgMu.RUnlock()
+
+	keyPath := vmRec.PrivateKeyPath
+	if keyPath == "" {
+		keyPath = filepath.Join(sshRoot, "vms", vmRec.Name, "id_ed25519")
+	}
+
+	if _, statErr := os.Stat(keyPath); os.IsNotExist(statErr) {
+		if kRec, kErr := h.vmSvc.KeyStore().Get(vmRec.Name); kErr == nil && strings.TrimSpace(kRec.PrivateKey) != "" {
+			_ = os.MkdirAll(filepath.Dir(keyPath), 0700)
+			_ = os.WriteFile(keyPath, []byte(kRec.PrivateKey), 0600)
+			if kRec.PublicKey != "" {
+				_ = os.WriteFile(keyPath+".pub", []byte(kRec.PublicKey), 0644)
+			}
+		}
+	}
+
+	user := vmRec.SSHUser
+	if user == "" {
+		user = "bootstrap"
+	}
+
+	vmTargetCfg := ssh.Config{
+		Host:      "127.0.0.1",
+		Port:      vmRec.HostPort,
+		User:      user,
+		KeyPath:   keyPath,
+		ProxyHost: &hostCfg,
+	}
+
+	return ssh.ExecuteCommandWithStdinContext(ctx, vmTargetCfg, command, stdinData, h.log)
+}
+
 func (h *Handler) streamVMCommand(ctx context.Context, vmName string, command string, stdout io.Writer) error {
 	vmRec, err := h.vmSvc.Get(vmName)
 	if err != nil {
@@ -1479,6 +1537,83 @@ func (h *Handler) handleImageExportDownload(w http.ResponseWriter, r *http.Reque
 	if err := h.streamVMCommand(r.Context(), vmTarget, streamCmd, w); err != nil {
 		h.log.Warn("error transmitiendo archivo TAR desde VM", "vm", vmTarget, "file", fileName, "error", err)
 	}
+}
+
+func (h *Handler) handleDockerHubCredentials(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet:
+		status := h.dockerSvc.GetDockerHubCredentialsStatus()
+		json.NewEncoder(w).Encode(status)
+
+	case http.MethodPost:
+		var req docker.SaveDockerHubCredentialsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": fmt.Sprintf("JSON inválido: %s", err.Error()),
+			})
+			return
+		}
+		status, err := h.dockerSvc.SaveDockerHubCredentials(req)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": err.Error(),
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(status)
+
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "método no permitido",
+		})
+	}
+}
+
+func (h *Handler) handleImagePush(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "método no permitido",
+		})
+		return
+	}
+
+	var req docker.PushImageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": fmt.Sprintf("JSON inválido: %s", err.Error()),
+		})
+		return
+	}
+
+	res, err := h.dockerSvc.PushImageToDockerHub(r.Context(), req)
+	if err != nil {
+		statusCode := http.StatusInternalServerError
+		outStr := ""
+		authFailed := false
+		if res != nil {
+			outStr = res.Output
+			authFailed = res.AuthFailed
+			if res.AuthFailed {
+				statusCode = http.StatusUnauthorized
+			}
+		}
+		w.WriteHeader(statusCode)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":      err.Error(),
+			"output":     outStr,
+			"authFailed": authFailed,
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(res)
 }
 
 func (h *Handler) handleImageItem(w http.ResponseWriter, r *http.Request) {

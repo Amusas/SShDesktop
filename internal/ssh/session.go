@@ -47,6 +47,11 @@ func ExecuteCommand(cfg Config, command string, log *slog.Logger) (string, error
 
 // ExecuteCommandContext ejecuta un comando en el servidor SSH remoto (o VM via ProxyHost) con soporte de contexto y cancelacion
 func ExecuteCommandContext(ctx context.Context, cfg Config, command string, log *slog.Logger) (string, error) {
+	return ExecuteCommandWithStdinContext(ctx, cfg, command, "", log)
+}
+
+// ExecuteCommandWithStdinContext ejecuta un comando remoto por SSH enviando stdinData por la entrada estándar del proceso remoto
+func ExecuteCommandWithStdinContext(ctx context.Context, cfg Config, command string, stdinData string, log *slog.Logger) (string, error) {
 	authMethods, err := buildAuthMethods(cfg)
 	if err != nil {
 		return "", fmt.Errorf("construyendo metodos de autenticacion: %w", err)
@@ -101,6 +106,9 @@ func ExecuteCommandContext(ctx context.Context, cfg Config, command string, log 
 	var stderr bytes.Buffer
 	session.Stdout = &stdout
 	session.Stderr = &stderr
+	if stdinData != "" {
+		session.Stdin = strings.NewReader(stdinData + "\n")
+	}
 
 	// Soporte de cancelacion por contexto
 	done := make(chan error, 1)

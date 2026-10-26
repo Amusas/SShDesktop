@@ -170,6 +170,34 @@ class TerminalApp {
         this.deleteImageFeedback = document.getElementById('delete-image-feedback');
         this.pendingDeleteImage = null;
 
+        // Modales de Docker Hub (Credenciales y Publicación)
+        this.openDockerHubCredsBtn = document.getElementById('open-dockerhub-creds-btn');
+        this.dockerHubCredsModal = document.getElementById('dockerhub-creds-modal');
+        this.closeDockerHubCredsModalBtn = document.getElementById('close-dockerhub-creds-modal');
+        this.cancelDockerHubCredsBtn = document.getElementById('cancel-dockerhub-creds-btn');
+        this.saveDockerHubCredsBtn = document.getElementById('save-dockerhub-creds-btn');
+        this.dockerHubUsernameInput = document.getElementById('dockerhub-username-input');
+        this.dockerHubTokenInput = document.getElementById('dockerhub-token-input');
+        this.dockerHubCredsFeedback = document.getElementById('dockerhub-creds-feedback');
+
+        this.dockerHubPublishModal = document.getElementById('dockerhub-publish-modal');
+        this.closeDockerHubPublishModalBtn = document.getElementById('close-dockerhub-publish-modal');
+        this.cancelDockerHubPublishBtn = document.getElementById('cancel-dockerhub-publish-btn');
+        this.submitDockerHubPublishBtn = document.getElementById('submit-dockerhub-publish-btn');
+        this.changeDockerHubCredsBtn = document.getElementById('change-dockerhub-creds-btn');
+        this.publishVmDisplay = document.getElementById('publish-vm-display');
+        this.publishSourceImageDisplay = document.getElementById('publish-source-image-display');
+        this.publishUsernameDisplay = document.getElementById('publish-username-display');
+        this.publishRepoInput = document.getElementById('publish-repo-input');
+        this.publishTagInput = document.getElementById('publish-tag-input');
+        this.publishTargetPreview = document.getElementById('publish-target-preview');
+        this.dockerHubPublishFeedback = document.getElementById('dockerhub-publish-feedback');
+        this.dockerHubPublishLogContainer = document.getElementById('dockerhub-publish-log-container');
+        this.dockerHubPublishLogOutput = document.getElementById('dockerhub-publish-log-output');
+        this.pendingPublishImage = null;
+        this.dockerHubUsername = '';
+        this.continueToPublishAfterCreds = false;
+
         // Opciones de Origen en Wizard
         this.wizSourceImages = document.getElementById('wiz-source-images');
         this.wizSourceCatalog = document.getElementById('wiz-source-catalog');
@@ -970,6 +998,69 @@ class TerminalApp {
             });
         }
 
+        // Eventos de Docker Hub (Credenciales y Publicación)
+        if (this.openDockerHubCredsBtn) {
+            this.openDockerHubCredsBtn.addEventListener('click', () => this.openDockerHubCredsModal(false));
+        }
+        if (this.closeDockerHubCredsModalBtn) {
+            this.closeDockerHubCredsModalBtn.addEventListener('click', () => this.closeDockerHubCredsModal());
+        }
+        if (this.cancelDockerHubCredsBtn) {
+            this.cancelDockerHubCredsBtn.addEventListener('click', () => this.closeDockerHubCredsModal());
+        }
+        if (this.saveDockerHubCredsBtn) {
+            this.saveDockerHubCredsBtn.addEventListener('click', () => this.saveDockerHubCredentials());
+        }
+        if (this.dockerHubUsernameInput) {
+            this.dockerHubUsernameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    if (this.dockerHubTokenInput && !this.dockerHubTokenInput.value) {
+                        this.dockerHubTokenInput.focus();
+                    } else {
+                        this.saveDockerHubCredentials();
+                    }
+                }
+            });
+        }
+        if (this.dockerHubTokenInput) {
+            this.dockerHubTokenInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    this.saveDockerHubCredentials();
+                }
+            });
+        }
+        if (this.closeDockerHubPublishModalBtn) {
+            this.closeDockerHubPublishModalBtn.addEventListener('click', () => this.closeDockerHubPublishModal());
+        }
+        if (this.cancelDockerHubPublishBtn) {
+            this.cancelDockerHubPublishBtn.addEventListener('click', () => this.closeDockerHubPublishModal());
+        }
+        if (this.changeDockerHubCredsBtn) {
+            this.changeDockerHubCredsBtn.addEventListener('click', () => {
+                this.closeDockerHubPublishModal(true);
+                this.openDockerHubCredsModal(true);
+            });
+        }
+        if (this.publishRepoInput) {
+            this.publishRepoInput.addEventListener('input', () => this.updateDockerHubTargetPreview());
+            this.publishRepoInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && this.publishTagInput) {
+                    this.publishTagInput.focus();
+                }
+            });
+        }
+        if (this.publishTagInput) {
+            this.publishTagInput.addEventListener('input', () => this.updateDockerHubTargetPreview());
+            this.publishTagInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    this.submitDockerHubPublish();
+                }
+            });
+        }
+        if (this.submitDockerHubPublishBtn) {
+            this.submitDockerHubPublishBtn.addEventListener('click', () => this.submitDockerHubPublish());
+        }
+
         // Eventos del Modal Crear Imagen
         if (this.closeImageBuildBtn) {
             this.closeImageBuildBtn.addEventListener('click', () => this.closeBuildImageModal());
@@ -1355,8 +1446,35 @@ class TerminalApp {
             return `
             <div class="vm-card" id="vm-card-${this.escapeAttr(vm.name)}">
                 <div class="vm-card-header">
-                    <span class="vm-name">${this.escapeHTML(vm.name)}</span>
-                    <span class="vm-os">${this.escapeHTML(templateLabel)}</span>
+                    <div class="vm-title-group" style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+                        <span class="vm-name">${this.escapeHTML(vm.name)}</span>
+                        <span class="vm-os">${this.escapeHTML(templateLabel)}</span>
+                    </div>
+                    <div class="card-dropdown">
+                        <button type="button" class="btn-dots" title="Más opciones" onclick="event.stopPropagation(); window.terminalApp.toggleVmMenu(this)">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="1.5"></circle>
+                                <circle cx="19" cy="12" r="1.5"></circle>
+                                <circle cx="5" cy="12" r="1.5"></circle>
+                            </svg>
+                        </button>
+                        <div class="card-dropdown-menu">
+                            <button type="button" class="dropdown-item" onclick="window.terminalApp.viewVirtualMachine('${this.escapeAttr(vm.name)}')">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                                <span>Detalles</span>
+                            </button>
+                            ${isRunning ? `
+                            <button type="button" class="dropdown-item" onclick="window.terminalApp.forcePoweroffVM('${this.escapeAttr(vm.name)}', this)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+                                <span>Forzar apagado</span>
+                            </button>` : ''}
+                            <div class="dropdown-divider"></div>
+                            <button type="button" class="dropdown-item danger" onclick="window.terminalApp.openDeleteVMModal('${this.escapeAttr(vm.name)}')">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                <span>Eliminar</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="vm-card-details">
                     <span><strong>CPU:</strong> ${vm.cores || 2} Cores</span>
@@ -1370,68 +1488,27 @@ class TerminalApp {
                     <span>Procesando...</span>
                 </div>
                 <div class="vm-card-actions">
-                    <button class="btn btn-secondary view-vm" data-id="${this.escapeAttr(vm.name)}">Ver</button>
-                    ${isStopped ? `<button class="btn btn-success start-vm" data-id="${this.escapeAttr(vm.name)}" title="Iniciar máquina virtual">
-                        <span class="btn-spinner hidden" aria-hidden="true"></span>
-                        <span class="btn-text">Iniciar</span>
-                    </button>` : ''}
                     ${isRunning ? `
-                    <button class="btn btn-primary terminal-vm" data-id="${this.escapeAttr(vm.name)}" title="Abrir terminal SSH interactivo a esta VM">
-                        Terminal
+                    <button type="button" class="btn btn-primary terminal-vm" data-id="${this.escapeAttr(vm.name)}" title="Abrir terminal SSH interactivo a esta VM" onclick="window.terminalApp.connectTerminalToVM('${this.escapeAttr(vm.name)}')">
+                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                        <span>Terminal</span>
                     </button>
-                    <button class="btn btn-warning stop-vm" data-id="${this.escapeAttr(vm.name)}" title="Apagado limpio ACPI">
+                    <button type="button" class="btn btn-stop-vm stop-vm" data-id="${this.escapeAttr(vm.name)}" title="Apagado limpio ACPI" onclick="window.terminalApp.stopVM('${this.escapeAttr(vm.name)}', this)">
                         <span class="btn-spinner hidden" aria-hidden="true"></span>
                         <span class="btn-text">Apagar</span>
-                    </button>
-                    <button class="btn btn-danger-outline poweroff-vm" data-id="${this.escapeAttr(vm.name)}" title="Apagado forzado inmediato">
-                        Forzar apagado
-                    </button>` : ''}
-                    <button class="btn btn-danger delete-vm" data-id="${this.escapeAttr(vm.name)}">Eliminar</button>
+                    </button>` : `
+                    <button type="button" class="btn btn-success start-vm" data-id="${this.escapeAttr(vm.name)}" title="Iniciar máquina virtual" onclick="window.terminalApp.startVM('${this.escapeAttr(vm.name)}', this)">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Iniciar</span>
+                    </button>`}
                 </div>
             </div>
         `;
         }).join('');
-
-        this.vmListEl.querySelectorAll('.view-vm').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const id = btn.dataset.id;
-                this.viewVirtualMachine(id);
-            });
-        });
-
-        this.vmListEl.querySelectorAll('.start-vm').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                this.startVM(btn.dataset.id, btn);
-            });
-        });
-
-        this.vmListEl.querySelectorAll('.terminal-vm').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                this.connectTerminalToVM(btn.dataset.id);
-            });
-        });
-
-        this.vmListEl.querySelectorAll('.stop-vm').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                this.stopVM(btn.dataset.id, btn);
-            });
-        });
-
-        this.vmListEl.querySelectorAll('.poweroff-vm').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                this.forcePoweroffVM(btn.dataset.id, btn);
-            });
-        });
-
-        this.vmListEl.querySelectorAll('.delete-vm').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const id = btn.dataset.id;
-                this.openDeleteVMModal(id);
-            });
-        });
     }
 
     async viewVirtualMachine(id) {
+        this.closeCardDropdowns();
         if (!this.vmDetailsModal || !this.vmDetailsContent) return;
         this.vmDetailsContent.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:16px"><span class="btn-spinner"></span> Cargando detalles...</div>`;
         this.vmDetailsModal.classList.remove('hidden');
@@ -1594,6 +1671,7 @@ class TerminalApp {
     }
 
     openDeleteVMModal(name) {
+        this.closeCardDropdowns();
         this.pendingDeleteVmName = name;
         if (this.deleteVmNameEl) {
             this.deleteVmNameEl.textContent = name;
@@ -1689,6 +1767,7 @@ class TerminalApp {
     // Acciones de Inicio, Apagado y Terminal de Máquinas Virtuales
     // =========================================================================
     async startVM(name, btn) {
+        this.closeCardDropdowns();
         const spinner = btn ? btn.querySelector('.btn-spinner') : null;
         const text = btn ? btn.querySelector('.btn-text') : null;
 
@@ -1715,6 +1794,7 @@ class TerminalApp {
     }
 
     async stopVM(name, btn) {
+        this.closeCardDropdowns();
         const spinner = btn ? btn.querySelector('.btn-spinner') : null;
         const text = btn ? btn.querySelector('.btn-text') : null;
 
@@ -1741,6 +1821,7 @@ class TerminalApp {
     }
 
     async forcePoweroffVM(name, btn) {
+        this.closeCardDropdowns();
         if (!confirm(`¿Estás seguro de forzar el apagado inmediato de la máquina virtual '${name}'?`)) {
             return;
         }
@@ -3283,7 +3364,7 @@ class TerminalApp {
                                     ${
                                         isRunning
                                             ? `
-                                    <button type="button" class="dropdown-item" onclick="window.terminalApp.restartContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
+                                    <button type="button" class="dropdown-item" onclick="window.terminalApp.restartContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', this)">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                                         Reiniciar
                                     </button>
@@ -3315,12 +3396,12 @@ class TerminalApp {
                             <button type="button" class="btn btn-secondary btn-sm" title="Consola interactiva" onclick="window.terminalApp.connectContainerTerminal('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.name || c.id)}')">
                                 Consola
                             </button>
-                            <button type="button" class="btn btn-secondary btn-sm" title="Detener contenedor" onclick="window.terminalApp.stopContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
+                            <button type="button" class="btn btn-secondary btn-sm" title="Detener contenedor" onclick="window.terminalApp.stopContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', this)">
                                 Detener
                             </button>
                         `
                                 : `
-                            <button type="button" class="btn btn-primary btn-sm" title="Iniciar contenedor" onclick="window.terminalApp.startContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}')">
+                            <button type="button" class="btn btn-primary btn-sm" title="Iniciar contenedor" onclick="window.terminalApp.startContainer('${this.escapeAttr(c.vmName)}', '${this.escapeAttr(c.id)}', this)">
                                 Iniciar
                             </button>
                         `
@@ -3336,16 +3417,28 @@ class TerminalApp {
         const menu = btn.nextElementSibling;
         if (!menu) return;
         const isShown = menu.classList.contains('show');
+        this.closeCardDropdowns();
+        if (!isShown) {
+            menu.classList.add('show');
+            btn.classList.add('active');
+        }
+    }
+
+    toggleVmMenu(btn) {
+        this.toggleContainerMenu(btn);
+    }
+
+    toggleImageMenu(btn) {
+        this.toggleContainerMenu(btn);
+    }
+
+    closeCardDropdowns() {
         document.querySelectorAll('.card-dropdown-menu.show').forEach((m) => {
             m.classList.remove('show');
             if (m.previousElementSibling) {
                 m.previousElementSibling.classList.remove('active');
             }
         });
-        if (!isShown) {
-            menu.classList.add('show');
-            btn.classList.add('active');
-        }
     }
 
     connectContainerTerminal(vmName, containerIdOrName, showLogs = false) {
@@ -3396,51 +3489,119 @@ class TerminalApp {
         this.ws.reconnectWith(params);
     }
 
-    async startContainer(vmName, containerId) {
+    async startContainer(vmName, containerId, btnEl) {
+        if (btnEl) {
+            this.setButtonLoading(btnEl, true, 'Cargando...');
+            const card = btnEl.closest('.container-card');
+            if (card) {
+                card.querySelectorAll('button').forEach((b) => (b.disabled = true));
+            }
+        }
         try {
             const res = await fetch(`/api/containers/${encodeURIComponent(vmName)}/${encodeURIComponent(containerId)}/start`, {
                 method: 'POST',
             });
             if (res.ok) {
-                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+                await this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
             } else {
                 const text = await res.text();
                 alert(`Error iniciando contenedor: ${this.parseApiError(text)}`);
+                if (btnEl) {
+                    this.setButtonLoading(btnEl, false);
+                    const card = btnEl.closest('.container-card');
+                    if (card) {
+                        card.querySelectorAll('button').forEach((b) => (b.disabled = false));
+                    }
+                }
             }
         } catch (e) {
             alert(`Fallo de conexión al iniciar contenedor: ${e.message}`);
+            if (btnEl) {
+                this.setButtonLoading(btnEl, false);
+                const card = btnEl.closest('.container-card');
+                if (card) {
+                    card.querySelectorAll('button').forEach((b) => (b.disabled = false));
+                }
+            }
         }
     }
 
-    async stopContainer(vmName, containerId) {
+    async stopContainer(vmName, containerId, btnEl) {
+        if (btnEl) {
+            this.setButtonLoading(btnEl, true, 'Cargando...');
+            const card = btnEl.closest('.container-card');
+            if (card) {
+                card.querySelectorAll('button').forEach((b) => (b.disabled = true));
+            }
+        }
         try {
             const res = await fetch(`/api/containers/${encodeURIComponent(vmName)}/${encodeURIComponent(containerId)}/stop`, {
                 method: 'POST',
             });
             if (res.ok) {
-                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+                await this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
             } else {
                 const text = await res.text();
                 alert(`Error deteniendo contenedor: ${this.parseApiError(text)}`);
+                if (btnEl) {
+                    this.setButtonLoading(btnEl, false);
+                    const card = btnEl.closest('.container-card');
+                    if (card) {
+                        card.querySelectorAll('button').forEach((b) => (b.disabled = false));
+                    }
+                }
             }
         } catch (e) {
             alert(`Fallo de conexión al detener contenedor: ${e.message}`);
+            if (btnEl) {
+                this.setButtonLoading(btnEl, false);
+                const card = btnEl.closest('.container-card');
+                if (card) {
+                    card.querySelectorAll('button').forEach((b) => (b.disabled = false));
+                }
+            }
         }
     }
 
-    async restartContainer(vmName, containerId) {
+    async restartContainer(vmName, containerId, btnEl) {
+        if (btnEl) {
+            this.setButtonLoading(btnEl, true, 'Cargando...');
+            const card = btnEl.closest('.container-card');
+            if (card) {
+                card.querySelectorAll('button').forEach((b) => (b.disabled = true));
+                const pill = card.querySelector('.container-state-pill');
+                if (pill) {
+                    pill.innerHTML = `<span class="btn-spinner" aria-hidden="true" style="width:10px; height:10px; margin-right:4px; vertical-align:-1px;"></span>Cargando...`;
+                }
+            }
+        }
         try {
             const res = await fetch(`/api/containers/${encodeURIComponent(vmName)}/${encodeURIComponent(containerId)}/restart`, {
                 method: 'POST',
             });
             if (res.ok) {
-                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+                this.closeCardDropdowns();
+                await this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
             } else {
                 const text = await res.text();
                 alert(`Error reiniciando contenedor: ${this.parseApiError(text)}`);
+                if (btnEl) {
+                    this.setButtonLoading(btnEl, false);
+                    const card = btnEl.closest('.container-card');
+                    if (card) {
+                        card.querySelectorAll('button').forEach((b) => (b.disabled = false));
+                    }
+                }
             }
         } catch (e) {
             alert(`Fallo de conexión al reiniciar contenedor: ${e.message}`);
+            if (btnEl) {
+                this.setButtonLoading(btnEl, false);
+                const card = btnEl.closest('.container-card');
+                if (card) {
+                    card.querySelectorAll('button').forEach((b) => (b.disabled = false));
+                }
+            }
         }
     }
 
@@ -3773,6 +3934,36 @@ class TerminalApp {
         `;
     }
 
+    async ensureDockerHubUsernameLoaded() {
+        if (this.dockerHubUsername) return this.dockerHubUsername;
+        try {
+            const res = await fetch('/api/dockerhub/credentials');
+            if (res.ok) {
+                const creds = await res.json();
+                if (creds && creds.username) {
+                    this.dockerHubUsername = creds.username.trim();
+                }
+            }
+        } catch (_) {}
+        return this.dockerHubUsername;
+    }
+
+    isDockerHubImage(repo) {
+        if (!repo || repo === '<none>') return false;
+        const lower = repo.toLowerCase().trim();
+        if (lower.startsWith('docker.io/') || lower.startsWith('index.docker.io/')) {
+            return true;
+        }
+        if (this.dockerHubUsername && lower.startsWith((this.dockerHubUsername + '/').toLowerCase())) {
+            return true;
+        }
+        const slashParts = lower.split('/');
+        if (slashParts.length === 2 && !slashParts[0].includes('.') && !slashParts[0].includes(':')) {
+            return true;
+        }
+        return false;
+    }
+
     // =========================================================================
     // Gestión de Imágenes Docker (Listado, Creación, Compilación, Eliminación)
     // =========================================================================
@@ -3795,6 +3986,7 @@ class TerminalApp {
                 throw new Error(text || `Error ${res.status}`);
             }
             const images = await res.json();
+            await this.ensureDockerHubUsernameLoaded();
             this.images = Array.isArray(images) ? images : [];
             this.renderImages(this.images);
         } catch (e) {
@@ -3810,7 +4002,8 @@ class TerminalApp {
 
     renderImages(images) {
         if (!this.imagesListEl) return;
-        if (!Array.isArray(images) || images.length === 0) {
+        const visibleImages = Array.isArray(images) ? images.filter((img) => !this.isDockerHubImage(img.repository)) : [];
+        if (visibleImages.length === 0) {
             this.imagesListEl.innerHTML = `
                 <div class="empty-vm-list">
                     <p>No hay imágenes Docker disponibles.</p>
@@ -3820,7 +4013,7 @@ class TerminalApp {
             return;
         }
 
-        this.imagesListEl.innerHTML = images
+        this.imagesListEl.innerHTML = visibleImages
             .map((img) => {
                 const shortId = img.id ? (img.id.startsWith('sha256:') ? img.id.substring(7, 19) : img.id.substring(0, 12)) : 'n/a';
                 const tag = img.tag || '<none>';
@@ -3846,7 +4039,36 @@ class TerminalApp {
                                     ${vmName ? `<span class="vm-source-tag">${this.escapeHTML(vmName)}</span>` : ''}
                                 </div>
                             </div>
-                            <div class="image-size-badge">${this.escapeHTML(size)}</div>
+                            <div class="image-head-right">
+                                <div class="image-size-badge">${this.escapeHTML(size)}</div>
+                                <div class="card-dropdown">
+                                    <button type="button" class="btn-dots" title="Más opciones" onclick="event.stopPropagation(); window.terminalApp.toggleImageMenu(this)">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <circle cx="12" cy="12" r="1.5"></circle>
+                                            <circle cx="19" cy="12" r="1.5"></circle>
+                                            <circle cx="5" cy="12" r="1.5"></circle>
+                                        </svg>
+                                    </button>
+                                    <div class="card-dropdown-menu">
+                                        <button type="button" class="dropdown-item" onclick="window.terminalApp.openPublishDockerHubFlow('${this.escapeAttr(vmName)}', '${this.escapeAttr(img.id)}', '${this.escapeAttr(repo)}', '${this.escapeAttr(tag)}')">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                                <polyline points="17 8 12 3 7 8"></polyline>
+                                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                                            </svg>
+                                            <span>Subir a Docker Hub</span>
+                                        </button>
+                                        <button type="button" class="dropdown-item" onclick="window.terminalApp.exportImageToTar('${this.escapeAttr(vmName)}', '${this.escapeAttr(img.id)}', '${this.escapeAttr(repo)}', '${this.escapeAttr(tag)}', this)">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                                <polyline points="7 10 12 15 17 10"></polyline>
+                                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                                            </svg>
+                                            <span class="btn-text">Exportar TAR</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="image-info-grid">
@@ -3866,14 +4088,6 @@ class TerminalApp {
                                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
                                 </svg>
                                 <span>Ejecutar</span>
-                            </button>
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="window.terminalApp.exportImageToTar('${this.escapeAttr(vmName)}', '${this.escapeAttr(img.id)}', '${this.escapeAttr(repo)}', '${this.escapeAttr(tag)}', this)" title="Exportar imagen a archivo .tar dentro de la VM">
-                                <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                    <polyline points="7 10 12 15 17 10"></polyline>
-                                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                                </svg>
-                                <span class="btn-text">Exportar TAR</span>
                             </button>
                             <button type="button" class="btn btn-danger btn-sm" onclick="window.terminalApp.openDeleteImageModal('${this.escapeAttr(vmName)}', '${this.escapeAttr(img.id)}', '${this.escapeAttr(repo)}', '${this.escapeAttr(tag)}')" title="Eliminar imagen">
                                 <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none">
@@ -3953,6 +4167,7 @@ class TerminalApp {
     }
 
     async exportImageToTar(vmName, id, repo, tag, btnEl) {
+        this.closeCardDropdowns();
         const ref = (repo && repo !== '<none>')
             ? `${repo}:${(tag && tag !== '<none>') ? tag : 'latest'}`
             : id;
@@ -4171,6 +4386,301 @@ class TerminalApp {
         }
     }
 
+    // =========================================================================
+    // Publicación de Imágenes en Docker Hub (Credenciales PAT + Tag + Push)
+    // =========================================================================
+    async openPublishDockerHubFlow(vmName, id, repo, tag) {
+        this.closeCardDropdowns();
+        const cleanRepo = (repo && repo !== '<none>') ? repo : '';
+        const cleanTag = (tag && tag !== '<none>') ? tag : 'latest';
+        const sourceImage = cleanRepo ? `${cleanRepo}:${cleanTag}` : id;
+
+        if (!vmName || !sourceImage) {
+            this.showImagesExportFeedback('Faltan datos de la máquina virtual o de la imagen para publicar en Docker Hub.', 'error');
+            return;
+        }
+
+        let suggestedRepo = cleanRepo;
+        if (suggestedRepo.includes('/')) {
+            const parts = suggestedRepo.split('/');
+            suggestedRepo = parts[parts.length - 1];
+        }
+        if (!suggestedRepo) {
+            suggestedRepo = 'mi-imagen';
+        }
+
+        this.pendingPublishImage = {
+            vmName,
+            id,
+            repo: cleanRepo,
+            tag: cleanTag,
+            sourceImage,
+            suggestedRepo
+        };
+
+        try {
+            const res = await fetch('/api/dockerhub/credentials');
+            if (res.ok) {
+                const status = await res.json();
+                if (status && status.configured && status.username) {
+                    this.dockerHubUsername = status.username;
+                    this.openDockerHubPublishModal(this.pendingPublishImage, status.username);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn('Error consultando estado de credenciales de Docker Hub:', e);
+        }
+
+        this.openDockerHubCredsModal(true);
+    }
+
+    async openDockerHubCredsModal(continueToPublish = false) {
+        if (!this.dockerHubCredsModal) return;
+        this.continueToPublishAfterCreds = Boolean(continueToPublish);
+        this.hideDockerHubCredsFeedback();
+
+        if (this.dockerHubTokenInput) {
+            this.dockerHubTokenInput.value = '';
+        }
+
+        try {
+            const res = await fetch('/api/dockerhub/credentials');
+            if (res.ok) {
+                const status = await res.json();
+                if (status && status.username && this.dockerHubUsernameInput) {
+                    this.dockerHubUsernameInput.value = status.username;
+                    this.dockerHubUsername = status.username;
+                }
+            }
+        } catch (_) {}
+
+        this.dockerHubCredsModal.classList.remove('hidden');
+        if (this.dockerHubUsernameInput && !this.dockerHubUsernameInput.value) {
+            this.dockerHubUsernameInput.focus();
+        } else if (this.dockerHubTokenInput) {
+            this.dockerHubTokenInput.focus();
+        }
+    }
+
+    closeDockerHubCredsModal() {
+        if (this.dockerHubCredsModal) {
+            this.dockerHubCredsModal.classList.add('hidden');
+        }
+        if (this.dockerHubTokenInput) {
+            this.dockerHubTokenInput.value = '';
+        }
+        this.hideDockerHubCredsFeedback();
+    }
+
+    showDockerHubCredsFeedback(msg, type = 'error') {
+        if (!this.dockerHubCredsFeedback) return;
+        this.dockerHubCredsFeedback.textContent = msg;
+        this.dockerHubCredsFeedback.className = `modal-feedback ${type}`;
+        this.dockerHubCredsFeedback.classList.remove('hidden');
+    }
+
+    hideDockerHubCredsFeedback() {
+        if (!this.dockerHubCredsFeedback) return;
+        this.dockerHubCredsFeedback.classList.add('hidden');
+        this.dockerHubCredsFeedback.textContent = '';
+    }
+
+    async saveDockerHubCredentials() {
+        const username = this.dockerHubUsernameInput ? this.dockerHubUsernameInput.value.trim() : '';
+        const token = this.dockerHubTokenInput ? this.dockerHubTokenInput.value.trim() : '';
+
+        if (!username) {
+            this.showDockerHubCredsFeedback('Debes ingresar tu usuario (Docker ID) de Docker Hub.', 'error');
+            return;
+        }
+        if (!token) {
+            this.showDockerHubCredsFeedback('Debes ingresar tu Personal Access Token (PAT) de Docker Hub.', 'error');
+            return;
+        }
+
+        this.setButtonLoading(this.saveDockerHubCredsBtn, true);
+        this.hideDockerHubCredsFeedback();
+
+        try {
+            const res = await fetch('/api/dockerhub/credentials', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username,
+                    access_token: token
+                })
+            });
+
+            const text = await res.text();
+            let data = {};
+            try {
+                data = JSON.parse(text);
+            } catch (_) {
+                data = { error: text };
+            }
+
+            if (!res.ok) {
+                throw new Error(data.error || this.parseApiError(text) || `Error ${res.status}`);
+            }
+
+            this.dockerHubUsername = data.username || username;
+            if (this.dockerHubTokenInput) {
+                this.dockerHubTokenInput.value = '';
+            }
+
+            const shouldContinue = this.continueToPublishAfterCreds && this.pendingPublishImage;
+            this.closeDockerHubCredsModal();
+
+            if (shouldContinue) {
+                this.openDockerHubPublishModal(this.pendingPublishImage, this.dockerHubUsername);
+            } else {
+                this.showImagesExportFeedback(`Credenciales de Docker Hub configuradas para '${this.dockerHubUsername}'.`, 'success');
+            }
+        } catch (e) {
+            this.showDockerHubCredsFeedback(e.message, 'error');
+        } finally {
+            this.setButtonLoading(this.saveDockerHubCredsBtn, false);
+        }
+    }
+
+    openDockerHubPublishModal(imageCtx, username) {
+        if (!this.dockerHubPublishModal || !imageCtx) return;
+        this.pendingPublishImage = imageCtx;
+        this.dockerHubUsername = username || this.dockerHubUsername || '';
+
+        this.hideDockerHubPublishFeedback();
+        if (this.dockerHubPublishLogContainer) {
+            this.dockerHubPublishLogContainer.classList.add('hidden');
+        }
+        if (this.dockerHubPublishLogOutput) {
+            this.dockerHubPublishLogOutput.textContent = '';
+        }
+
+        if (this.publishVmDisplay) {
+            this.publishVmDisplay.textContent = imageCtx.vmName || '-';
+        }
+        if (this.publishSourceImageDisplay) {
+            this.publishSourceImageDisplay.textContent = imageCtx.sourceImage || '-';
+        }
+        if (this.publishUsernameDisplay) {
+            this.publishUsernameDisplay.textContent = this.dockerHubUsername || '-';
+        }
+        if (this.publishRepoInput) {
+            this.publishRepoInput.value = imageCtx.suggestedRepo || 'mi-imagen';
+        }
+        if (this.publishTagInput) {
+            this.publishTagInput.value = imageCtx.tag || 'latest';
+        }
+
+        this.updateDockerHubTargetPreview();
+        this.dockerHubPublishModal.classList.remove('hidden');
+        if (this.publishRepoInput) {
+            this.publishRepoInput.focus();
+        }
+    }
+
+    closeDockerHubPublishModal(keepPending = false) {
+        if (this.dockerHubPublishModal) {
+            this.dockerHubPublishModal.classList.add('hidden');
+        }
+        this.hideDockerHubPublishFeedback();
+        if (this.dockerHubPublishLogContainer) {
+            this.dockerHubPublishLogContainer.classList.add('hidden');
+        }
+        if (!keepPending) {
+            this.pendingPublishImage = null;
+        }
+    }
+
+    updateDockerHubTargetPreview() {
+        if (!this.publishTargetPreview) return;
+        const user = this.dockerHubUsername || 'usuario';
+        let repo = this.publishRepoInput ? this.publishRepoInput.value.trim() : '';
+        if (repo.toLowerCase().startsWith((user + '/').toLowerCase())) {
+            repo = repo.substring(user.length + 1).trim();
+        }
+        if (!repo) repo = 'repositorio';
+        const tag = (this.publishTagInput ? this.publishTagInput.value.trim() : '') || 'latest';
+        this.publishTargetPreview.textContent = `${user}/${repo}:${tag}`;
+    }
+
+    showDockerHubPublishFeedback(msg, type = 'error') {
+        if (!this.dockerHubPublishFeedback) return;
+        this.dockerHubPublishFeedback.textContent = msg;
+        this.dockerHubPublishFeedback.className = `modal-feedback ${type}`;
+        this.dockerHubPublishFeedback.classList.remove('hidden');
+    }
+
+    hideDockerHubPublishFeedback() {
+        if (!this.dockerHubPublishFeedback) return;
+        this.dockerHubPublishFeedback.classList.add('hidden');
+        this.dockerHubPublishFeedback.textContent = '';
+    }
+
+    async submitDockerHubPublish() {
+        if (!this.pendingPublishImage) return;
+        const { vmName, sourceImage } = this.pendingPublishImage;
+        const repository = this.publishRepoInput ? this.publishRepoInput.value.trim() : '';
+        const tag = (this.publishTagInput ? this.publishTagInput.value.trim() : '') || 'latest';
+
+        if (!repository) {
+            this.showDockerHubPublishFeedback('Debes indicar el nombre del repositorio de destino.', 'error');
+            return;
+        }
+
+        this.setButtonLoading(this.submitDockerHubPublishBtn, true);
+        this.hideDockerHubPublishFeedback();
+        if (this.dockerHubPublishLogContainer) {
+            this.dockerHubPublishLogContainer.classList.add('hidden');
+        }
+
+        try {
+            const res = await fetch('/api/images/push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    vmName,
+                    sourceImage,
+                    repository,
+                    tag
+                })
+            });
+
+            const text = await res.text();
+            let data = {};
+            try {
+                data = JSON.parse(text);
+            } catch (_) {
+                data = { error: text };
+            }
+
+            if (!res.ok || !data.success) {
+                if (data.output && this.dockerHubPublishLogOutput && this.dockerHubPublishLogContainer) {
+                    this.dockerHubPublishLogOutput.textContent = data.output;
+                    this.dockerHubPublishLogContainer.classList.remove('hidden');
+                }
+                const errMsg = data.error || this.parseApiError(text) || `Error ${res.status}`;
+                this.showDockerHubPublishFeedback(errMsg, 'error');
+                return;
+            }
+
+            const targetRef = data.targetImage || `${this.dockerHubUsername}/${repository}:${tag}`;
+            this.closeDockerHubPublishModal();
+            this.showImagesExportFeedback(
+                `Imagen publicada exitosamente en Docker Hub: ${targetRef} (desde VM '${vmName}')`,
+                'success'
+            );
+            this.appendInfoLine(`[Docker Hub] Imagen '${sourceImage}' publicada como '${targetRef}' desde VM '${vmName}'`);
+            this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+        } catch (e) {
+            this.showDockerHubPublishFeedback(`Error de red al publicar la imagen: ${e.message}`, 'error');
+        } finally {
+            this.setButtonLoading(this.submitDockerHubPublishBtn, false);
+        }
+    }
+
+
     async runImage(vmName, repo, tag) {
         const fullImage = (tag && tag !== '<none>') ? `${repo}:${tag}` : repo;
         await this.openContainerWizard(vmName);
@@ -4388,15 +4898,18 @@ class TerminalApp {
             .replace(/'/g, '&#039;');
     }
 
-    setButtonLoading(btn, isLoading) {
+    setButtonLoading(btn, isLoading, loadingText = 'Cargando...') {
         if (!btn) return;
-        btn.disabled = isLoading;
+        btn.disabled = Boolean(isLoading);
         if (isLoading) {
-            btn.dataset.originalText = btn.innerHTML;
-            btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Cargando...`;
+            if (!btn.dataset.originalText) {
+                btn.dataset.originalText = btn.innerHTML;
+            }
+            btn.innerHTML = `<span class="btn-spinner" aria-hidden="true" style="margin-right: 5px; vertical-align: -2px;"></span><span>${this.escapeHTML(loadingText)}</span>`;
         } else {
             if (btn.dataset.originalText) {
                 btn.innerHTML = btn.dataset.originalText;
+                delete btn.dataset.originalText;
             }
         }
     }
@@ -4634,7 +5147,9 @@ class TerminalApp {
             const res = await fetch(`/api/images?vm=${encodeURIComponent(vm)}`);
             if (!res.ok) throw new Error('Error al listar imágenes');
             const images = await res.json();
-            if (!Array.isArray(images) || images.length === 0) {
+            const allImages = Array.isArray(images) ? images : [];
+            const visibleImages = allImages.filter((img) => !this.isDockerHubImage(img.repository));
+            if (visibleImages.length === 0) {
                 this.wizImagesGrid.innerHTML = `
                     <div class="empty-vm-list">
                         <p>No se encontraron imágenes en esta VM.</p>
@@ -4644,7 +5159,7 @@ class TerminalApp {
                 return;
             }
 
-            this.wizImagesGrid.innerHTML = images
+            this.wizImagesGrid.innerHTML = visibleImages
                 .map((img) => {
                     const tag = img.tag || 'latest';
                     const fullRef = (img.repository && img.repository !== '<none>') ? `${img.repository}:${tag}` : img.id;

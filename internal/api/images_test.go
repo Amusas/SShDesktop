@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -279,3 +280,90 @@ func TestImageExportAPIEndpoints(t *testing.T) {
 		t.Fatalf("se esperaba status 200 al eliminar TAR, obtenido: %d, body: %s", rrDelTar.Code, rrDelTar.Body.String())
 	}
 }
+
+func TestDockerHubAPIEndpoints(t *testing.T) {
+	cfg := &config.Config{
+		SSHHost: "127.0.0.1",
+		SSHPort: 22,
+		SSHUser: "testuser",
+		SSHRoot: t.TempDir(),
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	mockRunner := func(ctx context.Context, vmName string, command string) (string, error) {
+		if strings.Contains(command, "sudo docker tag") {
+			return "", nil
+		}
+		if strings.Contains(command, "sudo docker push") {
+			return "v1: digest: sha256:abcdef size: 1024", nil
+		}
+		return "", nil
+	}
+
+	dockerSvc := docker.NewService(mockRunner, log)
+	dockerSvc.SetCredentialsPath(filepath.Join(t.TempDir(), "dockerhub_credentials.json"))
+	dockerSvc.SetStdinRunner(func(ctx context.Context, vmName string, command string, stdin string) (string, error) {
+		return "Login Succeeded\n", nil
+	})
+
+	h := &Handler{
+		cfg:       cfg,
+		log:       log,
+		vmSvc:     vm.NewService(cfg, log),
+		tplSvc:    template.NewService(cfg, log),
+		dockerSvc: dockerSvc,
+	}
+
+	// 1. GET /api/dockerhub/credentials (no configuradas aún)
+	reqGet1 := httptest.NewRequest(http.MethodGet, "/api/dockerhub/credentials", nil)
+	rrGet1 := httptest.NewRecorder()
+	h.ServeHTTP(rrGet1, reqGet1)
+	if rrGet1.Code != http.StatusOK {
+		t.Fatalf("status inesperado en GET /api/dockerhub/credentials: %d", rrGet1.Code)
+	}
+	var st1 docker.DockerHubCredentialsStatus
+	_ = json.NewDecoder(rrGet1.Body).Decode(&st1)
+	if st1.Configured {
+		t.Errorf("no se esperaba Configured=true inicialmente")
+	}
+
+	// 2. POST /api/dockerhub/credentials (guardar PAT y comprobar que nunca se devuelve el token en la respuesta)
+	secretToken := "dckr_pat_SECRET_NEVER_EXPOSE"
+	saveBody, _ := json.Marshal(map[string]string{
+		"username":     "mi_usuario",
+		"access_token": secretToken,
+	})
+	reqSave := httptest.NewRequest(http.MethodPost, "/api/dockerhub/credentials", bytes.NewReader(saveBody))
+	reqSave.Header.Set("Content-Type", "application/json")
+	rrSave := httptest.NewRecorder()
+	h.ServeHTTP(rrSave, reqSave)
+	if rrSave.Code != http.StatusOK {
+		t.Fatalf("status inesperado guardando credenciales: %d, body: %s", rrSave.Code, rrSave.Body.String())
+	}
+	if strings.Contains(rrSave.Body.String(), secretToken) {
+		t.Fatalf("la respuesta de la API NUNCA debe exponer el access_token: %s", rrSave.Body.String())
+	}
+
+	// 3. POST /api/images/push
+	pushBody, _ := json.Marshal(docker.PushImageRequest{
+		VMName:      "test-vm",
+		SourceImage: "mi-api:1.0",
+		Repository:  "mi-api",
+		Tag:         "v1",
+	})
+	reqPush := httptest.NewRequest(http.MethodPost, "/api/images/push", bytes.NewReader(pushBody))
+	reqPush.Header.Set("Content-Type", "application/json")
+	rrPush := httptest.NewRecorder()
+	h.ServeHTTP(rrPush, reqPush)
+	if rrPush.Code != http.StatusOK {
+		t.Fatalf("se esperaba status 200 en push, obtenido: %d, body: %s", rrPush.Code, rrPush.Body.String())
+	}
+	var pushResp docker.PushImageResponse
+	if err := json.NewDecoder(rrPush.Body).Decode(&pushResp); err != nil {
+		t.Fatalf("error decodificando respuesta de push: %v", err)
+	}
+	if !pushResp.Success || pushResp.TargetImage != "mi_usuario/mi-api:v1" {
+		t.Errorf("respuesta de push inesperada: %+v", pushResp)
+	}
+}
+

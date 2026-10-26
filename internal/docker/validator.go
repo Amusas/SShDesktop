@@ -290,4 +290,32 @@ func ValidateTarFileName(fileName string) error {
 	return nil
 }
 
+var dockerHubUserRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,63}$`)
+var dockerHubRepoNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
+
+// ValidateDockerHubUsername valida que el usuario o Docker ID de Docker Hub sea seguro
+func ValidateDockerHubUsername(username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return fmt.Errorf("el usuario de Docker Hub no puede estar vacío")
+	}
+	if !dockerHubUserRegex.MatchString(username) || dangerousCharsRegex.MatchString(username) {
+		return fmt.Errorf("usuario de Docker Hub inválido: '%s' (solo letras, números, puntos, guiones y guiones bajos)", username)
+	}
+	return nil
+}
+
+// ValidateDockerHubRepoName valida que el nombre del repositorio de destino en Docker Hub sea seguro
+func ValidateDockerHubRepoName(repo string) error {
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		return fmt.Errorf("el nombre del repositorio de destino no puede estar vacío")
+	}
+	if !dockerHubRepoNameRegex.MatchString(repo) || dangerousCharsRegex.MatchString(repo) {
+		return fmt.Errorf("nombre de repositorio de destino inválido: '%s' (solo letras, números, puntos, guiones y guiones bajos)", repo)
+	}
+	return nil
+}
+
+
 
