@@ -562,6 +562,9 @@ sudo passwd -l "$BOOTSTRAP_USER" 2>/dev/null || true
 
 # Reiniciar servicio docker para aplicar grupos (si aplica)
 sudo systemctl restart docker 2>/dev/null || true
+
+# Limpiar contenedores residuales heredados de plantillas basadas en snapshots para que la VM inicie limpia
+sudo docker rm -f $(sudo docker ps -aq) 2>/dev/null || true
 `, targetUser, escapedPubKey, bootstrapUser)
 
 	session, err := guestClient.NewSession()

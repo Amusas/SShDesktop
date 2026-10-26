@@ -119,6 +119,7 @@ class TerminalApp {
         this.dockerSubnav = document.getElementById('docker-subnav');
         this.dockerSubnavBtns = Array.from(document.querySelectorAll('.docker-subnav-btn'));
         this.activeDockerSubnav = 'containers';
+        this.selectedDockerVm = '';
 
         // Elementos de Gestión de Imágenes Docker
         this.imagesListEl = document.getElementById('images-list');
@@ -736,12 +737,12 @@ class TerminalApp {
         }
         if (this.refreshContainersBtn) {
             this.refreshContainersBtn.addEventListener('click', () => {
-                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+                this.loadContainers(this.selectedDockerVm || '');
             });
         }
         if (this.containersVmFilter) {
             this.containersVmFilter.addEventListener('change', () => {
-                this.loadContainers(this.containersVmFilter.value);
+                this.handleDockerVmChange(this.containersVmFilter.value);
             });
         }
 
@@ -836,12 +837,12 @@ class TerminalApp {
 
         if (this.refreshVolumesBtn) {
             this.refreshVolumesBtn.addEventListener('click', () => {
-                this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
+                this.loadVolumes(this.selectedDockerVm || '');
             });
         }
         if (this.volumesVmFilter) {
             this.volumesVmFilter.addEventListener('change', () => {
-                this.loadVolumes(this.volumesVmFilter.value);
+                this.handleDockerVmChange(this.volumesVmFilter.value);
             });
         }
 
@@ -885,12 +886,12 @@ class TerminalApp {
         }
         if (this.refreshNetworksBtn) {
             this.refreshNetworksBtn.addEventListener('click', () => {
-                this.loadNetworks(this.networksVmFilter ? this.networksVmFilter.value : '');
+                this.loadNetworks(this.selectedDockerVm || '');
             });
         }
         if (this.networksVmFilter) {
             this.networksVmFilter.addEventListener('change', () => {
-                this.loadNetworks(this.networksVmFilter.value);
+                this.handleDockerVmChange(this.networksVmFilter.value);
             });
         }
 
@@ -975,12 +976,12 @@ class TerminalApp {
         }
         if (this.refreshImagesBtn) {
             this.refreshImagesBtn.addEventListener('click', () => {
-                this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+                this.loadImages(this.selectedDockerVm || '');
             });
         }
         if (this.imagesVmFilter) {
             this.imagesVmFilter.addEventListener('change', () => {
-                this.loadImages(this.imagesVmFilter.value);
+                this.handleDockerVmChange(this.imagesVmFilter.value);
             });
         }
 
@@ -1302,8 +1303,8 @@ class TerminalApp {
             this.loadISOs();
             this.loadVirtualMachines();
             this.loadKeys();
-            this.updateContainersVmFilter();
-            this.updateImagesVmFilter();
+            await this.updateAllDockerVmFilters();
+            await this.updateAllDockerVmFilters();
         }
     }
 
@@ -1343,7 +1344,7 @@ class TerminalApp {
         }
     }
 
-    switchDockerSubview(subview) {
+    async switchDockerSubview(subview) {
         this.activeDockerSubnav = subview;
         if (this.dockerSubnavBtns) {
             this.dockerSubnavBtns.forEach((b) => b.classList.toggle('active', b.dataset.subview === subview));
@@ -1364,17 +1365,17 @@ class TerminalApp {
         });
 
         if (subview === 'containers') {
-            this.updateContainersVmFilter();
-            this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+            await this.updateAllDockerVmFilters();
+            this.loadContainers(this.selectedDockerVm || '');
         } else if (subview === 'images') {
-            this.updateImagesVmFilter();
-            this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+            await this.updateAllDockerVmFilters();
+            this.loadImages(this.selectedDockerVm || '');
         } else if (subview === 'volumes') {
-            this.updateVolumesVmFilter();
-            this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
+            await this.updateAllDockerVmFilters();
+            this.loadVolumes(this.selectedDockerVm || '');
         } else if (subview === 'networks') {
-            this.updateNetworksVmFilter();
-            this.loadNetworks(this.networksVmFilter ? this.networksVmFilter.value : '');
+            await this.updateAllDockerVmFilters();
+            this.loadNetworks(this.selectedDockerVm || '');
         }
     }
 
@@ -2745,302 +2746,99 @@ class TerminalApp {
         }
     }
 
-    async updateContainersVmFilter() {
-        if (!this.containersVmFilter && !this.wizVmSelect) return;
+    handleDockerVmChange(vmName) {
+        this.selectedDockerVm = (vmName || '').trim();
+        if (this.containersVmFilter && this.containersVmFilter.value !== this.selectedDockerVm) {
+            this.containersVmFilter.value = this.selectedDockerVm;
+        }
+        if (this.imagesVmFilter && this.imagesVmFilter.value !== this.selectedDockerVm) {
+            this.imagesVmFilter.value = this.selectedDockerVm;
+        }
+        if (this.volumesVmFilter && this.volumesVmFilter.value !== this.selectedDockerVm) {
+            this.volumesVmFilter.value = this.selectedDockerVm;
+        }
+        if (this.networksVmFilter && this.networksVmFilter.value !== this.selectedDockerVm) {
+            this.networksVmFilter.value = this.selectedDockerVm;
+        }
+
+        if (this.activeDockerSubnav === 'containers') {
+            this.loadContainers(this.selectedDockerVm);
+        } else if (this.activeDockerSubnav === 'images') {
+            if (this.activeImagesSubtab === 'exports') {
+                this.loadExportedTars(this.selectedDockerVm);
+            } else {
+                this.loadImages(this.selectedDockerVm);
+            }
+        } else if (this.activeDockerSubnav === 'volumes') {
+            this.loadVolumes(this.selectedDockerVm);
+        } else if (this.activeDockerSubnav === 'networks') {
+            this.loadNetworks(this.selectedDockerVm);
+        }
+    }
+
+    async updateAllDockerVmFilters() {
         try {
             const res = await fetch('/api/vms');
-            if (res.ok) {
-                const vms = await res.json();
-                this.vms = vms;
+            if (!res.ok) return;
+            const vms = await res.json();
+            this.vms = vms;
 
-                if (this.containersVmFilter) {
-                    const currentVal = this.containersVmFilter.value;
-                    let opts = ``;
-                    vms.forEach((v) => {
-                        const isRunning = (v.state || '').toLowerCase() === 'running';
-                        const label = `${v.name} (${isRunning ? 'En ejecución' : 'Apagada'})`;
-                        opts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(label)}</option>`;
-                    });
-                    this.containersVmFilter.innerHTML = opts;
-                    if (currentVal && vms.some((v) => v.name === currentVal)) {
-                        this.containersVmFilter.value = currentVal;
-                    }
-                }
-
-                if (this.wizVmSelect) {
-                    let wOpts = `<option value="" disabled selected>Selecciona una máquina...</option>`;
-                    vms.forEach((v) => {
-                        wOpts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(v.name)}</option>`;
-                    });
-                    this.wizVmSelect.innerHTML = wOpts;
-                }
+            let opts = '<option value="">Todas las máquinas virtuales</option>';
+            if (Array.isArray(vms)) {
+                vms.forEach((v) => {
+                    const isRunning = (v.state || '').toLowerCase() === 'running';
+                    const label = `${v.name} (${isRunning ? 'En ejecución' : 'Apagada'})`;
+                    opts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(label)}</option>`;
+                });
             }
+
+            let targetVal = this.selectedDockerVm || '';
+            if (targetVal && Array.isArray(vms) && !vms.some((v) => v.name === targetVal)) {
+                targetVal = '';
+            }
+            this.selectedDockerVm = targetVal;
+
+            if (this.containersVmFilter) {
+                this.containersVmFilter.innerHTML = opts;
+                this.containersVmFilter.value = targetVal;
+            }
+            if (this.imagesVmFilter) {
+                this.imagesVmFilter.innerHTML = opts;
+                this.imagesVmFilter.value = targetVal;
+            }
+            if (this.volumesVmFilter) {
+                this.volumesVmFilter.innerHTML = opts;
+                this.volumesVmFilter.value = targetVal;
+            }
+            if (this.networksVmFilter) {
+                this.networksVmFilter.innerHTML = opts;
+                this.networksVmFilter.value = targetVal;
+            }
+
+            let wOpts = '<option value="" disabled selected>Selecciona una máquina...</option>';
+            if (Array.isArray(vms)) {
+                vms.forEach((v) => {
+                    wOpts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(v.name)}</option>`;
+                });
+            }
+            if (this.wizVmSelect) this.wizVmSelect.innerHTML = wOpts;
+            if (this.buildVmSelect) this.buildVmSelect.innerHTML = wOpts;
+            if (this.createVolumeVm) this.createVolumeVm.innerHTML = wOpts;
         } catch (e) {
-            console.warn('No se pudieron listar VMs para el filtro de contenedores:', e);
+            console.warn('No se pudieron listar VMs para filtros de Docker:', e);
         }
+    }
+
+    async updateContainersVmFilter() {
+        return this.updateAllDockerVmFilters();
     }
 
     async updateImagesVmFilter() {
-        if (!this.imagesVmFilter && !this.buildVmSelect) return;
-        try {
-            const res = await fetch('/api/vms');
-            if (res.ok) {
-                const vms = await res.json();
-                this.vms = vms;
-
-                if (this.imagesVmFilter) {
-                    const currentVal = this.imagesVmFilter.value;
-                    let opts = ``;
-                    vms.forEach((v) => {
-                        const isRunning = (v.state || '').toLowerCase() === 'running';
-                        const label = `${v.name} (${isRunning ? 'En ejecución' : 'Apagada'})`;
-                        opts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(label)}</option>`;
-                    });
-                    this.imagesVmFilter.innerHTML = opts;
-                    if (currentVal && vms.some((v) => v.name === currentVal)) {
-                        this.imagesVmFilter.value = currentVal;
-                    }
-                }
-
-                if (this.buildVmSelect) {
-                    const currentBuild = this.buildVmSelect.value;
-                    let bOpts = `<option value="" disabled selected>Selecciona una máquina...</option>`;
-                    vms.forEach((v) => {
-                        bOpts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(v.name)}</option>`;
-                    });
-                    this.buildVmSelect.innerHTML = bOpts;
-                    if (currentBuild && vms.some((v) => v.name === currentBuild)) {
-                        this.buildVmSelect.value = currentBuild;
-                    }
-                }
-            }
-        } catch (e) {
-            console.warn('No se pudieron listar VMs para el filtro de imágenes:', e);
-        }
+        return this.updateAllDockerVmFilters();
     }
 
     async updateVolumesVmFilter() {
-        if (!this.volumesVmFilter && !this.createVolumeVm) return;
-        try {
-            const res = await fetch('/api/vms');
-            if (res.ok) {
-                const vms = await res.json();
-                this.vms = vms;
-
-                if (this.volumesVmFilter) {
-                    const currentVal = this.volumesVmFilter.value;
-                    let opts = ``;
-                    vms.forEach((v) => {
-                        const isRunning = (v.state || '').toLowerCase() === 'running';
-                        const label = `${v.name} (${isRunning ? 'En ejecución' : 'Apagada'})`;
-                        opts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(label)}</option>`;
-                    });
-                    this.volumesVmFilter.innerHTML = opts;
-                    if (currentVal && vms.some((v) => v.name === currentVal)) {
-                        this.volumesVmFilter.value = currentVal;
-                    }
-                }
-
-                if (this.createVolumeVm) {
-                    const currentBuild = this.createVolumeVm.value;
-                    let bOpts = `<option value="" disabled selected>Selecciona una máquina...</option>`;
-                    vms.forEach((v) => {
-                        bOpts += `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(v.name)}</option>`;
-                    });
-                    this.createVolumeVm.innerHTML = bOpts;
-                    if (currentBuild && vms.some((v) => v.name === currentBuild)) {
-                        this.createVolumeVm.value = currentBuild;
-                    }
-                }
-            }
-        } catch (e) {
-            console.warn('No se pudieron listar VMs para el filtro de volúmenes:', e);
-        }
-    }
-
-    async loadVolumes(vmFilter) {
-        if (!this.volumesListEl) return;
-        this.volumesListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando volúmenes...</div>`;
-
-        const filter = (vmFilter || '').trim();
-        const url = filter ? `/api/volumes?vm=${encodeURIComponent(filter)}` : '/api/volumes';
-
-        try {
-            const res = await fetch(url);
-            if (!res.ok) throw new Error('Error al listar volúmenes');
-            let vols = await res.json();
-            if (!vols) vols = [];
-            this.volumes = vols;
-            this.renderVolumes();
-        } catch (e) {
-            console.error('loadVolumes error:', e);
-            this.volumesListEl.innerHTML = `<div class="empty-vm-list error">No se pudieron cargar los volúmenes.</div>`;
-        }
-    }
-
-    renderVolumes() {
-        if (!this.volumesListEl) return;
-        if (!this.volumes || this.volumes.length === 0) {
-            this.volumesListEl.innerHTML = `<div class="empty-vm-list">No hay volúmenes Docker disponibles.</div>`;
-            return;
-        }
-
-        let html = '';
-        this.volumes.forEach((vol) => {
-            const isUsed = vol.status === 'En uso';
-            const statusClass = isUsed ? 'state-running' : 'state-stopped';
-
-            html += `
-                <div class="vm-card">
-                    <div class="vm-card-header">
-                        <div class="vm-title-row">
-                            <h3 class="vm-name">${this.escapeHTML(vol.name)}</h3>
-                            <span class="vm-state-badge ${statusClass}">${this.escapeHTML(vol.status || 'Desconocido')}</span>
-                        </div>
-                        <div class="vm-state-actions">
-                            <button class="btn btn-danger btn-icon" onclick="window.terminalApp.promptDeleteVolume('${this.escapeAttr(vol.vmName)}', '${this.escapeAttr(vol.name)}')" title="Eliminar volumen">
-                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="vm-details-grid">
-                        <div class="vm-detail-item">
-                            <span class="vm-detail-label">Máquina Virtual</span>
-                            <span class="vm-detail-value"><span class="vm-source-tag">${this.escapeHTML(vol.vmName)}</span></span>
-                        </div>
-                        <div class="vm-detail-item">
-                            <span class="vm-detail-label">Driver</span>
-                            <span class="vm-detail-value">${this.escapeHTML(vol.driver)}</span>
-                        </div>
-                        <div class="vm-detail-item" style="grid-column: 1 / -1;">
-                            <span class="vm-detail-label">Punto de montaje</span>
-                            <span class="vm-detail-value" style="font-family: monospace; font-size: 0.85rem; word-break: break-all;">${this.escapeHTML(vol.mountpoint)}</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-        this.volumesListEl.innerHTML = html;
-    }
-
-    async fetchVmVolumes(vmName) {
-        if (!vmName) return [];
-        try {
-            const res = await fetch(`/api/volumes?vm=${encodeURIComponent(vmName)}`);
-            if (res.ok) {
-                const vols = await res.json();
-                return Array.isArray(vols) ? vols : [];
-            }
-        } catch (e) {
-            console.warn('Error obteniendo volúmenes de VM:', e);
-        }
-        return [];
-    }
-
-    async submitCreateVolume() {
-        const vmName = this.createVolumeVm.value;
-        const name = this.createVolumeName.value.trim();
-        const driver = 'local';
-
-        if (!vmName || !name) return;
-
-        this.submitCreateVolumeBtn.disabled = true;
-        this.submitCreateVolumeBtn.querySelector('.btn-spinner').classList.remove('hidden');
-        this.submitCreateVolumeBtn.querySelector('.btn-text').textContent = 'Creando...';
-        this.createVolumeFeedback.classList.add('hidden');
-
-        try {
-            const res = await fetch('/api/volumes', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ vmName, name, driver }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Error creando volumen');
-
-            this.createVolumeModal.classList.add('hidden');
-            this.createVolumeForm.reset();
-            this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
-
-            if (typeof this._onVolumeCreatedCallback === 'function') {
-                const cb = this._onVolumeCreatedCallback;
-                this._onVolumeCreatedCallback = null;
-                cb(name, vmName);
-            }
-        } catch (e) {
-            this.createVolumeFeedback.textContent = e.message;
-            this.createVolumeFeedback.className = 'modal-feedback error';
-            this.createVolumeFeedback.classList.remove('hidden');
-        } finally {
-            this.submitCreateVolumeBtn.disabled = false;
-            this.submitCreateVolumeBtn.querySelector('.btn-spinner').classList.add('hidden');
-            this.submitCreateVolumeBtn.querySelector('.btn-text').textContent = 'Crear volumen';
-        }
-    }
-
-    promptDeleteVolume(vmName, volumeName) {
-        this.pendingDeleteVolume = { vmName, volumeName };
-        this.deleteVolumeNameEl.textContent = volumeName;
-        this.deleteVolumeVmTag.textContent = vmName;
-        this.deleteVolumeFeedback.classList.add('hidden');
-        this.deleteVolumeModal.classList.remove('hidden');
-    }
-
-    closeDeleteVolumeModal() {
-        this.deleteVolumeModal.classList.add('hidden');
-        this.pendingDeleteVolume = null;
-    }
-
-    async executeDeleteVolume() {
-        if (!this.pendingDeleteVolume) return;
-        const { vmName, volumeName } = this.pendingDeleteVolume;
-
-        this.confirmDeleteVolumeBtn.disabled = true;
-        this.confirmDeleteVolumeBtn.querySelector('.btn-spinner').classList.remove('hidden');
-
-        try {
-            const res = await fetch(`/api/volumes/${encodeURIComponent(vmName)}/${encodeURIComponent(volumeName)}`, {
-                method: 'DELETE',
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Error al eliminar');
-
-            this.closeDeleteVolumeModal();
-            this.loadVolumes(this.volumesVmFilter ? this.volumesVmFilter.value : '');
-        } catch (e) {
-            this.deleteVolumeFeedback.textContent = e.message;
-            this.deleteVolumeFeedback.className = 'modal-feedback error';
-            this.deleteVolumeFeedback.classList.remove('hidden');
-        } finally {
-            this.confirmDeleteVolumeBtn.disabled = false;
-            this.confirmDeleteVolumeBtn.querySelector('.btn-spinner').classList.add('hidden');
-        }
-    }
-
-    // =========================================================================
-    // Gestión de Redes Docker
-    // =========================================================================
-    async updateNetworksVmFilter() {
-        if (!this.networksVmFilter) return;
-        try {
-            const currentFilter = this.networksVmFilter.value;
-            const res = await fetch('/api/vms');
-            if (res.ok) {
-                const vms = await res.json();
-                let opts = '<option value="">Todas las máquinas virtuales</option>';
-                if (Array.isArray(vms)) {
-                    vms.forEach((vm) => {
-                        opts += `<option value="${this.escapeAttr(vm.name)}">${this.escapeHTML(vm.name)}</option>`;
-                    });
-                }
-                this.networksVmFilter.innerHTML = opts;
-                if (currentFilter && Array.isArray(vms) && vms.some((v) => v.name === currentFilter)) {
-                    this.networksVmFilter.value = currentFilter;
-                }
-            }
-        } catch (e) {
-            console.warn('No se pudieron listar VMs para el filtro de redes:', e);
-        }
+        return this.updateAllDockerVmFilters();
     }
 
     async loadNetworks(vmFilter) {
@@ -3208,7 +3006,7 @@ class TerminalApp {
 
             this.createNetworkModal.classList.add('hidden');
             this.createNetworkForm.reset();
-            this.loadNetworks(this.networksVmFilter ? this.networksVmFilter.value : '');
+            this.loadNetworks(this.selectedDockerVm || '');
 
             if (typeof this._onNetworkCreatedCallback === 'function') {
                 const cb = this._onNetworkCreatedCallback;
@@ -3333,7 +3131,7 @@ class TerminalApp {
             if (!res.ok) throw new Error(data.error || 'Error al eliminar red');
 
             this.closeDeleteNetworkModal();
-            this.loadNetworks(this.networksVmFilter ? this.networksVmFilter.value : '');
+            this.loadNetworks(this.selectedDockerVm || '');
         } catch (e) {
             this.deleteNetworkFeedback.textContent = e.message;
             this.deleteNetworkFeedback.className = 'modal-feedback error';
@@ -3830,7 +3628,7 @@ class TerminalApp {
             const res = await fetch(url, { method: 'DELETE' });
             if (res.ok) {
                 this.closeDeleteContainerModal();
-                this.loadContainers(this.containersVmFilter ? this.containersVmFilter.value : '');
+                this.loadContainers(this.selectedDockerVm || '');
             } else {
                 const text = await res.text();
                 if (this.deleteContainerFeedback) {
@@ -4854,7 +4652,7 @@ class TerminalApp {
                 'success'
             );
             this.appendInfoLine(`[Docker Hub] Imagen '${sourceImage}' publicada como '${targetRef}' desde VM '${vmName}'`);
-            this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+            this.loadImages(this.selectedDockerVm || '');
         } catch (e) {
             this.showDockerHubPublishFeedback(`Error de red al publicar la imagen: ${e.message}`, 'error');
         } finally {
@@ -5157,7 +4955,7 @@ class TerminalApp {
             }
 
             this.closeBuildImageModal();
-            this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+            this.loadImages(this.selectedDockerVm || '');
 
             if (andRun) {
                 this.runImage(vmName, imageName, tag || 'latest');
@@ -5216,7 +5014,7 @@ class TerminalApp {
             }
 
             this.closeDeleteImageModal();
-            this.loadImages(this.imagesVmFilter ? this.imagesVmFilter.value : '');
+            this.loadImages(this.selectedDockerVm || '');
         } catch (e) {
             this.showDeleteImageFeedback(e.message, 'error');
         } finally {
