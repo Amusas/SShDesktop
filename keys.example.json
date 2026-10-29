@@ -1,0 +1,12 @@
+[
+  {
+    "id": "key-ejemplo-01",
+    "vmName": "miVM",
+    "name": "id_ed25519_miVM",
+    "algorithm": "Ed25519",
+    "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEXAMPLEPUBLICKEYEXAMPLEPUBLICKEYEXAMPLE vm_mivm_0000@sshdesktop",
+    "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\n...CLAVE_PRIVADA_EJEMPLO...\n-----END OPENSSH PRIVATE KEY-----\n",
+    "fingerprint": "SHA256:EXAMPLEFINGERPRINT0123456789abcdef",
+    "createdAt": "2026-01-01T00:00:00Z"
+  }
+]

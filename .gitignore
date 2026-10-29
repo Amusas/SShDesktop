@@ -7,9 +7,19 @@
 /ssh-web
 /vessel
 
-# Environment
+# Environment & Credentials
 .env
 dockerhub_credentials.json
+keys.json
+hosts.json
+vms.json
+*.pem
+*.key
+*.pub
+id_rsa*
+id_ed25519*
+known_hosts*
+*.tar
 
 # Go
 vendor/

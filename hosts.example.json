@@ -1,0 +1,15 @@
+{
+  "activeHostId": "host-ejemplo-01",
+  "hosts": [
+    {
+      "id": "host-ejemplo-01",
+      "name": "usuario@192.168.1.100",
+      "sshHost": "192.168.1.100",
+      "sshPort": 22,
+      "sshUser": "usuario",
+      "sshShell": "powershell",
+      "sshStartPath": "C:/proyectos",
+      "sshKeyPath": "C:/Users/usuario/.ssh/id_ed25519"
+    }
+  ]
+}

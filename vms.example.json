@@ -1,0 +1,24 @@
+[
+  {
+    "id": "vm-ejemplo-01",
+    "name": "miVM",
+    "templateId": "debian-1370",
+    "templateName": "Debian 13.7.0",
+    "os": "Debian 13.7.0",
+    "cores": 2,
+    "memoryMB": 2048,
+    "state": "running",
+    "sshUser": "vm_mivm_0000",
+    "host": "192.168.1.100",
+    "hostPort": 22000,
+    "guestPort": 22,
+    "privateKeyPath": "C:\\VMManager\\SSH\\vms\\miVM\\id_ed25519",
+    "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEXAMPLEPUBLICKEYEXAMPLEPUBLICKEYEXAMPLE vm_mivm_0000@sshdesktop",
+    "keyId": "key-ejemplo-01",
+    "keyName": "id_ed25519_miVM",
+    "diskPath": "C:\\VMManager\\Templates\\debian-13.7.0\\debian-13.7.0.vdi",
+    "network": "NAT",
+    "firstBoot": true,
+    "createdAt": "2026-01-01T00:00:00Z"
+  }
+]

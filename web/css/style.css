@@ -799,18 +799,34 @@ body {
     gap: 10px;
 }
 
-.vm-title-group {
+.vm-title-group,
+.vm-title-row,
+.vm-card-title-group {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     min-width: 0;
     flex-wrap: wrap;
 }
 
-.vm-name {
+.vm-name,
+h3.vm-name {
     font-weight: 700;
-    font-size: 14px;
+    font-size: 17px;
     color: #ffffff;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    margin: 0;
+    padding: 0;
+}
+
+.volumes-list .vm-name,
+.networks-list .vm-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: #ffffff;
+    font-family: var(--font-mono);
+    letter-spacing: -0.02em;
 }
 
 .vm-os {
@@ -1096,8 +1112,9 @@ body {
     letter-spacing: 0.5px;
 }
 
-.vm-detail-val {
-    font-size: 13px;
+.vm-detail-val,
+.vm-detail-value {
+    font-size: 12.5px;
     color: #f8fafc;
     font-weight: 500;
     word-break: break-all;
@@ -1147,10 +1164,10 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
     background: rgba(29, 99, 237, 0.18);
     color: #60a5fa;
     border: 1px solid rgba(29, 99, 237, 0.35);
@@ -1820,11 +1837,12 @@ body {
 }
 
 .container-name {
-    font-size: 14px;
+    font-size: 17px;
     font-weight: 700;
     color: #ffffff;
     font-family: var(--font-mono);
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
 }
 
 .vm-badge {
@@ -2678,13 +2696,22 @@ body {
 }
 
 .image-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
+    font-size: 16.5px;
+    font-weight: 700;
+    color: #ffffff;
     display: flex;
     align-items: center;
     gap: 8px;
     font-family: var(--font-mono);
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    flex-wrap: wrap;
+}
+
+.image-name > span:first-child {
+    font-size: 17px;
+    font-weight: 700;
+    color: #ffffff;
 }
 
 .image-tag-badge {
@@ -2844,12 +2871,13 @@ body {
 }
 
 .tar-card-filename {
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--text-primary);
+    font-size: 16.5px;
+    font-weight: 700;
+    color: #ffffff;
     font-family: var(--font-mono);
     word-break: break-all;
-    line-height: 1.35;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
 }
 
 .tar-card-badges {
