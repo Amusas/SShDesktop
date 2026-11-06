@@ -153,6 +153,8 @@ La aplicación lee su configuración de forma jerárquica: primero `config.prope
 | `vm.ssh_root` | `VM_SSH_ROOT` | No | `C:\VMManager\SSH` | Directorio en el backend para identidades de VMs y `known_hosts` |
 | `vm.bootstrap_key_path` | `VM_BOOTSTRAP_KEY_PATH` | No | `C:\VMManager\SSH\bootstrap_id_ed25519` | Clave privada de bootstrap para el primer aprovisionamiento |
 | `vm.base_port` | `VM_BASE_PORT` | No | `22000` | Puerto base a partir del cual se asignan puertos NAT SSH |
+| `vm.nat_network_name` | `VM_NAT_NETWORK_NAME` | No | `vessel-net` | Nombre de la NAT Network compartida en VirtualBox para comunicación entre VMs |
+| `vm.nat_network_cidr` | `VM_NAT_NETWORK_CIDR` | No | `10.250.0.0/24` | Rango CIDR IPv4 privado de la red compartida `vessel-net` |
 | `server.addr` | `SERVER_ADDR` | No | `:8080` | Dirección y puerto en el que escucha este servidor web |
 | `log.level` | `LOG_LEVEL` | No | `info` | Nivel de logs: `debug`, `info`, `warn`, `error` |
 
@@ -301,9 +303,11 @@ flowchart TD
 | `POST` | `/api/vms` | Crea y aprovisiona una nueva VM a partir de plantilla | `{"name":"miVM","templateId":"debian-13.7.0","cores":2,"memoryMB":4096}` |
 | `GET` | `/api/vms/{name}` | Obtiene los detalles y estado actual de una VM | - |
 | `DELETE` | `/api/vms/{name}` | Elimina la VM de VirtualBox y limpia sus llaves y registros | - |
-| `POST` | `/api/vms/{name}/start` | Inicia la VM en modo headless | - |
+| `POST` | `/api/vms/{name}/start` | Inicia la VM en modo headless (y migra a doble NIC si aplica) | - |
 | `POST` | `/api/vms/{name}/stop` | Apagado limpio de la VM mediante señal ACPI | - |
 | `POST` | `/api/vms/{name}/poweroff` | Apagado forzado inmediato de la VM | - |
+| `GET` / `POST` | `/api/vms/{name}/network-info` | Consulta o refresca el descubrimiento por MAC de la IP privada en `vessel-net` y estado de adaptadores | - |
+| `POST` | `/api/vms/{name}/connectivity` | Verifica la conectividad directa (ICMP + fallback TCP) desde una VM hacia otra VM o IP en `vessel-net` | `{"target":"otraVM","targetPort":22}` |
 
 ### Plantillas (`/api/templates`)
 | Método | Endpoint | Descripción |

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -21,6 +23,27 @@ type VMCreateTemplateRequest struct {
 	TemplateID string `json:"templateId"`
 	Cores      int    `json:"cores"`
 	MemoryMB   int    `json:"memoryMB"`
+}
+
+// VMNetworkInfoResponse describe el estado de red de una VM en Vessel
+type VMNetworkInfoResponse struct {
+	VMName               string `json:"vmName"`
+	State                string `json:"state"`
+	PrivateIP            string `json:"privateIp"`
+	NetworkName          string `json:"networkName"`
+	NetworkCIDR          string `json:"networkCidr"`
+	Host                 string `json:"host"`
+	HostPort             int    `json:"hostPort"`
+	GuestPort            int    `json:"guestPort"`
+	SSHUser              string `json:"sshUser"`
+	MACAddress1          string `json:"macAddress1"`
+	MACAddress2          string `json:"macAddress2"`
+	Interface1           string `json:"interface1,omitempty"`
+	Interface2           string `json:"interface2,omitempty"`
+	Adapter1State        string `json:"adapter1State"`
+	Adapter2State        string `json:"adapter2State"`
+	LastNetworkDiscovery string `json:"lastNetworkDiscovery,omitempty"`
+	DiscoveryError       string `json:"discoveryError,omitempty"`
 }
 
 type Service struct {
@@ -75,6 +98,78 @@ func (s *Service) SSHConfig() ssh.Config {
 	}
 }
 
+func (s *Service) NATNetworkName() string {
+	if s.cfg != nil && strings.TrimSpace(s.cfg.NATNetworkName) != "" {
+		return strings.TrimSpace(s.cfg.NATNetworkName)
+	}
+	return ssh.DefaultNATNetworkName
+}
+
+func (s *Service) NATNetworkCIDR() string {
+	if s.cfg != nil && strings.TrimSpace(s.cfg.NATNetworkCIDR) != "" {
+		return strings.TrimSpace(s.cfg.NATNetworkCIDR)
+	}
+	return ssh.DefaultNATNetworkCIDR
+}
+
+// VMSSHConfig construye la configuracion SSH administrativa para conectar al guest Linux
+// a traves del segundo adaptador NAT (ProxyHost -> 127.0.0.1:HostPort).
+func (s *Service) VMSSHConfig(rec VMRecord) ssh.Config {
+	hostCfg := s.SSHConfig()
+	keyPath := rec.PrivateKeyPath
+	if keyPath == "" && s.cfg != nil && s.cfg.SSHRoot != "" {
+		keyPath = filepath.Join(s.cfg.SSHRoot, "vms", rec.Name, "id_ed25519")
+	}
+	if keyPath != "" {
+		if _, statErr := os.Stat(keyPath); os.IsNotExist(statErr) && s.keyStore != nil {
+			if kRec, kErr := s.keyStore.Get(rec.Name); kErr == nil && strings.TrimSpace(kRec.PrivateKey) != "" {
+				_ = os.MkdirAll(filepath.Dir(keyPath), 0700)
+				_ = os.WriteFile(keyPath, []byte(kRec.PrivateKey), 0600)
+				if kRec.PublicKey != "" {
+					_ = os.WriteFile(keyPath+".pub", []byte(kRec.PublicKey), 0644)
+				}
+			}
+		}
+	}
+	user := rec.SSHUser
+	if user == "" {
+		user = "bootstrap"
+	}
+	return ssh.Config{
+		Host:      "127.0.0.1",
+		Port:      rec.HostPort,
+		User:      user,
+		KeyPath:   keyPath,
+		ProxyHost: &hostCfg,
+	}
+}
+
+func (s *Service) normalizeRecordNetworkDefaults(rec *VMRecord) {
+	if rec.PrivateIP == "" && rec.IP != "" {
+		rec.PrivateIP = rec.IP
+	}
+	if rec.IP == "" && rec.PrivateIP != "" {
+		rec.IP = rec.PrivateIP
+	}
+	if rec.NetworkName == "" {
+		if rec.Network != "" && !strings.EqualFold(rec.Network, "NAT") && !strings.EqualFold(rec.Network, "natnetwork") {
+			rec.NetworkName = rec.Network
+		} else {
+			rec.NetworkName = s.NATNetworkName()
+		}
+	}
+	if rec.Network == "" || strings.EqualFold(rec.Network, "NAT") || strings.EqualFold(rec.Network, "natnetwork") {
+		rec.Network = rec.NetworkName
+	}
+	if rec.NetworkCIDR == "" {
+		rec.NetworkCIDR = s.NATNetworkCIDR()
+	}
+	if strings.EqualFold(rec.State, "poweroff") {
+		rec.Adapter1State = "disconnected"
+		rec.Adapter2State = "disconnected"
+	}
+}
+
 func (s *Service) List() ([]VMRecord, error) {
 	records, err := s.vmStore.Load()
 	if err != nil {
@@ -100,6 +195,7 @@ func (s *Service) List() ([]VMRecord, error) {
 			if rvm.Status != "" {
 				rec.State = rvm.Status
 			}
+			s.normalizeRecordNetworkDefaults(&rec)
 			activeRecords = append(activeRecords, rec)
 			delete(remoteMap, strings.ToLower(rec.Name))
 		} else {
@@ -122,6 +218,8 @@ func (s *Service) List() ([]VMRecord, error) {
 		cores := 2
 		memoryMB := 2048
 		osType := "Linux"
+		mac1 := ""
+		mac2 := ""
 		if sErr == nil {
 			if info.Status != "" {
 				status = info.Status
@@ -135,17 +233,25 @@ func (s *Service) List() ([]VMRecord, error) {
 			if info.OS != "" {
 				osType = info.OS
 			}
+			mac1 = info.MACAddress1
+			mac2 = info.MACAddress2
 		}
 
 		discoveredRec := VMRecord{
-			ID:        fmt.Sprintf("vm-%d", time.Now().UnixNano()),
-			Name:      rvm.Name,
-			OS:        osType,
-			Cores:     cores,
-			MemoryMB:  memoryMB,
-			State:     status,
-			CreatedAt: time.Now().UTC().Format(time.RFC3339),
+			ID:          fmt.Sprintf("vm-%d", time.Now().UnixNano()),
+			Name:        rvm.Name,
+			OS:          osType,
+			Cores:       cores,
+			MemoryMB:    memoryMB,
+			State:       status,
+			Network:     s.NATNetworkName(),
+			NetworkName: s.NATNetworkName(),
+			NetworkCIDR: s.NATNetworkCIDR(),
+			MACAddress1: mac1,
+			MACAddress2: mac2,
+			CreatedAt:   time.Now().UTC().Format(time.RFC3339),
 		}
+		s.normalizeRecordNetworkDefaults(&discoveredRec)
 		activeRecords = append(activeRecords, discoveredRec)
 	}
 
@@ -163,6 +269,13 @@ func (s *Service) Get(name string) (VMRecord, error) {
 	if found {
 		if rvm, err := ssh.ShowVMInfo(s.SSHConfig(), name, s.log); err == nil && rvm.Status != "" {
 			rec.State = rvm.Status
+			if rvm.MACAddress1 != "" {
+				rec.MACAddress1 = rvm.MACAddress1
+			}
+			if rvm.MACAddress2 != "" {
+				rec.MACAddress2 = rvm.MACAddress2
+			}
+			s.normalizeRecordNetworkDefaults(&rec)
 			return rec, nil
 		}
 		if vms, vErr := ssh.ListVMs(s.SSHConfig(), s.log); vErr == nil {
@@ -179,6 +292,7 @@ func (s *Service) Get(name string) (VMRecord, error) {
 				return VMRecord{}, fmt.Errorf("maquina virtual no encontrada: %s", name)
 			}
 		}
+		s.normalizeRecordNetworkDefaults(&rec)
 		return rec, nil
 	}
 
@@ -197,15 +311,22 @@ func (s *Service) Get(name string) (VMRecord, error) {
 		memory = 2048
 	}
 
-	return VMRecord{
-		ID:        fmt.Sprintf("vm-%d", time.Now().UnixNano()),
-		Name:      rvm.Name,
-		OS:        rvm.OS,
-		Cores:     cores,
-		MemoryMB:  memory,
-		State:     rvm.Status,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	}, nil
+	newRec := VMRecord{
+		ID:          fmt.Sprintf("vm-%d", time.Now().UnixNano()),
+		Name:        rvm.Name,
+		OS:          rvm.OS,
+		Cores:       cores,
+		MemoryMB:    memory,
+		State:       rvm.Status,
+		Network:     s.NATNetworkName(),
+		NetworkName: s.NATNetworkName(),
+		NetworkCIDR: s.NATNetworkCIDR(),
+		MACAddress1: rvm.MACAddress1,
+		MACAddress2: rvm.MACAddress2,
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	}
+	s.normalizeRecordNetworkDefaults(&newRec)
+	return newRec, nil
 }
 
 // VMProgressCallback define la función que recibe notificaciones de avance en la creación de una VM.
@@ -282,18 +403,20 @@ func (s *Service) CreateFromTemplateWithProgress(ctx context.Context, req VMCrea
 		"user", identity.Username,
 	)
 
-	// 5. Crear VM y conectar base.vdi en modo Multiattach
+	// 5. Crear VM y conectar base.vdi en modo Multiattach con doble adaptador de red
 	vboxReq := ssh.VMTemplateCreateRequest{
-		Name:         name,
-		TemplateID:   tpl.ID,
-		TemplateName: tpl.Name,
-		OSType:       tpl.OSType,
-		BaseDiskPath: tpl.DiskPath,
-		VMRoot:       s.cfg.VMRoot,
-		Cores:        req.Cores,
-		MemoryMB:     req.MemoryMB,
-		HostPort:     hostPort,
-		GuestPort:    22,
+		Name:           name,
+		TemplateID:     tpl.ID,
+		TemplateName:   tpl.Name,
+		OSType:         tpl.OSType,
+		BaseDiskPath:   tpl.DiskPath,
+		VMRoot:         s.cfg.VMRoot,
+		Cores:          req.Cores,
+		MemoryMB:       req.MemoryMB,
+		HostPort:       hostPort,
+		GuestPort:      22,
+		NATNetworkName: s.NATNetworkName(),
+		NATNetworkCIDR: s.NATNetworkCIDR(),
 	}
 
 	notify("creating_vm", 2, 6, fmt.Sprintf("Creando máquina virtual '%s' en VirtualBox...", name))
@@ -391,7 +514,14 @@ func (s *Service) CreateFromTemplateWithProgress(ctx context.Context, req VMCrea
 	// 9. Intentar registrar la Host Key en known_hosts (opcional)
 	_, _ = s.knownHostsMgr.FetchAndStoreHostKey(s.cfg.SSHHost, hostPort)
 
-	// 10. Persistir registro en vms.json
+	// 10. Consultar MAC addresses configuradas en VirtualBox para los dos adaptadores
+	var mac1, mac2 string
+	if vInfo, iErr := ssh.ShowVMInfo(s.SSHConfig(), name, s.log); iErr == nil {
+		mac1 = vInfo.MACAddress1
+		mac2 = vInfo.MACAddress2
+	}
+
+	// 11. Persistir registro inicial en vms.json
 	rec := VMRecord{
 		ID:             fmt.Sprintf("vm-%d", time.Now().UnixNano()),
 		Name:           name,
@@ -410,7 +540,13 @@ func (s *Service) CreateFromTemplateWithProgress(ctx context.Context, req VMCrea
 		PrivateKeyPath: identity.PrivateKeyPath,
 		PublicKey:      identity.PublicKey,
 		DiskPath:       tpl.DiskPath,
-		Network:        "NAT",
+		Network:        s.NATNetworkName(),
+		NetworkName:    s.NATNetworkName(),
+		NetworkCIDR:    s.NATNetworkCIDR(),
+		MACAddress1:    mac1,
+		MACAddress2:    mac2,
+		Adapter1State:  "connected",
+		Adapter2State:  "connected",
 		FirstBoot:      true,
 		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
 	}
@@ -418,7 +554,15 @@ func (s *Service) CreateFromTemplateWithProgress(ctx context.Context, req VMCrea
 	savedRec, err := s.vmStore.Add(rec)
 	if err != nil {
 		s.log.Error("error al guardar en vms.json", "error", err)
-		return rec, nil
+		savedRec = rec
+	}
+
+	// 12. Descubrir la IP privada de la VM en la red compartida (vessel-net) relacionando las MACs
+	notify("configuring_docker", 6, 6, fmt.Sprintf("Detectando IP privada en red compartida '%s'...", s.NATNetworkName()))
+	if updatedRec, _, dErr := s.discoverNetworkUnlocked(ctx, savedRec); dErr == nil {
+		savedRec = updatedRec
+	} else {
+		s.log.Warn("no se pudo completar el descubrimiento inicial de IP privada tras crear la VM", "vm", name, "error", dErr)
 	}
 
 	notify("done", 6, 6, fmt.Sprintf("¡Máquina virtual '%s' creada y aprovisionada con éxito!", name))
@@ -470,10 +614,45 @@ func (s *Service) Start(name string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
+	rec, found, _ := s.vmStore.Find(name)
+
+	// Antes de iniciar, garantizar que la red compartida NAT Network este activa
+	// y si la VM fue creada con la topologia antigua (un solo NIC NAT), migrarla de forma transparente.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	if found && rec.HostPort > 0 {
+		guestPort := rec.GuestPort
+		if guestPort <= 0 {
+			guestPort = 22
+		}
+		if migrated, mErr := ssh.MigrateVMToDualNIC(ctx, s.SSHConfig(), name, s.NATNetworkName(), s.NATNetworkCIDR(), rec.HostPort, guestPort, s.log); mErr != nil {
+			s.log.Warn("aviso verificando/migrando adaptadores de red antes de iniciar VM", "vm", name, "error", mErr)
+		} else if migrated {
+			s.log.Info("VM existente migrada exitosamente a doble adaptador antes de encender", "vm", name, "network", s.NATNetworkName())
+		}
+	} else {
+		_, _ = ssh.EnsureNATNetwork(ctx, s.SSHConfig(), s.NATNetworkName(), s.NATNetworkCIDR(), s.log)
+	}
+
 	if err := ssh.StartVM(s.SSHConfig(), name, s.log); err != nil {
 		return err
 	}
 	_ = s.vmStore.UpdateState(name, "running", false)
+
+	// Si conocemos los datos de la VM, actualizar MACs y lanzar descubrimiento de IP en segundo plano
+	if updatedRec, ok, _ := s.vmStore.Find(name); ok {
+		go func(r VMRecord) {
+			bgCtx, bgCancel := context.WithTimeout(context.Background(), 90*time.Second)
+			defer bgCancel()
+			if r.HostPort > 0 {
+				if err := ssh.WaitForSSH(bgCtx, s.SSHConfig(), r.HostPort, 60*time.Second, s.log); err == nil {
+					_, _, _ = s.DiscoverAndPersistVMNetwork(bgCtx, r.Name)
+				}
+			}
+		}(updatedRec)
+	}
+
 	return nil
 }
 
@@ -501,4 +680,215 @@ func (s *Service) ForcePoweroff(name string) error {
 	}
 	_ = s.vmStore.UpdateState(name, "poweroff", false)
 	return nil
+}
+
+// DiscoverAndPersistVMNetwork descubre la IP privada de la VM relacionando las direcciones MAC
+// de VirtualBox con las interfaces en Linux y persiste el resultado en vms.json.
+func (s *Service) DiscoverAndPersistVMNetwork(ctx context.Context, name string) (VMRecord, *ssh.DiscoveredVMNetwork, error) {
+	name = strings.TrimSpace(name)
+	mu := s.getVMLock(name)
+	mu.Lock()
+	defer mu.Unlock()
+
+	rec, err := s.Get(name)
+	if err != nil {
+		return VMRecord{}, nil, err
+	}
+	return s.discoverNetworkUnlocked(ctx, rec)
+}
+
+func (s *Service) discoverNetworkUnlocked(ctx context.Context, rec VMRecord) (VMRecord, *ssh.DiscoveredVMNetwork, error) {
+	vInfo, err := ssh.ShowVMInfo(s.SSHConfig(), rec.Name, s.log)
+	if err == nil {
+		if vInfo.Status != "" {
+			rec.State = vInfo.Status
+		}
+		if vInfo.MACAddress1 != "" {
+			rec.MACAddress1 = vInfo.MACAddress1
+		}
+		if vInfo.MACAddress2 != "" {
+			rec.MACAddress2 = vInfo.MACAddress2
+		}
+	}
+
+	netName := s.NATNetworkName()
+	netCIDR := s.NATNetworkCIDR()
+	if err == nil && strings.EqualFold(vInfo.NIC1, "natnetwork") && vInfo.NATNet1 != "" {
+		netName = vInfo.NATNet1
+	}
+
+	if !strings.EqualFold(rec.State, "running") {
+		upd := VMNetworkUpdate{
+			NetworkName:   netName,
+			NetworkCIDR:   netCIDR,
+			MACAddress1:   rec.MACAddress1,
+			MACAddress2:   rec.MACAddress2,
+			Adapter1State: "disconnected",
+			Adapter2State: "disconnected",
+		}
+		if saved, uErr := s.vmStore.UpdateNetworkInfo(rec.Name, upd); uErr == nil {
+			rec = saved
+		}
+		return rec, nil, fmt.Errorf("la máquina virtual '%s' está apagada (%s); enciéndela para descubrir su IP privada en '%s'", rec.Name, rec.State, netName)
+	}
+
+	if rec.HostPort <= 0 {
+		return rec, nil, fmt.Errorf("la máquina virtual '%s' no tiene un puerto SSH administrativo asignado", rec.Name)
+	}
+
+	vmCfg := s.VMSSHConfig(rec)
+	discovered, dErr := ssh.DiscoverVMNetworkByMAC(ctx, vmCfg, rec.MACAddress1, rec.MACAddress2, netName, netCIDR, s.log)
+	if discovered != nil {
+		upd := VMNetworkUpdate{
+			PrivateIP:            discovered.PrivateIP,
+			NetworkName:          discovered.NetworkName,
+			NetworkCIDR:          discovered.NetworkCIDR,
+			MACAddress1:          discovered.MACAddress1,
+			MACAddress2:          discovered.MACAddress2,
+			Adapter1State:        discovered.Adapter1State,
+			Adapter2State:        discovered.Adapter2State,
+			LastNetworkDiscovery: discovered.DiscoveredAt,
+		}
+		if saved, uErr := s.vmStore.UpdateNetworkInfo(rec.Name, upd); uErr == nil {
+			rec = saved
+		} else {
+			rec.PrivateIP = discovered.PrivateIP
+			rec.IP = discovered.PrivateIP
+			rec.NetworkName = discovered.NetworkName
+			rec.Network = discovered.NetworkName
+			rec.NetworkCIDR = discovered.NetworkCIDR
+			rec.MACAddress1 = discovered.MACAddress1
+			rec.MACAddress2 = discovered.MACAddress2
+			rec.Adapter1State = discovered.Adapter1State
+			rec.Adapter2State = discovered.Adapter2State
+			rec.LastNetworkDiscovery = discovered.DiscoveredAt
+		}
+	}
+	if dErr != nil {
+		return rec, discovered, dErr
+	}
+	return rec, discovered, nil
+}
+
+// GetNetworkInfo devuelve el estado detallado de red de una VM. Si esta encendida y no tiene IP
+// (o se solicita forceRefresh), ejecuta el descubrimiento por MAC a traves de SSH.
+func (s *Service) GetNetworkInfo(ctx context.Context, name string, forceRefresh bool) (VMNetworkInfoResponse, error) {
+	rec, err := s.Get(name)
+	if err != nil {
+		return VMNetworkInfoResponse{}, err
+	}
+
+	var disc *ssh.DiscoveredVMNetwork
+	var discErr error
+
+	isRunning := strings.EqualFold(rec.State, "running")
+	if isRunning && (forceRefresh || strings.TrimSpace(rec.PrivateIP) == "" || strings.TrimSpace(rec.MACAddress1) == "") {
+		var updated VMRecord
+		updated, disc, discErr = s.DiscoverAndPersistVMNetwork(ctx, name)
+		if updated.Name != "" {
+			rec = updated
+		}
+	}
+
+	guestPort := rec.GuestPort
+	if guestPort <= 0 {
+		guestPort = 22
+	}
+	host := rec.Host
+	if host == "" && s.cfg != nil {
+		host = s.cfg.SSHHost
+	}
+
+	resp := VMNetworkInfoResponse{
+		VMName:               rec.Name,
+		State:                rec.State,
+		PrivateIP:            rec.PrivateIP,
+		NetworkName:          rec.NetworkName,
+		NetworkCIDR:          rec.NetworkCIDR,
+		Host:                 host,
+		HostPort:             rec.HostPort,
+		GuestPort:            guestPort,
+		SSHUser:              rec.SSHUser,
+		MACAddress1:          rec.MACAddress1,
+		MACAddress2:          rec.MACAddress2,
+		Adapter1State:        rec.Adapter1State,
+		Adapter2State:        rec.Adapter2State,
+		LastNetworkDiscovery: rec.LastNetworkDiscovery,
+	}
+
+	if disc != nil {
+		resp.Interface1 = disc.Interface1
+		resp.Interface2 = disc.Interface2
+	}
+	if !isRunning {
+		resp.Adapter1State = "disconnected"
+		resp.Adapter2State = "disconnected"
+	} else if resp.Adapter1State == "" {
+		if resp.PrivateIP != "" {
+			resp.Adapter1State = "connected"
+		} else {
+			resp.Adapter1State = "pending_dhcp"
+		}
+	}
+	if isRunning && resp.Adapter2State == "" && resp.HostPort > 0 {
+		resp.Adapter2State = "connected"
+	}
+	if discErr != nil {
+		resp.DiscoveryError = discErr.Error()
+	}
+
+	return resp, nil
+}
+
+// CheckConnectivity verifica la comunicacion directa por la red compartida (vessel-net)
+// desde una VM origen hacia otra VM destino (por nombre de VM o direccion IP privada).
+func (s *Service) CheckConnectivity(ctx context.Context, sourceVMName, targetVMOrIP string, targetPort int) (*ssh.VMConnectivityResult, error) {
+	sourceVMName = strings.TrimSpace(sourceVMName)
+	targetVMOrIP = strings.TrimSpace(targetVMOrIP)
+	if sourceVMName == "" || targetVMOrIP == "" {
+		return nil, fmt.Errorf("debe especificar la VM origen y la VM o IP destino")
+	}
+
+	sourceRec, err := s.Get(sourceVMName)
+	if err != nil {
+		return nil, fmt.Errorf("VM origen no encontrada: %w", err)
+	}
+	if !strings.EqualFold(sourceRec.State, "running") {
+		return nil, fmt.Errorf("la VM origen '%s' debe estar encendida para verificar conectividad (estado actual: %s)", sourceRec.Name, sourceRec.State)
+	}
+	if sourceRec.HostPort <= 0 {
+		return nil, fmt.Errorf("la VM origen '%s' no tiene puerto SSH configurado", sourceRec.Name)
+	}
+
+	// Asegurar que la VM origen tenga su red descubierta y configurada
+	if strings.TrimSpace(sourceRec.PrivateIP) == "" {
+		if updated, _, dErr := s.DiscoverAndPersistVMNetwork(ctx, sourceRec.Name); dErr == nil {
+			sourceRec = updated
+		}
+	}
+
+	targetName := ""
+	targetIP := targetVMOrIP
+
+	if parsedIP := net.ParseIP(targetVMOrIP); parsedIP == nil {
+		// Es el nombre o ID de otra VM
+		targetRec, tErr := s.Get(targetVMOrIP)
+		if tErr != nil {
+			return nil, fmt.Errorf("VM destino '%s' no encontrada: %w", targetVMOrIP, tErr)
+		}
+		targetName = targetRec.Name
+		if !strings.EqualFold(targetRec.State, "running") {
+			return nil, fmt.Errorf("la VM destino '%s' está apagada (%s)", targetRec.Name, targetRec.State)
+		}
+		if strings.TrimSpace(targetRec.PrivateIP) == "" {
+			updatedTarget, _, dErr := s.DiscoverAndPersistVMNetwork(ctx, targetRec.Name)
+			if dErr != nil || strings.TrimSpace(updatedTarget.PrivateIP) == "" {
+				return nil, fmt.Errorf("la VM destino '%s' aún no tiene una IP privada descubierta en '%s': %v", targetRec.Name, s.NATNetworkName(), dErr)
+			}
+			targetRec = updatedTarget
+		}
+		targetIP = targetRec.PrivateIP
+	}
+
+	return ssh.VerifyInterVMConnectivity(ctx, s.VMSSHConfig(sourceRec), sourceRec.Name, targetName, targetIP, targetPort, s.log)
 }

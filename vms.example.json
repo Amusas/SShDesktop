@@ -17,7 +17,16 @@
     "keyId": "key-ejemplo-01",
     "keyName": "id_ed25519_miVM",
     "diskPath": "C:\\VMManager\\Templates\\debian-13.7.0\\debian-13.7.0.vdi",
-    "network": "NAT",
+    "ip": "10.250.0.11",
+    "privateIp": "10.250.0.11",
+    "network": "vessel-net",
+    "networkName": "vessel-net",
+    "networkCidr": "10.250.0.0/24",
+    "macAddress1": "08:00:27:aa:bb:11",
+    "macAddress2": "08:00:27:cc:dd:22",
+    "adapter1State": "connected",
+    "adapter2State": "connected",
+    "lastNetworkDiscovery": "2026-01-01T00:01:00Z",
     "firstBoot": true,
     "createdAt": "2026-01-01T00:00:00Z"
   }

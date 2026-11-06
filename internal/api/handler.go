@@ -140,6 +140,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/images/export":
 		h.handleImageExport(w, r)
 		return
+	case strings.HasSuffix(r.URL.Path, "/network-info") && strings.HasPrefix(r.URL.Path, "/api/vms/"):
+		h.handleVMNetworkInfo(w, r)
+		return
+	case strings.HasSuffix(r.URL.Path, "/connectivity") && strings.HasPrefix(r.URL.Path, "/api/vms/"):
+		h.handleVMConnectivity(w, r)
+		return
 	case r.URL.Path == "/api/images/exports":
 		h.handleImageExports(w, r)
 		return
@@ -1682,6 +1688,76 @@ func (h *Handler) handleImagePush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(res)
+}
+
+// handleVMNetworkInfo consulta o refresca la informacion de red de una VM (GET / POST /api/vms/{name}/network-info)
+func (h *Handler) handleVMNetworkInfo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, `{"error":"metodo no permitido, use GET o POST"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	rawPath := strings.TrimPrefix(r.URL.Path, "/api/vms/")
+	rawPath = strings.TrimSuffix(rawPath, "/network-info")
+	name, err := url.PathUnescape(strings.TrimSpace(rawPath))
+	if err != nil {
+		name = strings.TrimSpace(rawPath)
+	}
+	if name == "" {
+		http.Error(w, `{"error":"nombre de VM requerido"}`, http.StatusBadRequest)
+		return
+	}
+
+	forceRefresh := r.Method == http.MethodPost || r.URL.Query().Get("refresh") == "1" || r.URL.Query().Get("refresh") == "true"
+	info, err := h.vmSvc.GetNetworkInfo(r.Context(), name, forceRefresh)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(info)
+}
+
+type vmConnectivityRequest struct {
+	Target     string `json:"target"`
+	TargetPort int    `json:"targetPort,omitempty"`
+}
+
+// handleVMConnectivity verifica la conectividad entre dos VMs dentro de la red compartida (POST /api/vms/{name}/connectivity)
+func (h *Handler) handleVMConnectivity(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"metodo no permitido, use POST"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	rawPath := strings.TrimPrefix(r.URL.Path, "/api/vms/")
+	rawPath = strings.TrimSuffix(rawPath, "/connectivity")
+	sourceName, err := url.PathUnescape(strings.TrimSpace(rawPath))
+	if err != nil {
+		sourceName = strings.TrimSpace(rawPath)
+	}
+	if sourceName == "" {
+		http.Error(w, `{"error":"nombre de VM origen requerido"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req vmConnectivityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"cuerpo de solicitud invalido"}`, http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Target) == "" {
+		http.Error(w, `{"error":"debe especificar la VM o IP destino en 'target'"}`, http.StatusBadRequest)
+		return
+	}
+
+	result, err := h.vmSvc.CheckConnectivity(r.Context(), sourceName, req.Target, req.TargetPort)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	json.NewEncoder(w).Encode(result)
 }
 
 func (h *Handler) handleImageItem(w http.ResponseWriter, r *http.Request) {

@@ -11,30 +11,50 @@ import (
 )
 
 type VMRecord struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	TemplateID     string `json:"templateId,omitempty"`
-	TemplateName   string `json:"templateName,omitempty"`
-	OS             string `json:"os"`
-	ISO            string `json:"iso,omitempty"`
-	Cores          int    `json:"cores"`
-	MemoryMB       int    `json:"memoryMB"`
-	DiskGB         int    `json:"diskGB,omitempty"`
-	State          string `json:"state"`
-	SSHUser        string `json:"sshUser,omitempty"`        // Usuario unico Linux (ej: vm_otramv_a82f)
-	Host           string `json:"host,omitempty"`           // Host Windows (ej: 192.168.101.80)
-	HostPort       int    `json:"hostPort,omitempty"`       // Puerto NAT asignado (ej: 22001)
-	GuestPort      int    `json:"guestPort,omitempty"`      // Puerto guest interno (22)
-	PrivateKeyPath string `json:"privateKeyPath,omitempty"` // Ruta a id_ed25519 en el backend
-	PublicKey      string `json:"publicKey,omitempty"`      // Clave publica Ed25519
-	KeyID          string `json:"keyId,omitempty"`
-	KeyName        string `json:"keyName,omitempty"`
-	GuestUser      string `json:"guestUser,omitempty"`
-	DiskPath       string `json:"diskPath,omitempty"`       // Ruta al base.vdi
-	IP             string `json:"ip,omitempty"`
-	Network        string `json:"network,omitempty"`
-	FirstBoot      bool   `json:"firstBoot"`
-	CreatedAt      string `json:"createdAt"`
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	TemplateID           string `json:"templateId,omitempty"`
+	TemplateName         string `json:"templateName,omitempty"`
+	OS                   string `json:"os"`
+	ISO                  string `json:"iso,omitempty"`
+	Cores                int    `json:"cores"`
+	MemoryMB             int    `json:"memoryMB"`
+	DiskGB               int    `json:"diskGB,omitempty"`
+	State                string `json:"state"`
+	SSHUser              string `json:"sshUser,omitempty"`        // Usuario unico Linux (ej: vm_otramv_a82f)
+	Host                 string `json:"host,omitempty"`           // Host Windows (ej: 192.168.101.80)
+	HostPort             int    `json:"hostPort,omitempty"`       // Puerto NAT asignado en NIC 2 (ej: 22001)
+	GuestPort            int    `json:"guestPort,omitempty"`      // Puerto guest interno (22)
+	PrivateKeyPath       string `json:"privateKeyPath,omitempty"` // Ruta a id_ed25519 en el backend
+	PublicKey            string `json:"publicKey,omitempty"`      // Clave publica Ed25519
+	KeyID                string `json:"keyId,omitempty"`
+	KeyName              string `json:"keyName,omitempty"`
+	GuestUser            string `json:"guestUser,omitempty"`
+	DiskPath             string `json:"diskPath,omitempty"` // Ruta al base.vdi
+	IP                   string `json:"ip,omitempty"`       // Alias compatible con privateIp
+	PrivateIP            string `json:"privateIp,omitempty"`
+	Network              string `json:"network,omitempty"` // Alias compatible con networkName
+	NetworkName          string `json:"networkName,omitempty"`
+	NetworkCIDR          string `json:"networkCidr,omitempty"`
+	MACAddress1          string `json:"macAddress1,omitempty"`
+	MACAddress2          string `json:"macAddress2,omitempty"`
+	Adapter1State        string `json:"adapter1State,omitempty"`
+	Adapter2State        string `json:"adapter2State,omitempty"`
+	LastNetworkDiscovery string `json:"lastNetworkDiscovery,omitempty"`
+	FirstBoot            bool   `json:"firstBoot"`
+	CreatedAt            string `json:"createdAt"`
+}
+
+// VMNetworkUpdate contiene los campos de red a actualizar en el almacenamiento persistente
+type VMNetworkUpdate struct {
+	PrivateIP            string
+	NetworkName          string
+	NetworkCIDR          string
+	MACAddress1          string
+	MACAddress2          string
+	Adapter1State        string
+	Adapter2State        string
+	LastNetworkDiscovery string
 }
 
 type Store struct {
@@ -141,6 +161,10 @@ func (s *Store) UpdateState(nameOrID, state string, markFirstBoot bool) error {
 			if markFirstBoot {
 				vms[i].FirstBoot = true
 			}
+			if strings.EqualFold(state, "poweroff") {
+				vms[i].Adapter1State = "disconnected"
+				vms[i].Adapter2State = "disconnected"
+			}
 			found = true
 			break
 		}
@@ -162,10 +186,57 @@ func (s *Store) UpdateConnection(nameOrID, ip string) error {
 	for i := range vms {
 		if strings.EqualFold(vms[i].Name, nameOrID) || vms[i].ID == nameOrID {
 			vms[i].IP = ip
+			vms[i].PrivateIP = ip
 			return s.saveUnlocked(vms)
 		}
 	}
 	return fmt.Errorf("VM no encontrada para actualizar conexion: %s", nameOrID)
+}
+
+// UpdateNetworkInfo actualiza la informacion de red descubierta para una VM en vms.json
+func (s *Store) UpdateNetworkInfo(nameOrID string, upd VMNetworkUpdate) (VMRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	vms, err := s.loadUnlocked()
+	if err != nil {
+		return VMRecord{}, err
+	}
+	for i := range vms {
+		if strings.EqualFold(vms[i].Name, nameOrID) || vms[i].ID == nameOrID {
+			if upd.PrivateIP != "" {
+				vms[i].PrivateIP = upd.PrivateIP
+				vms[i].IP = upd.PrivateIP
+			}
+			if upd.NetworkName != "" {
+				vms[i].NetworkName = upd.NetworkName
+				vms[i].Network = upd.NetworkName
+			}
+			if upd.NetworkCIDR != "" {
+				vms[i].NetworkCIDR = upd.NetworkCIDR
+			}
+			if upd.MACAddress1 != "" {
+				vms[i].MACAddress1 = upd.MACAddress1
+			}
+			if upd.MACAddress2 != "" {
+				vms[i].MACAddress2 = upd.MACAddress2
+			}
+			if upd.Adapter1State != "" {
+				vms[i].Adapter1State = upd.Adapter1State
+			}
+			if upd.Adapter2State != "" {
+				vms[i].Adapter2State = upd.Adapter2State
+			}
+			if upd.LastNetworkDiscovery != "" {
+				vms[i].LastNetworkDiscovery = upd.LastNetworkDiscovery
+			}
+			if err := s.saveUnlocked(vms); err != nil {
+				return VMRecord{}, err
+			}
+			return vms[i], nil
+		}
+	}
+	return VMRecord{}, fmt.Errorf("VM no encontrada para actualizar informacion de red: %s", nameOrID)
 }
 
 func (s *Store) loadUnlocked() ([]VMRecord, error) {

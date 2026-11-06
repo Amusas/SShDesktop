@@ -27,6 +27,10 @@ type Config struct {
 	SSHRoot          string `json:"sshRoot"`          // ej: C:\VMManager\SSH
 	BootstrapKeyPath string `json:"bootstrapKeyPath"` // ej: C:\VMManager\SSH\bootstrap_id_ed25519
 	BasePort         int    `json:"basePort"`         // ej: 22000
+
+	// Configuracion de red compartida NAT Network para comunicacion entre VMs
+	NATNetworkName string `json:"natNetworkName"` // ej: vessel-net
+	NATNetworkCIDR string `json:"natNetworkCidr"` // ej: 10.250.0.0/24
 }
 
 // Load carga la configuracion desde archivos locales. El .env es la fuente inicial,
@@ -97,6 +101,8 @@ func Load() (*Config, error) {
 		SSHRoot:          getVal([]string{"VM_SSH_ROOT", "vm.ssh_root", "ssh_root"}, `C:\VMManager\SSH`),
 		BootstrapKeyPath: bootstrapKey,
 		BasePort:         basePort,
+		NATNetworkName:   getVal([]string{"VM_NAT_NETWORK_NAME", "vm.nat_network_name", "nat_network_name"}, "vessel-net"),
+		NATNetworkCIDR:   getVal([]string{"VM_NAT_NETWORK_CIDR", "vm.nat_network_cidr", "nat_network_cidr"}, "10.250.0.0/24"),
 	}
 
 	return cfg, nil
@@ -124,6 +130,16 @@ func SaveProperties(path string, cfg *Config) error {
 	fmt.Fprintf(&b, "vm.ssh_root=%s\n", cfg.SSHRoot)
 	fmt.Fprintf(&b, "vm.bootstrap_key_path=%s\n", cfg.BootstrapKeyPath)
 	fmt.Fprintf(&b, "vm.base_port=%d\n", cfg.BasePort)
+	natNetName := cfg.NATNetworkName
+	if natNetName == "" {
+		natNetName = "vessel-net"
+	}
+	natNetCIDR := cfg.NATNetworkCIDR
+	if natNetCIDR == "" {
+		natNetCIDR = "10.250.0.0/24"
+	}
+	fmt.Fprintf(&b, "vm.nat_network_name=%s\n", natNetName)
+	fmt.Fprintf(&b, "vm.nat_network_cidr=%s\n", natNetCIDR)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }

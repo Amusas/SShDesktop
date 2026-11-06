@@ -1441,6 +1441,7 @@ class TerminalApp {
 
     renderVMList(vms) {
         if (!this.vmListEl) return;
+        this.cachedVMs = Array.isArray(vms) ? vms : [];
         if (!Array.isArray(vms) || vms.length === 0) {
             this.vmListEl.innerHTML = `<div class="empty-vm-list">No hay máquinas virtuales creadas o registradas.</div>`;
             return;
@@ -1449,9 +1450,19 @@ class TerminalApp {
         this.vmListEl.innerHTML = vms.map((vm) => {
             const stateLower = (vm.state || '').toLowerCase();
             const isRunning = stateLower === 'running' || stateLower === 'ejecutando';
-            const isStopped = !isRunning;
             const stateColor = isRunning ? 'var(--accent-green)' : stateLower === 'poweroff' ? 'var(--accent-red)' : 'var(--accent-yellow)';
             const templateLabel = vm.templateName || vm.os || 'Plantilla Base';
+            const netName = vm.networkName || vm.network || 'vessel-net';
+            const privateIp = vm.privateIp || vm.ip || '';
+
+            let ipDisplayHtml = '';
+            if (privateIp) {
+                ipDisplayHtml = `<span style="color:var(--accent-green);font-family:monospace">${this.escapeHTML(privateIp)}</span>${!isRunning ? ' <span style="color:var(--text-muted);font-size:11px">(última)</span>' : ''}`;
+            } else if (isRunning) {
+                ipDisplayHtml = `<span style="color:var(--accent-yellow)" id="vm-card-ip-${this.escapeAttr(vm.name)}">Detectando DHCP...</span>`;
+            } else {
+                ipDisplayHtml = `<span style="color:var(--text-muted)">Sin asignar (Apagada)</span>`;
+            }
 
             return `
             <div class="vm-card" id="vm-card-${this.escapeAttr(vm.name)}">
@@ -1471,7 +1482,7 @@ class TerminalApp {
                         <div class="card-dropdown-menu">
                             <button type="button" class="dropdown-item" onclick="window.terminalApp.viewVirtualMachine('${this.escapeAttr(vm.name)}')">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                                <span>Detalles</span>
+                                <span>Detalles y Red</span>
                             </button>
                             ${isRunning ? `
                             <button type="button" class="dropdown-item" onclick="window.terminalApp.forcePoweroffVM('${this.escapeAttr(vm.name)}', this)">
@@ -1489,6 +1500,8 @@ class TerminalApp {
                 <div class="vm-card-details">
                     <span><strong>CPU:</strong> ${vm.cores || 2} Cores</span>
                     <span><strong>RAM:</strong> ${vm.memoryMB || 4096} MB</span>
+                    <span><strong>Red:</strong> ${this.escapeHTML(netName)}</span>
+                    <span><strong>IP Privada:</strong> ${ipDisplayHtml}</span>
                     <span><strong>Usuario SSH:</strong> ${this.escapeHTML(vm.sshUser || 'bootstrap')}</span>
                     <span><strong>SSH Port:</strong> ${vm.hostPort ? `${vm.host || ''}:${vm.hostPort}` : 'NAT'}</span>
                     <span><strong>Estado:</strong> <span style="color:${stateColor}">${this.escapeHTML(vm.state || 'Creada')}</span></span>
@@ -1515,71 +1528,243 @@ class TerminalApp {
             </div>
         `;
         }).join('');
+
+        // Descubrir automáticamente en segundo plano la IP privada de las VMs encendidas que aún no tengan IP registrada
+        vms.forEach((vm) => {
+            const stateLower = (vm.state || '').toLowerCase();
+            const isRunning = stateLower === 'running' || stateLower === 'ejecutando';
+            if (isRunning && !(vm.privateIp || vm.ip)) {
+                this.fetchVMNetworkInfoSilent(vm.name);
+            }
+        });
+    }
+
+    async fetchVMNetworkInfoSilent(vmName) {
+        try {
+            const res = await fetch(`/api/vms/${encodeURIComponent(vmName)}/network-info`);
+            if (!res.ok) return;
+            const netInfo = await res.json();
+            const ipEl = document.getElementById(`vm-card-ip-${vmName}`);
+            if (ipEl && netInfo && netInfo.privateIp) {
+                ipEl.style.color = 'var(--accent-green)';
+                ipEl.style.fontFamily = 'monospace';
+                ipEl.textContent = netInfo.privateIp;
+                if (Array.isArray(this.cachedVMs)) {
+                    const target = this.cachedVMs.find((v) => v.name === vmName);
+                    if (target) {
+                        target.privateIp = netInfo.privateIp;
+                        target.ip = netInfo.privateIp;
+                    }
+                }
+            } else if (ipEl) {
+                ipEl.textContent = 'Pendiente DHCP';
+            }
+        } catch (_) {
+            // Silencioso en segundo plano
+        }
     }
 
     async viewVirtualMachine(id) {
         this.closeCardDropdowns();
         if (!this.vmDetailsModal || !this.vmDetailsContent) return;
-        this.vmDetailsContent.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:16px"><span class="btn-spinner"></span> Cargando detalles...</div>`;
+        this.vmDetailsContent.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:16px"><span class="btn-spinner"></span> Cargando detalles y topología de red...</div>`;
         this.vmDetailsModal.classList.remove('hidden');
         this.vmDetailsModal.setAttribute('aria-hidden', 'false');
 
         try {
-            const res = await fetch(`/api/vms/${encodeURIComponent(id)}`);
+            const [res, netRes] = await Promise.all([
+                fetch(`/api/vms/${encodeURIComponent(id)}`),
+                fetch(`/api/vms/${encodeURIComponent(id)}/network-info`).catch(() => null),
+            ]);
             if (!res.ok) {
                 const text = await res.text();
                 this.vmDetailsContent.innerHTML = `<div style="grid-column:1/-1;color:var(--accent-red)">Error al consultar VM: ${this.parseApiError(text)}</div>`;
                 return;
             }
             const vm = await res.json();
-
-            const cores = vm.cores > 0 ? vm.cores : 2;
-            const memoryMB = vm.memoryMB > 0 ? vm.memoryMB : 4096;
-            const templateName = vm.templateName || vm.os || 'Plantilla Base';
-
-            this.vmDetailsContent.innerHTML = `
-                <div class="vm-detail-item">
-                    <span class="vm-detail-key">Nombre de la MV</span>
-                    <span class="vm-detail-val">${this.escapeHTML(vm.name)}</span>
-                </div>
-                <div class="vm-detail-item">
-                    <span class="vm-detail-key">Plantilla Base</span>
-                    <span class="vm-detail-val" style="color:var(--accent-green)">${this.escapeHTML(templateName)}</span>
-                </div>
-                <div class="vm-detail-item">
-                    <span class="vm-detail-key">CPU (Cores)</span>
-                    <span class="vm-detail-val">${cores} vCPU</span>
-                </div>
-                <div class="vm-detail-item">
-                    <span class="vm-detail-key">Memoria RAM</span>
-                    <span class="vm-detail-val">${memoryMB} MB (${(memoryMB/1024).toFixed(1)} GB)</span>
-                </div>
-                <div class="vm-detail-item">
-                    <span class="vm-detail-key">Usuario SSH Dedicado</span>
-                    <span class="vm-detail-val" style="color:var(--accent-yellow)">${this.escapeHTML(vm.sshUser || 'bootstrap')}</span>
-                </div>
-                <div class="vm-detail-item">
-                    <span class="vm-detail-key">Puerto SSH (NAT)</span>
-                    <span class="vm-detail-val">${vm.hostPort ? `${vm.host || 'Host'}:${vm.hostPort}` : 'NAT :22'}</span>
-                </div>
-                <div class="vm-detail-item full-width">
-                    <span class="vm-detail-key">Estado Actual</span>
-                    <span class="vm-detail-val" style="color:var(--accent)">${this.escapeHTML(vm.state || 'Creada')}</span>
-                </div>
-                ${vm.diskPath ? `
-                <div class="vm-detail-item full-width">
-                    <span class="vm-detail-key">Disco Base (Multiattach)</span>
-                    <span class="vm-detail-val" style="font-size:12px">${this.escapeHTML(vm.diskPath)}</span>
-                </div>` : ''}
-                ${vm.publicKey ? `
-                <div class="vm-detail-item full-width">
-                    <span class="vm-detail-key">Clave Pública Ed25519</span>
-                    <span class="vm-detail-val" style="font-size:11px;word-break:break-all">${this.escapeHTML(vm.publicKey)}</span>
-                </div>` : ''}
-            `;
+            const netInfo = netRes && netRes.ok ? await netRes.json() : {};
+            this.renderVMDetailsContent(vm, netInfo);
         } catch (e) {
             console.warn('Error al ver VM:', e);
             this.vmDetailsContent.innerHTML = `<div style="grid-column:1/-1;color:var(--accent-red)">No se pudo cargar la información de la máquina virtual.</div>`;
+        }
+    }
+
+    renderVMDetailsContent(vm, netInfo = {}) {
+        if (!this.vmDetailsContent) return;
+        const cores = vm.cores > 0 ? vm.cores : 2;
+        const memoryMB = vm.memoryMB > 0 ? vm.memoryMB : 4096;
+        const templateName = vm.templateName || vm.os || 'Plantilla Base';
+        const state = netInfo.state || vm.state || 'Creada';
+        const isRunning = state.toLowerCase() === 'running' || state.toLowerCase() === 'ejecutando';
+
+        const netName = netInfo.networkName || vm.networkName || vm.network || 'vessel-net';
+        const netCidr = netInfo.networkCidr || vm.networkCidr || '10.250.0.0/24';
+        const privateIp = netInfo.privateIp || vm.privateIp || vm.ip || '';
+        const mac1 = netInfo.macAddress1 || vm.macAddress1 || 'N/A';
+        const mac2 = netInfo.macAddress2 || vm.macAddress2 || 'N/A';
+        const adapter1State = netInfo.adapter1State || vm.adapter1State || (isRunning ? (privateIp ? 'connected' : 'pending_dhcp') : 'disconnected');
+        const adapter2State = netInfo.adapter2State || vm.adapter2State || (isRunning ? 'connected' : 'disconnected');
+        const lastDiscovery = netInfo.lastNetworkDiscovery || vm.lastNetworkDiscovery || '';
+
+        const otherVMs = (this.cachedVMs || []).filter((v) => v.name !== vm.name);
+        const targetOptionsHtml = otherVMs.map((v) => {
+            const vIp = v.privateIp || v.ip ? ` (${v.privateIp || v.ip})` : '';
+            return `<option value="${this.escapeAttr(v.name)}">${this.escapeHTML(v.name)}${this.escapeHTML(vIp)}</option>`;
+        }).join('');
+
+        this.vmDetailsContent.innerHTML = `
+            <div class="vm-detail-item">
+                <span class="vm-detail-key">Nombre de la MV</span>
+                <span class="vm-detail-val">${this.escapeHTML(vm.name)}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-key">Plantilla Base</span>
+                <span class="vm-detail-val" style="color:var(--accent-green)">${this.escapeHTML(templateName)}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-key">CPU (Cores)</span>
+                <span class="vm-detail-val">${cores} vCPU</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-key">Memoria RAM</span>
+                <span class="vm-detail-val">${memoryMB} MB (${(memoryMB/1024).toFixed(1)} GB)</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-key">Estado Actual</span>
+                <span class="vm-detail-val" style="color:${isRunning ? 'var(--accent-green)' : 'var(--accent-red)'}">${this.escapeHTML(state)}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-key">Usuario SSH Dedicado</span>
+                <span class="vm-detail-val" style="color:var(--accent-yellow)">${this.escapeHTML(vm.sshUser || 'bootstrap')}</span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-key">Red Compartida (Adaptador 1)</span>
+                <span class="vm-detail-val">${this.escapeHTML(netName)} <span style="color:var(--text-muted);font-size:11px">(${this.escapeHTML(netCidr)})</span></span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-key" style="display:flex;justify-content:space-between;align-items:center">
+                    <span>IP Privada (${this.escapeHTML(netName)})</span>
+                    ${isRunning ? `<button type="button" class="btn btn-secondary" style="padding:2px 6px;font-size:10px" onclick="window.terminalApp.refreshVMNetworkInfo('${this.escapeAttr(vm.name)}', this)">Refrescar IP</button>` : ''}
+                </span>
+                <span class="vm-detail-val" style="font-family:monospace;color:${privateIp ? 'var(--accent-green)' : 'var(--accent-yellow)'}">
+                    ${privateIp ? this.escapeHTML(privateIp) : (isRunning ? 'Pendiente de concesión DHCP' : 'Sin IP activa (MV Apagada)')}
+                </span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-key">Adaptador 1 (NAT Network)</span>
+                <span class="vm-detail-val" style="font-size:12px;font-family:monospace">${this.escapeHTML(mac1)} · <span style="color:${adapter1State === 'connected' ? 'var(--accent-green)' : 'var(--text-muted)'}">${this.escapeHTML(adapter1State)}</span></span>
+            </div>
+            <div class="vm-detail-item">
+                <span class="vm-detail-key">Adaptador 2 (SSH NAT :${vm.hostPort || 22})</span>
+                <span class="vm-detail-val" style="font-size:12px;font-family:monospace">${this.escapeHTML(mac2)} · <span style="color:${adapter2State === 'connected' ? 'var(--accent-green)' : 'var(--text-muted)'}">${this.escapeHTML(adapter2State)}</span></span>
+            </div>
+            <div class="vm-detail-item full-width">
+                <span class="vm-detail-key">Acceso SSH Administrativo (NIC 2 --natpf2)</span>
+                <span class="vm-detail-val" style="font-family:monospace">${vm.hostPort ? `${this.escapeHTML(vm.host || 'Host')}:${vm.hostPort} → :${vm.guestPort || 22}` : 'NAT :22'} ${lastDiscovery ? `<span style="color:var(--text-muted);font-size:11px;margin-left:8px">(Detección: ${this.escapeHTML(lastDiscovery)})</span>` : ''}</span>
+            </div>
+            ${netInfo.discoveryError && isRunning ? `
+            <div class="vm-detail-item full-width" style="border-color:rgba(245,158,11,0.4)">
+                <span class="vm-detail-key" style="color:var(--accent-yellow)">Aviso de Descubrimiento de Red</span>
+                <span class="vm-detail-val" style="font-size:12px;color:var(--accent-yellow)">${this.escapeHTML(netInfo.discoveryError)}</span>
+            </div>` : ''}
+            ${isRunning ? `
+            <div class="vm-detail-item full-width">
+                <span class="vm-detail-key">Verificar Comunicación entre VMs (${this.escapeHTML(netName)})</span>
+                <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
+                    ${otherVMs.length > 0 ? `
+                    <select id="vm-conn-target-select" style="flex:1;min-width:160px;padding:6px 8px;border-radius:6px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border)" onchange="const inp=document.getElementById('vm-conn-target-input'); if(inp && this.value) inp.value=this.value;">
+                        <option value="">-- Seleccionar otra VM --</option>
+                        ${targetOptionsHtml}
+                    </select>` : ''}
+                    <input id="vm-conn-target-input" type="text" placeholder="Nombre de VM o IP (ej: 10.250.0.12)" value="${otherVMs.length > 0 ? this.escapeAttr(otherVMs[0].name) : ''}" style="flex:1;min-width:170px;padding:6px 8px;border-radius:6px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border)">
+                    <button type="button" class="btn btn-primary" style="padding:6px 12px;font-size:12px" onclick="window.terminalApp.testVMConnectivity('${this.escapeAttr(vm.name)}', this)">
+                        Probar Conectividad
+                    </button>
+                </div>
+                <div id="vm-conn-result-box" class="hidden" style="margin-top:8px;padding:8px 10px;border-radius:6px;font-size:12px;font-family:monospace;white-space:pre-wrap;background:rgba(0,0,0,0.25);border:1px solid var(--border)"></div>
+            </div>` : ''}
+            ${vm.diskPath ? `
+            <div class="vm-detail-item full-width">
+                <span class="vm-detail-key">Disco Base (Multiattach)</span>
+                <span class="vm-detail-val" style="font-size:12px">${this.escapeHTML(vm.diskPath)}</span>
+            </div>` : ''}
+            ${vm.publicKey ? `
+            <div class="vm-detail-item full-width">
+                <span class="vm-detail-key">Clave Pública Ed25519</span>
+                <span class="vm-detail-val" style="font-size:11px;word-break:break-all">${this.escapeHTML(vm.publicKey)}</span>
+            </div>` : ''}
+        `;
+    }
+
+    async refreshVMNetworkInfo(vmName, btnEl) {
+        if (btnEl) {
+            btnEl.disabled = true;
+            btnEl.textContent = 'Detectando...';
+        }
+        try {
+            const [vmRes, netRes] = await Promise.all([
+                fetch(`/api/vms/${encodeURIComponent(vmName)}`),
+                fetch(`/api/vms/${encodeURIComponent(vmName)}/network-info`, { method: 'POST' }),
+            ]);
+            const vm = vmRes.ok ? await vmRes.json() : { name: vmName };
+            const netInfo = netRes.ok ? await netRes.json() : {};
+            this.renderVMDetailsContent(vm, netInfo);
+            this.loadVirtualMachines();
+        } catch (e) {
+            console.warn('Error refrescando red de VM:', e);
+            if (btnEl) {
+                btnEl.disabled = false;
+                btnEl.textContent = 'Refrescar IP';
+            }
+        }
+    }
+
+    async testVMConnectivity(sourceVmName, btnEl) {
+        const inputEl = document.getElementById('vm-conn-target-input');
+        const resultBox = document.getElementById('vm-conn-result-box');
+        if (!inputEl || !resultBox) return;
+        const target = (inputEl.value || '').trim();
+        if (!target) {
+            resultBox.classList.remove('hidden');
+            resultBox.style.color = 'var(--accent-red)';
+            resultBox.textContent = 'Ingresa el nombre de una VM o una dirección IP privada destino.';
+            return;
+        }
+        if (btnEl) {
+            btnEl.disabled = true;
+            btnEl.textContent = 'Probando...';
+        }
+        resultBox.classList.remove('hidden');
+        resultBox.style.color = 'var(--text-secondary)';
+        resultBox.textContent = `Verificando ruta en red compartida desde '${sourceVmName}' hacia '${target}'...`;
+
+        try {
+            const res = await fetch(`/api/vms/${encodeURIComponent(sourceVmName)}/connectivity`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target, targetPort: 22 }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                resultBox.style.color = 'var(--accent-red)';
+                resultBox.textContent = `Error: ${data.error || 'No se pudo completar la prueba'}`;
+            } else if (data.reachable) {
+                resultBox.style.color = 'var(--accent-green)';
+                const latencyTxt = data.latencyMs ? ` · Latencia media: ${data.latencyMs.toFixed(2)} ms` : '';
+                resultBox.textContent = `✓ Conectividad exitosa (${data.method}) hacia ${data.targetVm ? `${data.targetVm} (${data.targetIp})` : data.targetIp}${latencyTxt}\n${data.output || ''}`.trim();
+            } else {
+                resultBox.style.color = 'var(--accent-red)';
+                resultBox.textContent = `✕ Sin conectividad hacia ${data.targetIp}: ${data.error || 'Host inalcanzable'}\n${data.output || ''}`.trim();
+            }
+        } catch (e) {
+            resultBox.style.color = 'var(--accent-red)';
+            resultBox.textContent = `Error de red al verificar conectividad: ${e.message || e}`;
+        } finally {
+            if (btnEl) {
+                btnEl.disabled = false;
+                btnEl.textContent = 'Probar Conectividad';
+            }
         }
     }
 

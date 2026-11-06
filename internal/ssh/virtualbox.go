@@ -16,43 +16,81 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
+// HostCommandRunner define la funcion de ejecucion de comandos en el host remoto (inyectable en tests)
+type HostCommandRunner func(ctx context.Context, cfg Config, command string, log *slog.Logger) (string, error)
+
+var vboxCommandRunner HostCommandRunner = ExecuteCommandContext
+
+// SetVBoxCommandRunner permite reemplazar temporalmente el ejecutor de comandos en pruebas unitarias
+func SetVBoxCommandRunner(runner HostCommandRunner) func() {
+	prev := vboxCommandRunner
+	if runner == nil {
+		vboxCommandRunner = ExecuteCommandContext
+	} else {
+		vboxCommandRunner = runner
+	}
+	return func() {
+		vboxCommandRunner = prev
+	}
+}
+
+func runHostCmd(cfg Config, command string, log *slog.Logger) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	return vboxCommandRunner(ctx, cfg, command, log)
+}
+
+func runHostCmdContext(ctx context.Context, cfg Config, command string, log *slog.Logger) (string, error) {
+	return vboxCommandRunner(ctx, cfg, command, log)
+}
+
 // VMInfo contiene los datos en vivo consultados desde VBoxManage
 type VMInfo struct {
-	Name      string `json:"name"`
-	OS        string `json:"os"`
-	Status    string `json:"state"`
-	CPU       int    `json:"cores"`
-	MemoryMB  int    `json:"memoryMB"`
-	DiskGB    int    `json:"diskGB"`
-	Network   string `json:"network"`
-	IP        string `json:"ip,omitempty"`
-	Firmware  string `json:"firmware,omitempty"`
-	DiskPath  string `json:"diskPath,omitempty"`
-	CreatedAt string `json:"createdAt,omitempty"`
+	Name            string            `json:"name"`
+	OS              string            `json:"os"`
+	Status          string            `json:"state"`
+	CPU             int               `json:"cores"`
+	MemoryMB        int               `json:"memoryMB"`
+	DiskGB          int               `json:"diskGB"`
+	Network         string            `json:"network"`
+	IP              string            `json:"ip,omitempty"`
+	Firmware        string            `json:"firmware,omitempty"`
+	DiskPath        string            `json:"diskPath,omitempty"`
+	CreatedAt       string            `json:"createdAt,omitempty"`
+	NIC1            string            `json:"nic1,omitempty"`
+	NATNet1         string            `json:"natNet1,omitempty"`
+	MACAddress1     string            `json:"macAddress1,omitempty"`
+	CableConnected1 string            `json:"cableConnected1,omitempty"`
+	NIC2            string            `json:"nic2,omitempty"`
+	MACAddress2     string            `json:"macAddress2,omitempty"`
+	CableConnected2 string            `json:"cableConnected2,omitempty"`
+	ForwardingRules map[string]string `json:"forwardingRules,omitempty"`
 }
 
 // VMTemplateCreateRequest parametros para crear una VM a partir de plantilla
 type VMTemplateCreateRequest struct {
-	Name         string `json:"name"`
-	TemplateID   string `json:"templateId"`
-	TemplateName string `json:"templateName,omitempty"`
-	OSType       string `json:"osType"`
-	BaseDiskPath string `json:"baseDiskPath"` // Ruta completa al base.vdi en el host remoto
-	VMRoot       string `json:"vmRoot,omitempty"` // Ruta base para almacenar VMs (ej: C:\VMManager\VMs)
-	Cores        int    `json:"cores"`
-	MemoryMB     int    `json:"memoryMB"`
-	HostPort     int    `json:"hostPort"` // Puerto NAT asignado (ej: 22001)
-	GuestPort    int    `json:"guestPort"`
+	Name           string `json:"name"`
+	TemplateID     string `json:"templateId"`
+	TemplateName   string `json:"templateName,omitempty"`
+	OSType         string `json:"osType"`
+	BaseDiskPath   string `json:"baseDiskPath"`   // Ruta completa al base.vdi en el host remoto
+	VMRoot         string `json:"vmRoot,omitempty"` // Ruta base para almacenar VMs (ej: C:\VMManager\VMs)
+	Cores          int    `json:"cores"`
+	MemoryMB       int    `json:"memoryMB"`
+	HostPort       int    `json:"hostPort"` // Puerto NAT asignado (ej: 22001)
+	GuestPort      int    `json:"guestPort"`
+	NATNetworkName string `json:"natNetworkName,omitempty"` // Red NAT compartida (ej: vessel-net)
+	NATNetworkCIDR string `json:"natNetworkCidr,omitempty"` // CIDR de red compartida (ej: 10.250.0.0/24)
 }
 
 // ListVMs lista todas las maquinas registradas en VirtualBox y determina su estado (running / poweroff)
 func ListVMs(cfg Config, log *slog.Logger) ([]VMInfo, error) {
-	out, err := ExecuteCommand(cfg, `VBoxManage list vms`, log)
+	out, err := runHostCmd(cfg, `VBoxManage list vms`, log)
 	if err != nil {
 		return nil, err
 	}
 
-	runningOut, _ := ExecuteCommand(cfg, `VBoxManage list runningvms`, log)
+	runningOut, _ := runHostCmd(cfg, `VBoxManage list runningvms`, log)
 	runningMap := make(map[string]bool)
 	for _, line := range strings.Split(runningOut, "\n") {
 		line = strings.TrimSpace(line)
@@ -87,46 +125,81 @@ func ListVMs(cfg Config, log *slog.Logger) ([]VMInfo, error) {
 // ShowVMInfo consulta informacion detallada y estado de la maquina virtual mediante --machinereadable
 func ShowVMInfo(cfg Config, name string, log *slog.Logger) (VMInfo, error) {
 	cmd := fmt.Sprintf(`VBoxManage showvminfo "%s" --machinereadable`, escapeForDoubleQuote(name))
-	out, err := ExecuteCommand(cfg, cmd, log)
+	out, err := runHostCmd(cfg, cmd, log)
 	if err != nil {
 		return VMInfo{}, err
 	}
 
-	info := VMInfo{Name: name}
+	return ParseShowVMInfo(name, out), nil
+}
+
+// ParseShowVMInfo parsea la salida --machinereadable de VBoxManage showvminfo
+func ParseShowVMInfo(defaultName, out string) VMInfo {
+	info := VMInfo{
+		Name:            defaultName,
+		ForwardingRules: make(map[string]string),
+	}
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "VMState=") {
-			info.Status = strings.Trim(strings.TrimPrefix(line, "VMState="), `"`)
+		if line == "" {
+			continue
 		}
-		if strings.HasPrefix(line, "name=") {
-			info.Name = strings.Trim(strings.TrimPrefix(line, "name="), `"`)
+		key, rawVal, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
 		}
-		if strings.HasPrefix(line, "ostype=") {
-			info.OS = strings.Trim(strings.TrimPrefix(line, "ostype="), `"`)
-		}
-		if strings.HasPrefix(line, "cpus=") {
-			if n, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "cpus="))); err == nil {
+		key = strings.TrimSpace(key)
+		val := strings.Trim(strings.TrimSpace(rawVal), `"`)
+
+		switch key {
+		case "VMState":
+			info.Status = val
+		case "name":
+			info.Name = val
+		case "ostype":
+			info.OS = val
+		case "cpus":
+			if n, err := strconv.Atoi(val); err == nil {
 				info.CPU = n
 			}
-		}
-		if strings.HasPrefix(line, "memory=") {
-			if n, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "memory="))); err == nil {
+		case "memory":
+			if n, err := strconv.Atoi(val); err == nil {
 				info.MemoryMB = n
 			}
-		}
-		if strings.HasPrefix(line, "nic1=") || strings.HasPrefix(line, "nic2=") {
-			v := strings.Trim(strings.TrimPrefix(line, strings.Split(line, "=")[0]+"="), `"`)
-			if strings.TrimSpace(v) != "" {
-				info.Network = v
+		case "nic1":
+			info.NIC1 = val
+		case "natnet1", "nat-network1":
+			info.NATNet1 = val
+		case "macaddress1":
+			info.MACAddress1 = NormalizeMAC(val)
+		case "cableconnected1":
+			info.CableConnected1 = val
+		case "nic2":
+			info.NIC2 = val
+		case "macaddress2":
+			info.MACAddress2 = NormalizeMAC(val)
+		case "cableconnected2":
+			info.CableConnected2 = val
+		default:
+			if strings.HasPrefix(key, "Forwarding(") {
+				info.ForwardingRules[key] = val
 			}
 		}
 	}
-	return info, nil
+
+	if strings.EqualFold(info.NIC1, "natnetwork") && info.NATNet1 != "" {
+		info.Network = info.NATNet1
+	} else if info.NIC1 != "" && !strings.EqualFold(info.NIC1, "none") {
+		info.Network = info.NIC1
+	} else if info.NIC2 != "" && !strings.EqualFold(info.NIC2, "none") {
+		info.Network = info.NIC2
+	}
+	return info
 }
 
 // IsVMRunning verifica si la VM esta en estado "running"
 func IsVMRunning(cfg Config, name string, log *slog.Logger) (bool, error) {
-	out, err := ExecuteCommand(cfg, `VBoxManage list runningvms`, log)
+	out, err := runHostCmd(cfg, `VBoxManage list runningvms`, log)
 	if err != nil {
 		return false, err
 	}
@@ -160,10 +233,24 @@ func CreateVMFromTemplate(ctx context.Context, cfg Config, req VMTemplateCreateR
 	}
 
 	// 1. Verificar si ya existe en VirtualBox
-	if out, err := ExecuteCommandContext(ctx, cfg, `VBoxManage list vms`, log); err == nil {
+	if out, err := runHostCmdContext(ctx, cfg, `VBoxManage list vms`, log); err == nil {
 		if strings.Contains(out, `"`+name+`"`) {
 			return fmt.Errorf("la maquina virtual '%s' ya existe en VirtualBox", name)
 		}
+	}
+
+	natNetName := strings.TrimSpace(req.NATNetworkName)
+	if natNetName == "" {
+		natNetName = DefaultNATNetworkName
+	}
+	natNetCIDR := strings.TrimSpace(req.NATNetworkCIDR)
+	if natNetCIDR == "" {
+		natNetCIDR = DefaultNATNetworkCIDR
+	}
+
+	// 2. Garantizar que la red compartida NAT Network exista, sea valida y este activa
+	if _, err := EnsureNATNetwork(ctx, cfg, natNetName, natNetCIDR, log); err != nil {
+		return fmt.Errorf("preparando red compartida '%s' (%s): %w", natNetName, natNetCIDR, err)
 	}
 
 	guestPort := req.GuestPort
@@ -176,29 +263,29 @@ func CreateVMFromTemplate(ctx context.Context, cfg Config, req VMTemplateCreateR
 		osType = "Debian_64"
 	}
 
-	// 1. Crear VM en VirtualBox
+	// 3. Crear VM en VirtualBox
 	createCmd := fmt.Sprintf(`VBoxManage createvm --name "%s" --ostype "%s" --register`, escapeForDoubleQuote(name), escapeForDoubleQuote(osType))
-	if _, err := ExecuteCommandContext(ctx, cfg, createCmd, log); err != nil {
+	if _, err := runHostCmdContext(ctx, cfg, createCmd, log); err != nil {
 		log.Error("fallo comando VBoxManage createvm", "error", err)
 		return fmt.Errorf("ejecutando createvm '%s': %w", name, err)
 	}
 
-	// 2. Crear controlador SATA
+	// 4. Crear controlador SATA
 	storageCtlCmd := fmt.Sprintf(`VBoxManage storagectl "%s" --name "SATA" --add sata --controller IntelAhci`, escapeForDoubleQuote(name))
-	if _, err := ExecuteCommandContext(ctx, cfg, storageCtlCmd, log); err != nil {
+	if _, err := runHostCmdContext(ctx, cfg, storageCtlCmd, log); err != nil {
 		log.Error("fallo comando storagectl, ejecutando rollback", "error", err)
 		_ = DeleteVM(cfg, name, log)
 		return fmt.Errorf("ejecutando storagectl '%s': %w", name, err)
 	}
 
-	// 3. Conectar disco base a la controladora SATA
+	// 5. Conectar disco base a la controladora SATA
 	attachCmdWithMtype := fmt.Sprintf(`VBoxManage storageattach "%s" --storagectl "SATA" --port 0 --device 0 --type hdd --medium "%s" --mtype multiattach`, escapeForDoubleQuote(name), escapeForDoubleQuote(req.BaseDiskPath))
 	attachCmdWithoutMtype := fmt.Sprintf(`VBoxManage storageattach "%s" --storagectl "SATA" --port 0 --device 0 --type hdd --medium "%s"`, escapeForDoubleQuote(name), escapeForDoubleQuote(req.BaseDiskPath))
 
 	var attachErr error
-	if _, err := ExecuteCommandContext(ctx, cfg, attachCmdWithMtype, log); err == nil {
+	if _, err := runHostCmdContext(ctx, cfg, attachCmdWithMtype, log); err == nil {
 		attachErr = nil
-	} else if _, err := ExecuteCommandContext(ctx, cfg, attachCmdWithoutMtype, log); err == nil {
+	} else if _, err := runHostCmdContext(ctx, cfg, attachCmdWithoutMtype, log); err == nil {
 		attachErr = nil
 	} else {
 		// VirtualBox CLI en Windows 7.2 puede arrojar el error histórico de estado:
@@ -210,7 +297,7 @@ func CreateVMFromTemplate(ctx context.Context, cfg Config, req VMTemplateCreateR
 		log.Info("aprovisionando disco diferencial hijo para la VM a partir de plantilla base", "template", req.BaseDiskPath)
 
 		vmFolder := ""
-		if infoOut, iErr := ExecuteCommandContext(ctx, cfg, fmt.Sprintf(`VBoxManage showvminfo "%s" --machinereadable`, escapeForDoubleQuote(name)), log); iErr == nil {
+		if infoOut, iErr := runHostCmdContext(ctx, cfg, fmt.Sprintf(`VBoxManage showvminfo "%s" --machinereadable`, escapeForDoubleQuote(name)), log); iErr == nil {
 			for _, line := range strings.Split(infoOut, "\n") {
 				line = strings.TrimSpace(line)
 				if strings.HasPrefix(line, "CfgFile=") {
@@ -226,9 +313,9 @@ func CreateVMFromTemplate(ctx context.Context, cfg Config, req VMTemplateCreateR
 
 		diffDiskPath := filepath.Join(vmFolder, fmt.Sprintf("%s.vdi", name))
 		createDiffCmd := fmt.Sprintf(`VBoxManage createmedium disk --filename "%s" --diffparent "%s"`, escapeForDoubleQuote(diffDiskPath), escapeForDoubleQuote(req.BaseDiskPath))
-		if _, dErr := ExecuteCommandContext(ctx, cfg, createDiffCmd, log); dErr == nil {
+		if _, dErr := runHostCmdContext(ctx, cfg, createDiffCmd, log); dErr == nil {
 			attachDiffCmd := fmt.Sprintf(`VBoxManage storageattach "%s" --storagectl "SATA" --port 0 --device 0 --type hdd --medium "%s"`, escapeForDoubleQuote(name), escapeForDoubleQuote(diffDiskPath))
-			if _, aErr := ExecuteCommandContext(ctx, cfg, attachDiffCmd, log); aErr == nil {
+			if _, aErr := runHostCmdContext(ctx, cfg, attachDiffCmd, log); aErr == nil {
 				attachErr = nil
 				log.Info("disco diferencial aprovisionado y conectado exitosamente", "diffDisk", diffDiskPath)
 			} else {
@@ -245,16 +332,28 @@ func CreateVMFromTemplate(ctx context.Context, cfg Config, req VMTemplateCreateR
 		return fmt.Errorf("conectando almacenamiento a la VM '%s': %w", name, attachErr)
 	}
 
-	// 4. Configurar hardware y red NAT
-	modifyCmd := fmt.Sprintf(`VBoxManage modifyvm "%s" --memory %d --cpus %d --nic1 nat --natpf1 "ssh,tcp,,%d,,%d"`, escapeForDoubleQuote(name), req.MemoryMB, req.Cores, req.HostPort, guestPort)
-	if _, err := ExecuteCommandContext(ctx, cfg, modifyCmd, log); err != nil {
-		log.Error("fallo comando modifyvm, ejecutando rollback", "error", err)
-		_ = DeleteVM(cfg, name, log)
-		return fmt.Errorf("ejecutando modifyvm '%s': %w", name, err)
+	// 6. Configurar hardware y topologia de doble adaptador:
+	// - Adaptador 1: NAT Network compartida (vessel-net) para comunicacion entre VMs y salida externa
+	// - Adaptador 2: NAT individual con port forwarding SSH (--natpf2) para administracion desde Vessel
+	modifyCmd := fmt.Sprintf(
+		`VBoxManage modifyvm "%s" --memory %d --cpus %d --nic1 natnetwork --nat-network1 "%s" --cable-connected1 on --nic2 nat --cable-connected2 on --natpf2 "ssh,tcp,,%d,,%d"`,
+		escapeForDoubleQuote(name), req.MemoryMB, req.Cores, escapeForDoubleQuote(natNetName), req.HostPort, guestPort,
+	)
+	if _, err := runHostCmdContext(ctx, cfg, modifyCmd, log); err != nil {
+		// Fallback compatible con sintaxis sin guion (--cableconnected1 / --cableconnected2)
+		modifyCmdFallback := fmt.Sprintf(
+			`VBoxManage modifyvm "%s" --memory %d --cpus %d --nic1 natnetwork --nat-network1 "%s" --cableconnected1 on --nic2 nat --cableconnected2 on --natpf2 "ssh,tcp,,%d,,%d"`,
+			escapeForDoubleQuote(name), req.MemoryMB, req.Cores, escapeForDoubleQuote(natNetName), req.HostPort, guestPort,
+		)
+		if _, fErr := runHostCmdContext(ctx, cfg, modifyCmdFallback, log); fErr != nil {
+			log.Error("fallo comando modifyvm, ejecutando rollback", "error", err)
+			_ = DeleteVM(cfg, name, log)
+			return fmt.Errorf("ejecutando modifyvm '%s': %w", name, err)
+		}
 	}
 
-	// 5. Configurar orden de arranque
-	_, _ = ExecuteCommandContext(ctx, cfg, fmt.Sprintf(`VBoxManage modifyvm "%s" --boot1 disk --boot2 none --boot3 none --boot4 none`, escapeForDoubleQuote(name)), log)
+	// 7. Configurar orden de arranque
+	_, _ = runHostCmdContext(ctx, cfg, fmt.Sprintf(`VBoxManage modifyvm "%s" --boot1 disk --boot2 none --boot3 none --boot4 none`, escapeForDoubleQuote(name)), log)
 
 	return nil
 }
@@ -270,30 +369,33 @@ func StartVM(cfg Config, name string, log *slog.Logger) error {
 	}
 
 	cmd := fmt.Sprintf(`VBoxManage startvm "%s" --type headless`, escapeForDoubleQuote(name))
-	_, err := ExecuteCommand(cfg, cmd, log)
+	_, err := runHostCmd(cfg, cmd, log)
 	if err != nil {
 		return fmt.Errorf("iniciando VM '%s': %w", name, err)
 	}
 	return nil
 }
 
-// BootstrapVMHostKeys ejecuta los comandos para generar las llaves de host (ssh-keygen -A)
+// BootstrapVMHostKeys ejecuta los comandos para generar las llaves de host (ssh-keygen -A),
+// levantar todas las interfaces de red (NIC 1 NAT Network y NIC 2 NAT SSH) con DHCP,
 // y reiniciar el servicio sshd en la VM sin requerir conexion SSH previa.
 // Intenta primero mediante 'VBoxManage guestcontrol' (VirtualBox Guest Additions) y como fallback
 // inyecta la secuencia de teclas en la consola virtual (TTY2).
 func BootstrapVMHostKeys(ctx context.Context, cfg Config, vmName, user, password string, log *slog.Logger) error {
-	log.Info("inicializando host keys de SSH en consola de la VM", "vm", vmName, "user", user)
+	log.Info("inicializando interfaces de red y host keys de SSH en consola de la VM", "vm", vmName, "user", user)
+
+	netInitSnippet := `for d in $(ip -o link show | awk -F': ' '{print $2}' | cut -d'@' -f1 | grep -v '^lo$'); do ip link set "$d" up 2>/dev/null || true; if ! ip -4 addr show dev "$d" | grep -q 'inet '; then (dhclient "$d" || udhcpc -i "$d" -n -q || dhcpcd "$d" || networkctl reconfigure "$d") >/dev/null 2>&1 & fi; done`
 
 	// 1. Intentar primero con VBoxManage guestcontrol (ejecución directa dentro del guest sin depender de la UI)
-	guestCmd := fmt.Sprintf(`VBoxManage guestcontrol "%s" run --exe "/bin/sh" --username "%s" --password "%s" -- /bin/sh -c "echo %s | sudo -S ssh-keygen -A && echo %s | sudo -S systemctl restart ssh"`,
-		escapeForDoubleQuote(vmName), escapeForDoubleQuote(user), escapeForDoubleQuote(password), escapeForDoubleQuote(password), escapeForDoubleQuote(password))
-	if out, err := ExecuteCommandContext(ctx, cfg, guestCmd, log); err == nil {
-		log.Info("host keys generadas y ssh reiniciado via guestcontrol exitosamente", "vm", vmName, "output", out)
+	guestCmd := fmt.Sprintf(`VBoxManage guestcontrol "%s" run --exe "/bin/sh" --username "%s" --password "%s" -- /bin/sh -c "echo %s | sudo -S sh -c '%s && ssh-keygen -A && systemctl restart ssh'"`,
+		escapeForDoubleQuote(vmName), escapeForDoubleQuote(user), escapeForDoubleQuote(password), escapeForDoubleQuote(password), netInitSnippet)
+	if out, err := runHostCmdContext(ctx, cfg, guestCmd, log); err == nil {
+		log.Info("red y host keys inicializadas via guestcontrol exitosamente", "vm", vmName, "output", out)
 		return nil
 	}
 
 	// 2. Fallback: secuencia de consola combinada en una sola llamada remota para rapidez
-	cmdStr := fmt.Sprintf("echo %s | sudo -S ssh-keygen -A && echo %s | sudo -S systemctl restart ssh", password, password)
+	cmdStr := fmt.Sprintf("echo %s | sudo -S sh -c '%s && ssh-keygen -A && systemctl restart ssh'", password, netInitSnippet)
 	cmdChain := fmt.Sprintf(
 		`VBoxManage controlvm "%s" keyboardputscancode 1c 9c & ping -n 2 127.0.0.1 >nul & `+
 			`VBoxManage controlvm "%s" keyboardputscancode 1d 38 3c bc b8 9d & ping -n 2 127.0.0.1 >nul & `+
@@ -307,7 +409,7 @@ func BootstrapVMHostKeys(ctx context.Context, cfg Config, vmName, user, password
 		escapeForDoubleQuote(vmName), escapeForDoubleQuote(cmdStr), escapeForDoubleQuote(vmName),
 	)
 
-	_, err := ExecuteCommandContext(ctx, cfg, cmdChain, log)
+	_, err := runHostCmdContext(ctx, cfg, cmdChain, log)
 	return err
 }
 
@@ -324,7 +426,7 @@ func StopVM(cfg Config, name string, log *slog.Logger) error {
 	}
 
 	cmd := fmt.Sprintf(`VBoxManage controlvm "%s" acpipowerbutton`, escapeForDoubleQuote(name))
-	if _, err := ExecuteCommand(cfg, cmd, log); err != nil {
+	if _, err := runHostCmd(cfg, cmd, log); err != nil {
 		return fmt.Errorf("enviando senal ACPI a VM '%s': %w", name, err)
 	}
 
@@ -339,7 +441,7 @@ func ForcePoweroffVM(cfg Config, name string, log *slog.Logger) error {
 	}
 
 	cmd := fmt.Sprintf(`VBoxManage controlvm "%s" poweroff`, escapeForDoubleQuote(name))
-	if _, err := ExecuteCommand(cfg, cmd, log); err != nil {
+	if _, err := runHostCmd(cfg, cmd, log); err != nil {
 		return fmt.Errorf("apagando forzadamente VM '%s': %w", name, err)
 	}
 
@@ -347,6 +449,7 @@ func ForcePoweroffVM(cfg Config, name string, log *slog.Logger) error {
 }
 
 // DeleteVM detiene la VM si esta corriendo y la desregistra de VirtualBox sin eliminar discos base de plantillas
+// ni eliminar la red compartida NAT Network (vessel-net).
 func DeleteVM(cfg Config, name string, log *slog.Logger) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -361,7 +464,7 @@ func DeleteVM(cfg Config, name string, log *slog.Logger) error {
 	cmd := fmt.Sprintf(`VBoxManage unregistervm "%s" --delete`, escapeForDoubleQuote(name))
 	var lastErr error
 	for attempt := 0; attempt < 5; attempt++ {
-		if _, err := ExecuteCommand(cfg, cmd, log); err == nil {
+		if _, err := runHostCmd(cfg, cmd, log); err == nil {
 			return nil
 		} else {
 			lastErr = err
@@ -553,6 +656,24 @@ sudo chown -R "$TARGET_USER:$TARGET_USER" "$USER_HOME/.ssh"
 
 # Acelerar arranque cambiando a multi-user.target (modo consola/servidor sin entorno grafico pesado)
 sudo systemctl set-default multi-user.target 2>/dev/null || true
+
+# Persistir configuracion DHCP para todas las interfaces Ethernet (NIC 1 NAT Network + NIC 2 NAT SSH)
+if [ -f /etc/network/interfaces ]; then
+    sudo mkdir -p /etc/network/interfaces.d
+    if ! grep -q "interfaces.d" /etc/network/interfaces 2>/dev/null; then
+        echo "source /etc/network/interfaces.d/*" | sudo tee -a /etc/network/interfaces >/dev/null
+    fi
+    sudo rm -f /etc/network/interfaces.d/50-vessel-dual-nic.cfg
+    for dev in $(ip -o link show | awk -F': ' '{print $2}' | cut -d'@' -f1 | grep -v '^lo$' | grep -v '^docker' | grep -v '^br-' | grep -v '^veth'); do
+        sudo ip link set "$dev" up 2>/dev/null || true
+        if ! grep -rq "iface $dev" /etc/network/interfaces /etc/network/interfaces.d/ 2>/dev/null; then
+            printf "allow-hotplug %%s\niface %%s inet dhcp\n\n" "$dev" "$dev" | sudo tee -a /etc/network/interfaces.d/50-vessel-dual-nic.cfg >/dev/null
+        fi
+        if ! ip -4 addr show dev "$dev" | grep -q 'inet '; then
+            sudo dhclient "$dev" 2>/dev/null || sudo udhcpc -i "$dev" -n -q 2>/dev/null || sudo networkctl reconfigure "$dev" 2>/dev/null || true
+        fi
+    done
+fi
 
 # Eliminar acceso bootstrap de la VM (solo dejar las llaves generadas de la app)
 sudo rm -f "/etc/sudoers.d/99-bootstrap" 2>/dev/null || true

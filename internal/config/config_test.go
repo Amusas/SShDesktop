@@ -41,4 +41,10 @@ func TestConfigLoadAndSave(t *testing.T) {
 	if vars["ssh.start_path"] != `C:\Users\testuser` {
 		t.Errorf("esperaba start_path C:\\Users\\testuser, obtuve %s", vars["ssh.start_path"])
 	}
+	if vars["vm.nat_network_name"] != "vessel-net" {
+		t.Errorf("esperaba vm.nat_network_name vessel-net, obtuve %s", vars["vm.nat_network_name"])
+	}
+	if vars["vm.nat_network_cidr"] != "10.250.0.0/24" {
+		t.Errorf("esperaba vm.nat_network_cidr 10.250.0.0/24, obtuve %s", vars["vm.nat_network_cidr"])
+	}
 }
