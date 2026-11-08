@@ -353,6 +353,8 @@ class TerminalApp {
         this.lastKnownPromptText = '';
         this.currentPath = '~';
         this.isClearingScreen = false;
+        this.clearScreenTimer = null;
+        this.screenReplayIndex = null;
         this.ignoreEchoCommand = null;
         this.currentVM = null;
         this.currentContainer = null;
@@ -2512,7 +2514,7 @@ class TerminalApp {
             case 'l':
                 if (e.ctrlKey) {
                     e.preventDefault();
-                    this.clearResultsKeepPath();
+                    this.executeClearScreen();
                 }
                 break;
         }
@@ -2550,6 +2552,11 @@ class TerminalApp {
         this.activeClasses = [];
         this.ansiRemainder = '';
         this.isClearingScreen = false;
+        if (this.clearScreenTimer) {
+            clearTimeout(this.clearScreenTimer);
+            this.clearScreenTimer = null;
+        }
+        this.screenReplayIndex = null;
         this.ignoreEchoCommand = null;
 
         this.currentLineEl = this.createLineElement();
@@ -2557,6 +2564,22 @@ class TerminalApp {
         const result = AnsiParser.renderToHTML(promptToKeep, []);
         this.currentLineEl.innerHTML = result.html;
         this.outputEl.appendChild(this.currentLineEl);
+    }
+
+    executeClearScreen() {
+        this.clearResultsKeepPath();
+        if (this.ws && this.ws.ws && this.ws.ws.readyState === WebSocket.OPEN) {
+            this.isClearingScreen = true;
+            if (this.clearScreenTimer) {
+                clearTimeout(this.clearScreenTimer);
+            }
+            this.clearScreenTimer = setTimeout(() => {
+                this.isClearingScreen = false;
+                this.clearScreenTimer = null;
+            }, 1200);
+            const remoteClearCmd = (!this.currentVM && !this.currentContainer) ? 'cls\r' : 'clear\r';
+            this.ws.sendInput(remoteClearCmd);
+        }
     }
 
     submitCommand() {
@@ -2569,14 +2592,23 @@ class TerminalApp {
         const cmdTrimmed = command.trim();
         const cmdLower = cmdTrimmed.toLowerCase();
 
-        // clear / cls solo borra los resultados anteriores y conserva únicamente la ruta/prompt actual
+        // clear / cls borra tanto los resultados locales como el buffer de pantalla remoto (ConPTY/PTY) y conserva la ruta/prompt actual
         if (cmdLower === 'cls' || cmdLower === 'clear') {
-            this.clearResultsKeepPath();
+            this.executeClearScreen();
             this.inputEl.value = '';
             this.autoScroll = true;
             this.scrollToBottom();
             return;
         }
+
+        if (this.isClearingScreen) {
+            this.isClearingScreen = false;
+            if (this.clearScreenTimer) {
+                clearTimeout(this.clearScreenTimer);
+                this.clearScreenTimer = null;
+            }
+        }
+        this.screenReplayIndex = null;
 
         this.autoScroll = true;
 
@@ -2594,9 +2626,14 @@ class TerminalApp {
             }
         } else {
             const fallbackPrompt = this.getActivePromptText();
-            const line = this.createLineElement();
-            line.innerHTML = AnsiParser.renderPromptAndCommand(fallbackPrompt, cmdTrimmed);
-            this.outputEl.appendChild(line);
+            this.lastKnownPromptText = fallbackPrompt;
+            this.lastSubmittedPrompt = fallbackPrompt;
+            this.lastSubmittedCommand = cmdTrimmed;
+            this.currentLineEl = this.createLineElement();
+            this.pendingText = `${fallbackPrompt} ${cmdTrimmed}`;
+            this.currentLineEl.innerHTML = AnsiParser.renderPromptAndCommand(fallbackPrompt, cmdTrimmed);
+            this.outputEl.appendChild(this.currentLineEl);
+            this.finishLine();
         }
 
         // Si estamos dentro de un contenedor o VM y el usuario escribe 'exit', cerrar y volver al host automáticamente
@@ -2657,16 +2694,29 @@ class TerminalApp {
         streamData = split.complete;
         if (!streamData) return;
 
-        if (AnsiParser.hasClearScreen(streamData)) {
-            this.clearResultsKeepPath();
-            this.isClearingScreen = false;
-            streamData = AnsiParser.removeClearScreen(streamData);
-            if (!streamData || !AnsiParser.stripAnsi(streamData).trim()) return;
-        }
-
         const detectedPath = AnsiParser.extractPath(streamData);
         if (detectedPath) {
             this.updateCurrentPath(detectedPath);
+        }
+
+        if (this.isClearingScreen) {
+            const plainChunk = AnsiParser.stripAnsi(streamData).trim();
+            if (AnsiParser.hasClearScreen(streamData) || detectedPath || /[>$#]\s*$/.test(plainChunk)) {
+                if (this.clearScreenTimer) {
+                    clearTimeout(this.clearScreenTimer);
+                }
+                this.clearScreenTimer = setTimeout(() => {
+                    this.isClearingScreen = false;
+                    this.clearScreenTimer = null;
+                }, 150);
+            }
+            return;
+        }
+
+        if (AnsiParser.hasClearScreen(streamData)) {
+            this.clearResultsKeepPath();
+            streamData = AnsiParser.removeClearScreen(streamData);
+            if (!streamData || !AnsiParser.stripAnsi(streamData).trim()) return;
         }
 
         this.processText(streamData);
@@ -2678,7 +2728,7 @@ class TerminalApp {
         for (let i = 0; i < str.length; i++) {
             const ch = str[i];
             if (ch === '\b') {
-                if (result.length > 0 && result[result.length - 1] !== '\n' && result[result.length - 1] !== '\r') {
+                if (result.length > 0 && result[result.length - 1] !== '\n' && result[result.length - 1] !== '\r' && result[result.length - 1] !== '\x02') {
                     result.pop();
                 }
             } else {
@@ -2696,34 +2746,60 @@ class TerminalApp {
         if (!prepared) return;
 
         const processed = this.removeBackspaces(prepared);
+        const segments = processed.split('\x02');
 
-        // Normalizar saltos de línea evitando borrar accidentalmente el contenido previo
-        const normalized = processed.replace(/\r+\n/g, '\n');
-        const lines = normalized.split('\n');
-
-        for (let i = 0; i < lines.length; i++) {
-            let linePart = lines[i];
-
-            // Eliminar retornos de carro al final de la línea para no vaciar pendingText
-            linePart = linePart.replace(/\r+$/, '');
-
-            if (linePart.includes('\r')) {
-                const subParts = linePart.split(/\r+/);
-                const nonEmpty = subParts.filter((seg) => AnsiParser.stripAnsi(seg).trim() !== '');
-                if (nonEmpty.length > 0) {
-                    linePart = nonEmpty[nonEmpty.length - 1];
+        for (let sIdx = 0; sIdx < segments.length; sIdx++) {
+            if (sIdx > 0) {
+                // \x02 representa \x1b[H (Cursor Home a fila 1, columna 1 en ConPTY).
+                // Si había una línea parcial sin salto de línea (ej. sondeo de ConPTY o prompt incompleto),
+                // descartarla porque ConPTY va a repintar la pantalla desde la fila 1.
+                if (this.currentLineEl) {
+                    const partialPlain = AnsiParser.stripAnsi(this.pendingText || '').trim();
+                    const isPrompt = partialPlain && (partialPlain.endsWith('>') || partialPlain.endsWith('$') || partialPlain.endsWith('#'));
+                    this.currentLineEl.remove();
+                    this.currentLineEl = null;
                     this.pendingText = '';
-                } else {
-                    linePart = subParts.join('');
+                    this.activeClasses = [];
+                    if (isPrompt && this.outputEl.children.length === 0) {
+                        this.lastKnownPromptText = partialPlain;
+                    }
+                }
+                if (!this.currentVM && !this.currentContainer && this.outputEl.children.length > 0) {
+                    this.screenReplayIndex = -1;
                 }
             }
 
-            if (linePart && AnsiParser.stripAnsi(linePart).length > 0) {
-                this.appendToCurrentLine(linePart);
-            }
+            const seg = segments[sIdx];
+            if (!seg) continue;
 
-            if (i < lines.length - 1) {
-                this.finishLine();
+            // Normalizar saltos de línea evitando borrar accidentalmente el contenido previo
+            const normalized = seg.replace(/\r+\n/g, '\n');
+            const lines = normalized.split('\n');
+
+            for (let i = 0; i < lines.length; i++) {
+                let linePart = lines[i];
+
+                // Eliminar retornos de carro al final de la línea para no vaciar pendingText
+                linePart = linePart.replace(/\r+$/, '');
+
+                if (linePart.includes('\r')) {
+                    const subParts = linePart.split(/\r+/);
+                    const nonEmpty = subParts.filter((s) => AnsiParser.stripAnsi(s).trim() !== '');
+                    if (nonEmpty.length > 0) {
+                        linePart = nonEmpty[nonEmpty.length - 1];
+                        this.pendingText = '';
+                    } else {
+                        linePart = subParts.join('');
+                    }
+                }
+
+                if (linePart && AnsiParser.stripAnsi(linePart).length > 0) {
+                    this.appendToCurrentLine(linePart);
+                }
+
+                if (i < lines.length - 1) {
+                    this.finishLine();
+                }
             }
         }
 
@@ -2772,9 +2848,60 @@ class TerminalApp {
                     emptyPrev.remove();
                 }
 
+                const normCurr = this.normalizeLineForComparison(rawText);
+
+                // Si ConPTY inició un repintado de pantalla completa desde \x1b[H (fila 1, col 1),
+                // deduplicar las líneas que ya existen en el historial visible del DOM.
+                if (this.screenReplayIndex !== null && this.screenReplayIndex !== undefined) {
+                    const children = this.outputEl.children;
+                    const existingCount = children.length - 1; // Excluir this.currentLineEl
+                    if (existingCount <= 0) {
+                        this.screenReplayIndex = null;
+                    } else if (this.screenReplayIndex === -1) {
+                        const searchStart = Math.max(0, existingCount - 200);
+                        let matchedIdx = -1;
+                        for (let k = searchStart; k < existingCount; k++) {
+                            const normExisting = this.normalizeLineForComparison(children[k].textContent || '');
+                            if (normExisting === normCurr) {
+                                matchedIdx = k;
+                                break;
+                            }
+                        }
+                        if (matchedIdx !== -1) {
+                            this.currentLineEl.remove();
+                            this.currentLineEl = null;
+                            this.pendingText = '';
+                            this.screenReplayIndex = matchedIdx + 1;
+                            return;
+                        } else {
+                            this.screenReplayIndex = null;
+                        }
+                    } else if (this.screenReplayIndex < existingCount) {
+                        let matchedIdx = -1;
+                        const maxLookahead = Math.min(existingCount, this.screenReplayIndex + 3);
+                        for (let k = this.screenReplayIndex; k < maxLookahead; k++) {
+                            const normExisting = this.normalizeLineForComparison(children[k].textContent || '');
+                            if (normExisting === normCurr) {
+                                matchedIdx = k;
+                                break;
+                            }
+                        }
+                        if (matchedIdx !== -1) {
+                            this.currentLineEl.remove();
+                            this.currentLineEl = null;
+                            this.pendingText = '';
+                            this.screenReplayIndex = matchedIdx + 1;
+                            return;
+                        } else {
+                            this.screenReplayIndex = null;
+                        }
+                    } else {
+                        this.screenReplayIndex = null;
+                    }
+                }
+
                 if (prev) {
                     const normPrev = this.normalizeLineForComparison(prev.textContent);
-                    const normCurr = this.normalizeLineForComparison(rawText);
 
                     // 1. Eliminar duplicados exactos o normalizados consecutivos (ecos de ConPTY/PowerShell/CMD)
                     if (normPrev === normCurr) {
@@ -2828,6 +2955,12 @@ class TerminalApp {
         this.pendingText = '';
         this.ansiRemainder = '';
         this.activeClasses = [];
+        this.isClearingScreen = false;
+        if (this.clearScreenTimer) {
+            clearTimeout(this.clearScreenTimer);
+            this.clearScreenTimer = null;
+        }
+        this.screenReplayIndex = null;
         this.ignoreEchoCommand = null;
     }
 

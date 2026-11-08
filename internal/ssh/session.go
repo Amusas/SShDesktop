@@ -229,6 +229,8 @@ type Session struct {
 	wg          sync.WaitGroup
 	onOutput    func([]byte)
 	onClose     func()
+	lastCols    int
+	lastRows    int
 }
 
 // Config contiene las credenciales y parametros para establecer la sesion SSH
@@ -407,6 +409,8 @@ func NewSession(ctx context.Context, cfg Config, log *slog.Logger) (*Session, er
 		session:     session,
 		stdin:       stdin,
 		log:         log,
+		lastCols:    120,
+		lastRows:    1000,
 	}
 
 	addrDisplay := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
@@ -453,6 +457,11 @@ func (s *Session) Resize(cols, rows int) error {
 	if rows < 1000 {
 		rows = 1000
 	}
+	if cols == s.lastCols && rows == s.lastRows {
+		return nil
+	}
+	s.lastCols = cols
+	s.lastRows = rows
 	s.log.Debug("redimensionando PTY", "columnas", cols, "filas", rows)
 	return s.session.WindowChange(rows, cols)
 }

@@ -89,7 +89,7 @@ const AnsiParser = (() => {
     }
 
     // Detectar secuencias ANSI incompletas al final de un fragmento de stream
-    const INCOMPLETE_ANSI_REGEX = /\x1b(?:\[[\x30-\x3f]*[\x20-\x2f]*|\][^\x07\x1b\r\n]*|P[^\x07\x1b\r\n]*|[\^_X][^\x07\x1b\r\n]*|[()#%*+\-\/])?$/;
+    const INCOMPLETE_ANSI_REGEX = /(?:\x1b\[\d*X|\x1b\[(?:1;1)?H(?:\x1b\[\?25[hl])*P?|\x1b(?:\[[\x30-\x3f]*[\x20-\x2f]*|\][^\x07\x1b\r\n]*|P[^\x07\x1b\r\n]*|[\^_X][^\x07\x1b\r\n]*|[()#%*+\-\/])?)$/;
 
     function splitIncompleteAnsi(text) {
         if (!text) return { complete: '', remainder: '' };
@@ -112,6 +112,20 @@ const AnsiParser = (() => {
             .replace(DCS_REGEX, '');
 
         // Convertir posicionamiento de cursor a columna 1 (\x1b[<fila>;1H) en salto de línea
+        // 1. Eliminar artefacto de ConPTY/PSReadLine: \x1b[HP justo antes de posicionar cursor o salto
+        s = s.replace(/\x1b\[(?:1;1)?H(?:\x1b\[\?25[hl])*P(?=\x1b\[|\r|\n)/g, '');
+
+        // 2. Eliminar secuencias de borrado de caracteres en blanco de ConPTY (\x1b[<N>X\x1b[<N>C)
+        // antes de convertir \x1b[<N>C independientes en espacios
+        s = s.replace(/\x1b\[\d*X(?:\x1b\[\d*C)?/g, '');
+
+        // 3. Eliminar sondeo de 1 carácter con backspace de ConPTY justo antes de \x1b[H (ej. "H \b\x1b[?25h\x1b[?25l\x1b[H")
+        s = s.replace(/[^\r\n\x1b] \x08(?=(?:\x1b\[\?25[hl])*\x1b\[(?:1;1)?[Hf])/g, '');
+
+        // 4. Marcar reinicio de cursor a inicio de pantalla de ConPTY (\x1b[H o \x1b[1;1H) con \x02
+        // para deduplicar repintados completos del buffer de pantalla
+        s = s.replace(/\x1b\[(?:1;1)?[Hf]/g, '\x02');
+
         s = s.replace(/\x1b\[\d+;1[Hf]/g, '\n');
 
         // Convertir movimiento de cursor hacia abajo / siguiente línea (\x1b[B, \x1b[1B, \x1b[1E) en salto de línea
@@ -130,7 +144,7 @@ const AnsiParser = (() => {
         s = s
             .replace(NON_SGR_CSI_REGEX, '')
             .replace(OTHER_ESCAPES_REGEX, '')
-            .replace(/[\x00-\x07\x0b\x0e-\x1a\x1c-\x1f\x7f]/g, '');
+            .replace(/[\x00\x01\x03-\x07\x0b\x0e-\x1a\x1c-\x1f\x7f]/g, '');
 
         return s;
     }
