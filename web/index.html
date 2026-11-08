@@ -133,6 +133,17 @@
                 </svg>
                 <span>Redes</span>
             </button>
+            <button class="docker-subnav-btn" data-subview="clusters" id="docker-subnav-clusters">
+                <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="5" r="3"></circle>
+                    <circle cx="5" cy="19" r="3"></circle>
+                    <circle cx="19" cy="19" r="3"></circle>
+                    <line x1="10.5" y1="7.5" x2="6.5" y2="16.5"></line>
+                    <line x1="13.5" y1="7.5" x2="17.5" y2="16.5"></line>
+                </svg>
+                <span>Swarm Clusters</span>
+            </button>
+            </button>
         </div>
 
         <!-- Vista Sidebar: Hosts -->
@@ -422,6 +433,88 @@
 
             <div class="vm-list-wrapper">
                 <div id="networks-list" class="networks-list"></div>
+            </div>
+        </section>
+
+        <!-- Vista Sidebar: Docker Swarm Clusters -->
+        <section id="sidebar-clusters-view" class="sidebar-view">
+            <!-- Panel de listado de Clusters -->
+            <div id="clusters-list-panel" class="clusters-panel">
+                <div class="sidebar-view-header">
+                    <div class="sidebar-view-title">Docker Swarm Clusters</div>
+                </div>
+
+                <div class="containers-toolbar">
+                    <div class="containers-filter-wrap">
+                        <span class="containers-filter-label">Red Interna: <strong>vessel-net (10.250.0.0/24)</strong></span>
+                    </div>
+                    <div class="containers-toolbar-actions">
+                        <button id="open-create-cluster" class="btn btn-primary">
+                            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            <span>Crear cluster</span>
+                        </button>
+                        <button id="refresh-clusters-btn" class="btn btn-secondary btn-icon" title="Refrescar clusters">
+                            <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="vm-list-wrapper">
+                    <div id="clusters-list" class="clusters-list"></div>
+                </div>
+            </div>
+
+            <!-- Panel de detalles de un Cluster seleccionado -->
+            <div id="cluster-detail-panel" class="clusters-panel hidden">
+                <div class="cluster-detail-topbar">
+                    <button type="button" id="back-to-clusters-btn" class="btn btn-secondary btn-sm">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                        <span>Volver a Clusters</span>
+                    </button>
+                    <div class="cluster-detail-title-wrap">
+                        <h3 id="cluster-detail-name" class="cluster-detail-title">-</h3>
+                        <span id="cluster-detail-status-pill" class="cluster-status-badge status-active">Active</span>
+                    </div>
+                    <button type="button" id="refresh-cluster-detail-btn" class="btn btn-secondary btn-icon" title="Sincronizar estado real con Docker Swarm">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div id="cluster-detail-summary" class="cluster-detail-summary-bar"></div>
+                <div id="cluster-detail-warning" class="cluster-detail-banner hidden"></div>
+
+                <div class="vm-list-wrapper cluster-detail-scroll">
+                    <!-- Bloque Destacado: Manager -->
+                    <div class="cluster-role-section cluster-manager-block">
+                        <div class="cluster-role-header">
+                            <div class="cluster-role-title-group">
+                                <span class="cluster-role-badge role-manager">MANAGER / LEADER</span>
+                                <span class="cluster-role-subtitle">Nodo principal de control y orquestación del cluster</span>
+                            </div>
+                        </div>
+                        <div id="cluster-manager-card-wrap" class="cluster-manager-card-wrap"></div>
+                    </div>
+
+                    <!-- Sección: Workers -->
+                    <div class="cluster-role-section cluster-workers-block">
+                        <div class="cluster-role-header">
+                            <div class="cluster-role-title-group">
+                                <span class="cluster-role-badge role-worker">WORKERS</span>
+                                <span id="cluster-workers-count-label" class="cluster-role-subtitle">0 nodos Worker</span>
+                            </div>
+                        </div>
+                        <div id="cluster-workers-list" class="vm-list"></div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -1539,8 +1632,148 @@ CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
         </div>
     </div>
 
+    <!-- Modal Crear Cluster Docker Swarm -->
+    <div id="create-cluster-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog cluster-create-dialog" role="dialog" aria-labelledby="create-cluster-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <circle cx="12" cy="5" r="3"></circle>
+                            <circle cx="5" cy="19" r="3"></circle>
+                            <circle cx="19" cy="19" r="3"></circle>
+                            <line x1="10.5" y1="7.5" x2="6.5" y2="16.5"></line>
+                            <line x1="13.5" y1="7.5" x2="17.5" y2="16.5"></line>
+                        </svg>
+                    </div>
+                    <h2 id="create-cluster-title">Crear Cluster Docker Swarm</h2>
+                </div>
+                <button id="close-create-cluster-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+
+            <form id="create-cluster-form" class="modal-body" autocomplete="off">
+                <div class="form-field">
+                    <label for="create-cluster-name">Nombre del cluster <span class="req">*</span></label>
+                    <input type="text" id="create-cluster-name" placeholder="ej. swarm-produccion" required spellcheck="false" />
+                    <span class="field-hint">Solo letras, números, guiones (-), guiones bajos (_) o puntos.</span>
+                </div>
+
+                <!-- Selección de la VM Manager -->
+                <div class="form-field">
+                    <div class="cluster-selector-head">
+                        <label>Seleccionar VM Manager <span class="req">*</span></label>
+                        <button type="button" id="refresh-cluster-vms-btn" class="btn btn-secondary btn-xs" title="Volver a comprobar disponibilidad de las VMs">
+                            Verificar VMs
+                        </button>
+                    </div>
+                    <span class="field-hint">El Manager inicializará el plano de control de Docker Swarm usando su IP en <code>vessel-net</code> (puerto 2377/tcp).</span>
+                    <div id="create-cluster-manager-list" class="cluster-vm-selection-list"></div>
+                </div>
+
+                <!-- Selección de las VMs Workers -->
+                <div class="form-field">
+                    <div class="cluster-selector-head">
+                        <label>Seleccionar VMs Workers <span style="color:var(--text-muted);font-weight:400">(Opcional)</span></label>
+                        <span id="create-cluster-workers-counter" class="cluster-selection-pill">0 seleccionados</span>
+                    </div>
+                    <span class="field-hint">Selecciona una o más VMs elegibles para unirse al cluster como nodos Worker. La VM elegida como Manager se excluye automáticamente.</span>
+                    <div id="create-cluster-workers-list" class="cluster-vm-selection-list"></div>
+                </div>
+
+                <!-- Advertencia de cluster de un solo nodo -->
+                <div id="create-cluster-single-node-warning" class="cluster-warning-box hidden">
+                    <strong>Advertencia de capacidad:</strong> Has seleccionado únicamente el nodo Manager sin Workers. El cluster se inicializará correctamente en modo de un solo nodo, pero aún no tendrá capacidad distribuida ni tolerancia a fallos de nodos de carga.
+                </div>
+
+                <div id="create-cluster-feedback" class="modal-feedback hidden"></div>
+
+                <!-- Indicador de progreso paso a paso en vivo (reutiliza el patrón de creación de VM) -->
+                <div id="cluster-create-progress" class="vm-create-progress hidden">
+                    <div class="vm-progress-header">
+                        <span id="cluster-progress-stage-title" class="vm-progress-stage-title">Inicializando cluster...</span>
+                        <span id="cluster-progress-step-badge" class="vm-progress-badge">Paso 1 de 11</span>
+                    </div>
+                    <div class="vm-progress-bar-container">
+                        <div id="cluster-progress-bar-fill" class="vm-progress-bar-fill" style="width: 5%;"></div>
+                    </div>
+                    <p id="cluster-progress-msg" class="vm-progress-msg">Preparando configuración de Docker Swarm...</p>
+                    <div class="vm-progress-steps" id="cluster-progress-steps-list">
+                        <div class="vm-pstep" data-cstep="1"><span class="vm-pstep-icon">1</span><span>Validando la configuración del cluster</span></div>
+                        <div class="vm-pstep" data-cstep="2"><span class="vm-pstep-icon">2</span><span>Verificando disponibilidad de las VMs seleccionadas</span></div>
+                        <div class="vm-pstep" data-cstep="3"><span class="vm-pstep-icon">3</span><span>Comprobando conexión SSH con los nodos</span></div>
+                        <div class="vm-pstep" data-cstep="4"><span class="vm-pstep-icon">4</span><span>Detectando las direcciones IP de vessel-net</span></div>
+                        <div class="vm-pstep" data-cstep="5"><span class="vm-pstep-icon">5</span><span>Comprobando conectividad entre los nodos</span></div>
+                        <div class="vm-pstep" data-cstep="6"><span class="vm-pstep-icon">6</span><span>Verificando disponibilidad de los puertos de Docker Swarm</span></div>
+                        <div class="vm-pstep" data-cstep="7"><span class="vm-pstep-icon">7</span><span>Inicializando Docker Swarm en el Manager</span></div>
+                        <div class="vm-pstep" data-cstep="8"><span class="vm-pstep-icon">8</span><span>Generando y obteniendo el token de incorporación de Workers</span></div>
+                        <div class="vm-pstep" data-cstep="9"><span class="vm-pstep-icon">9</span><span>Incorporando los Workers al cluster</span></div>
+                        <div class="vm-pstep" data-cstep="10"><span class="vm-pstep-icon">10</span><span>Verificando el estado de los nodos</span></div>
+                        <div class="vm-pstep" data-cstep="11"><span class="vm-pstep-icon">11</span><span>Guardando la información del cluster en Vessel</span></div>
+                    </div>
+                </div>
+
+                <div class="modal-footer" style="padding: 12px 0 0 0; margin-top: 4px;">
+                    <button type="button" id="cancel-create-cluster-btn" class="btn btn-secondary">Cancelar</button>
+                    <button type="submit" id="submit-create-cluster-btn" class="btn btn-primary">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Crear Cluster</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Confirmar Eliminar Nodo del Cluster -->
+    <div id="remove-cluster-node-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog delete-modal-dialog" role="dialog" aria-labelledby="remove-cluster-node-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap warning">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h2 id="remove-cluster-node-title">Eliminar del Cluster</h2>
+                </div>
+                <button id="close-remove-cluster-node-modal" class="modal-close-btn" aria-label="Cerrar ventana">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="delete-confirm-copy">
+                    <p>¿Estás seguro de que deseas retirar la siguiente máquina virtual del cluster?</p>
+                    <div class="delete-vm-badge">
+                        <strong id="remove-cluster-node-vm-name">nombre-vm</strong>
+                        <span id="remove-cluster-node-role-badge" class="cluster-role-badge role-worker" style="margin-left:8px">WORKER</span>
+                    </div>
+                    <p style="font-size:12px;color:var(--text-secondary)">Cluster: <strong id="remove-cluster-node-cluster-name" style="color:#fff">-</strong></p>
+                    <p id="remove-cluster-node-consequence" class="delete-warning-sub" style="text-align:left;background:rgba(56,189,248,0.07);border:1px solid rgba(56,189,248,0.2);padding:8px 10px;border-radius:6px;color:#cbd5e1;">
+                        Esta acción drenará el nodo y lo desvinculará de Docker Swarm. <strong>No eliminará</strong> la máquina virtual de VirtualBox, su sistema operativo, Docker Engine ni sus imágenes o volúmenes locales.
+                    </p>
+                </div>
+
+                <div id="remove-cluster-node-force-box" class="cluster-warning-box hidden" style="margin-top:4px;">
+                    <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;">
+                        <input type="checkbox" id="remove-cluster-node-force-check" style="margin-top:2px;" />
+                        <span id="remove-cluster-node-force-text">Forzar eliminación desde el Manager aunque el nodo esté apagado o sin conexión SSH (podría requerir <code>sudo docker swarm leave --force</code> local cuando la VM vuelva a encenderse).</span>
+                    </label>
+                </div>
+
+                <div id="remove-cluster-node-feedback" class="modal-feedback hidden"></div>
+
+                <div class="delete-confirm-actions">
+                    <button type="button" id="cancel-remove-cluster-node" class="btn btn-secondary">Cancelar</button>
+                    <button type="button" id="confirm-remove-cluster-node" class="btn btn-danger">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Eliminar del cluster</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="/js/ansi.js?v=40"></script>
     <script src="/js/websocket.js?v=39"></script>
-    <script src="/js/app.js?v=59"></script>
+    <script src="/js/app.js?v=60"></script>
 </body>
 </html>

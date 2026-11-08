@@ -13,6 +13,7 @@ dockerhub_credentials.json
 keys.json
 hosts.json
 vms.json
+clusters.json
 *.pem
 *.key
 *.pub

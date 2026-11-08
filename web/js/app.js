@@ -326,6 +326,64 @@ class TerminalApp {
         this.deleteNetworkFeedback = document.getElementById('delete-network-feedback');
         this.pendingDeleteNetwork = null;
 
+        // Elementos de Gestión de Docker Swarm Clusters
+        this.clustersListPanel = document.getElementById('clusters-list-panel');
+        this.clustersListEl = document.getElementById('clusters-list');
+        this.openCreateClusterBtn = document.getElementById('open-create-cluster');
+        this.refreshClustersBtn = document.getElementById('refresh-clusters-btn');
+        this.clusterDetailPanel = document.getElementById('cluster-detail-panel');
+        this.backToClustersBtn = document.getElementById('back-to-clusters-btn');
+        this.refreshClusterDetailBtn = document.getElementById('refresh-cluster-detail-btn');
+        this.clusterDetailNameEl = document.getElementById('cluster-detail-name');
+        this.clusterDetailStatusPill = document.getElementById('cluster-detail-status-pill');
+        this.clusterDetailSummaryEl = document.getElementById('cluster-detail-summary');
+        this.clusterDetailWarningEl = document.getElementById('cluster-detail-warning');
+        this.clusterManagerCardWrap = document.getElementById('cluster-manager-card-wrap');
+        this.clusterWorkersCountLabel = document.getElementById('cluster-workers-count-label');
+        this.clusterWorkersListEl = document.getElementById('cluster-workers-list');
+        this.clusters = [];
+        this.activeClusterId = null;
+        this.activeClusterData = null;
+
+        // Modal de Creación de Cluster Docker Swarm
+        this.createClusterModal = document.getElementById('create-cluster-modal');
+        this.closeCreateClusterModalBtn = document.getElementById('close-create-cluster-modal');
+        this.cancelCreateClusterBtn = document.getElementById('cancel-create-cluster-btn');
+        this.createClusterForm = document.getElementById('create-cluster-form');
+        this.createClusterNameInput = document.getElementById('create-cluster-name');
+        this.refreshClusterVmsBtn = document.getElementById('refresh-cluster-vms-btn');
+        this.createClusterManagerList = document.getElementById('create-cluster-manager-list');
+        this.createClusterWorkersList = document.getElementById('create-cluster-workers-list');
+        this.createClusterWorkersCounter = document.getElementById('create-cluster-workers-counter');
+        this.createClusterSingleNodeWarning = document.getElementById('create-cluster-single-node-warning');
+        this.createClusterFeedback = document.getElementById('create-cluster-feedback');
+        this.submitCreateClusterBtn = document.getElementById('submit-create-cluster-btn');
+        this.clusterCreateProgressWrap = document.getElementById('cluster-create-progress');
+        this.clusterProgressStageTitle = document.getElementById('cluster-progress-stage-title');
+        this.clusterProgressStepBadge = document.getElementById('cluster-progress-step-badge');
+        this.clusterProgressBarFill = document.getElementById('cluster-progress-bar-fill');
+        this.clusterProgressMsg = document.getElementById('cluster-progress-msg');
+        this.clusterProgressStepsList = document.getElementById('cluster-progress-steps-list');
+        this.clusterEligibleVMs = [];
+        this.selectedClusterManagerVM = '';
+        this.selectedClusterWorkerVMs = new Set();
+        this.isCreatingCluster = false;
+
+        // Modal de Eliminación de Nodo del Cluster
+        this.removeClusterNodeModal = document.getElementById('remove-cluster-node-modal');
+        this.closeRemoveClusterNodeModalBtn = document.getElementById('close-remove-cluster-node-modal');
+        this.cancelRemoveClusterNodeBtn = document.getElementById('cancel-remove-cluster-node');
+        this.confirmRemoveClusterNodeBtn = document.getElementById('confirm-remove-cluster-node');
+        this.removeClusterNodeVmNameEl = document.getElementById('remove-cluster-node-vm-name');
+        this.removeClusterNodeRoleBadgeEl = document.getElementById('remove-cluster-node-role-badge');
+        this.removeClusterNodeClusterNameEl = document.getElementById('remove-cluster-node-cluster-name');
+        this.removeClusterNodeConsequenceEl = document.getElementById('remove-cluster-node-consequence');
+        this.removeClusterNodeForceBox = document.getElementById('remove-cluster-node-force-box');
+        this.removeClusterNodeForceCheck = document.getElementById('remove-cluster-node-force-check');
+        this.removeClusterNodeForceText = document.getElementById('remove-cluster-node-force-text');
+        this.removeClusterNodeFeedback = document.getElementById('remove-cluster-node-feedback');
+        this.pendingRemoveClusterNode = null;
+
         // Elementos del modal de configuracion
         this.modalEl = document.getElementById('config-modal');
         this.closeModalBtn = document.getElementById('close-modal-btn');
@@ -916,6 +974,48 @@ class TerminalApp {
             this.confirmDeleteNetworkBtn.addEventListener('click', () => this.executeDeleteNetwork());
         }
 
+        // Eventos de Gestión de Docker Swarm Clusters
+        if (this.openCreateClusterBtn) {
+            this.openCreateClusterBtn.addEventListener('click', () => this.openCreateClusterModal());
+        }
+        if (this.refreshClustersBtn) {
+            this.refreshClustersBtn.addEventListener('click', () => this.loadClusters());
+        }
+        if (this.backToClustersBtn) {
+            this.backToClustersBtn.addEventListener('click', () => this.backToClustersList());
+        }
+        if (this.refreshClusterDetailBtn) {
+            this.refreshClusterDetailBtn.addEventListener('click', () => {
+                if (this.activeClusterId) {
+                    this.openClusterDetails(this.activeClusterId);
+                }
+            });
+        }
+        if (this.closeCreateClusterModalBtn) {
+            this.closeCreateClusterModalBtn.addEventListener('click', () => this.closeCreateClusterModal());
+        }
+        if (this.cancelCreateClusterBtn) {
+            this.cancelCreateClusterBtn.addEventListener('click', () => this.closeCreateClusterModal());
+        }
+        if (this.refreshClusterVmsBtn) {
+            this.refreshClusterVmsBtn.addEventListener('click', () => this.loadEligibleVMsForCluster());
+        }
+        if (this.createClusterForm) {
+            this.createClusterForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.submitCreateCluster();
+            });
+        }
+        if (this.closeRemoveClusterNodeModalBtn) {
+            this.closeRemoveClusterNodeModalBtn.addEventListener('click', () => this.closeRemoveClusterNodeModal());
+        }
+        if (this.cancelRemoveClusterNodeBtn) {
+            this.cancelRemoveClusterNodeBtn.addEventListener('click', () => this.closeRemoveClusterNodeModal());
+        }
+        if (this.confirmRemoveClusterNodeBtn) {
+            this.confirmRemoveClusterNodeBtn.addEventListener('click', () => this.executeRemoveClusterNode());
+        }
+
         // Eventos de Redes dentro del Asistente de Contenedores
         if (this.wizAddNetworkRowBtn) {
             this.wizAddNetworkRowBtn.addEventListener('click', () => {
@@ -1287,7 +1387,9 @@ class TerminalApp {
             (this.deleteContainerModal && !this.deleteContainerModal.classList.contains('hidden')) ||
             (this.imageBuildModal && !this.imageBuildModal.classList.contains('hidden')) ||
             (this.deleteImageModal && !this.deleteImageModal.classList.contains('hidden')) ||
-            (this.commitContainerModal && !this.commitContainerModal.classList.contains('hidden'));
+            (this.commitContainerModal && !this.commitContainerModal.classList.contains('hidden')) ||
+            (this.createClusterModal && !this.createClusterModal.classList.contains('hidden')) ||
+            (this.removeClusterNodeModal && !this.removeClusterNodeModal.classList.contains('hidden'));
     }
 
     isSidebarOpen() {
@@ -1311,7 +1413,7 @@ class TerminalApp {
     }
 
     switchSidebarView(view) {
-        const isDocker = (view === 'docker' || view === 'containers' || view === 'images' || view === 'volumes');
+        const isDocker = (view === 'docker' || view === 'containers' || view === 'images' || view === 'volumes' || view === 'networks' || view === 'clusters');
 
         // Resaltar pestañas principales
         this.sideLinks.forEach((l) => {
@@ -1331,7 +1433,7 @@ class TerminalApp {
 
         if (isDocker) {
             let subview = this.activeDockerSubnav || 'containers';
-            if (view === 'images' || view === 'volumes') {
+            if (view === 'images' || view === 'volumes' || view === 'networks' || view === 'clusters') {
                 subview = view;
             }
             this.switchDockerSubview(subview);
@@ -1361,6 +1463,8 @@ class TerminalApp {
                 s.classList.toggle('active', s.id === 'sidebar-volumes-view');
             } else if (subview === 'networks') {
                 s.classList.toggle('active', s.id === 'sidebar-networks-view');
+            } else if (subview === 'clusters') {
+                s.classList.toggle('active', s.id === 'sidebar-clusters-view');
             } else {
                 s.classList.remove('active');
             }
@@ -1379,6 +1483,12 @@ class TerminalApp {
             this.loadVolumes(activeVm);
         } else if (subview === 'networks') {
             this.loadNetworks(activeVm);
+        } else if (subview === 'clusters') {
+            if (this.activeClusterId && this.clusterDetailPanel && !this.clusterDetailPanel.classList.contains('hidden')) {
+                this.openClusterDetails(this.activeClusterId);
+            } else {
+                this.loadClusters();
+            }
         }
     }
 
@@ -1441,6 +1551,138 @@ class TerminalApp {
         }
     }
 
+    buildVMCardHTML(vm, clusterNodeContext = null) {
+        const vmName = vm.name || vm.vmName || '';
+        const stateLower = (vm.state || vm.vmState || '').toLowerCase();
+        const isRunning = stateLower === 'running' || stateLower === 'ejecutando';
+        const stateColor = isRunning ? 'var(--accent-green)' : stateLower === 'poweroff' ? 'var(--accent-red)' : 'var(--accent-yellow)';
+        const templateLabel = vm.templateName || vm.os || 'Plantilla Base';
+        const netName = vm.networkName || vm.network || 'vessel-net';
+        const privateIp = vm.privateIp || vm.internalIp || vm.ip || '';
+
+        let ipDisplayHtml = '';
+        if (privateIp) {
+            ipDisplayHtml = `<span style="color:var(--accent-green);font-family:monospace">${this.escapeHTML(privateIp)}</span>${!isRunning ? ' <span style="color:var(--text-muted);font-size:11px">(última)</span>' : ''}`;
+        } else if (isRunning) {
+            ipDisplayHtml = `<span style="color:var(--accent-yellow)" id="vm-card-ip-${this.escapeAttr(vmName)}">Detectando DHCP...</span>`;
+        } else {
+            ipDisplayHtml = `<span style="color:var(--text-muted)">Sin asignar (Apagada)</span>`;
+        }
+
+        let swarmBadgesHtml = '';
+        let swarmDetailsHtml = '';
+        let swarmRetryHtml = '';
+
+        if (clusterNodeContext) {
+            const isMgr = (clusterNodeContext.role || '').toLowerCase() === 'manager';
+            const roleLabel = isMgr ? (clusterNodeContext.isLeader ? 'Manager / Leader' : 'Manager') : 'Worker';
+            const swarmSt = clusterNodeContext.swarmStatus || (isRunning ? 'Ready' : 'Down');
+            const swarmStLower = swarmSt.toLowerCase();
+            const pillClass = swarmStLower === 'ready' ? 'ready' : (swarmStLower === 'down' || swarmStLower === 'error') ? 'down' : 'warning';
+
+            swarmBadgesHtml = `
+                <span class="cluster-role-badge ${isMgr ? 'role-manager' : 'role-worker'}">${this.escapeHTML(roleLabel)}</span>
+                <span class="swarm-node-pill ${pillClass}">Swarm: ${this.escapeHTML(swarmSt)}</span>
+            `;
+
+            swarmDetailsHtml = `
+                <span><strong>Rol Swarm:</strong> <span style="color:#7dd3fc">${this.escapeHTML(roleLabel)}</span></span>
+                <span><strong>Estado Nodo:</strong> <span style="color:${pillClass === 'ready' ? 'var(--accent-green)' : 'var(--accent-red)'}">${this.escapeHTML(swarmSt)} (${this.escapeHTML(clusterNodeContext.availability || 'Active')})</span></span>
+            `;
+
+            if (clusterNodeContext.joinError) {
+                swarmRetryHtml = `
+                <div class="cluster-warning-box" style="margin-top:4px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+                    <span style="font-size:11px;color:#fca5a5">${this.escapeHTML(clusterNodeContext.joinError)}</span>
+                    <button type="button" class="btn btn-warning" style="padding:4px 8px;font-size:11px" onclick="window.terminalApp.retryClusterWorker('${this.escapeAttr(clusterNodeContext.clusterId)}', '${this.escapeAttr(vmName)}', this)">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Reintentar unión</span>
+                    </button>
+                </div>`;
+            }
+        }
+
+        const cardDomId = clusterNodeContext
+            ? `cluster-vm-card-${this.escapeAttr(vmName)}`
+            : `vm-card-${this.escapeAttr(vmName)}`;
+
+        return `
+        <div class="vm-card" id="${cardDomId}">
+            <div class="vm-card-header">
+                <div class="vm-title-group" style="display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap;">
+                    <span class="vm-name">${this.escapeHTML(vmName)}</span>
+                    <span class="vm-os">${this.escapeHTML(templateLabel)}</span>
+                    ${swarmBadgesHtml}
+                </div>
+                <div class="card-dropdown">
+                    <button type="button" class="btn-dots" title="Más opciones" onclick="event.stopPropagation(); window.terminalApp.toggleVmMenu(this)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="1.5"></circle>
+                            <circle cx="19" cy="12" r="1.5"></circle>
+                            <circle cx="5" cy="12" r="1.5"></circle>
+                        </svg>
+                    </button>
+                    <div class="card-dropdown-menu">
+                        <button type="button" class="dropdown-item" onclick="window.terminalApp.viewVirtualMachine('${this.escapeAttr(vmName)}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                            <span>Detalles y Red</span>
+                        </button>
+                        <button type="button" class="dropdown-item" onclick="window.terminalApp.openVMContainersFromCard('${this.escapeAttr(vmName)}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                            <span>Contenedores Docker</span>
+                        </button>
+                        ${isRunning ? `
+                        <button type="button" class="dropdown-item" onclick="window.terminalApp.forcePoweroffVM('${this.escapeAttr(vmName)}', this)">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+                            <span>Forzar apagado</span>
+                        </button>` : ''}
+                        <div class="dropdown-divider"></div>
+                        ${clusterNodeContext ? `
+                        <button type="button" class="dropdown-item danger" onclick="window.terminalApp.openRemoveClusterNodeModal('${this.escapeAttr(clusterNodeContext.clusterId)}', '${this.escapeAttr(vmName)}', '${this.escapeAttr(clusterNodeContext.role)}', '${this.escapeAttr(clusterNodeContext.clusterName)}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                            <span>Eliminar del cluster</span>
+                        </button>` : `
+                        <button type="button" class="dropdown-item danger" onclick="window.terminalApp.openDeleteVMModal('${this.escapeAttr(vmName)}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            <span>Eliminar</span>
+                        </button>`}
+                    </div>
+                </div>
+            </div>
+            <div class="vm-card-details">
+                <span><strong>CPU:</strong> ${vm.cores || 2} Cores</span>
+                <span><strong>RAM:</strong> ${vm.memoryMB || 4096} MB</span>
+                <span><strong>Red:</strong> ${this.escapeHTML(netName)}</span>
+                <span><strong>IP Privada:</strong> ${ipDisplayHtml}</span>
+                <span><strong>Usuario SSH:</strong> ${this.escapeHTML(vm.sshUser || 'bootstrap')}</span>
+                <span><strong>SSH Port:</strong> ${vm.hostPort ? `${vm.host || ''}:${vm.hostPort}` : 'NAT'}</span>
+                <span><strong>Estado VM:</strong> <span style="color:${stateColor}">${this.escapeHTML(vm.state || vm.vmState || 'Creada')}</span></span>
+                ${swarmDetailsHtml}
+            </div>
+            ${swarmRetryHtml}
+            <div class="vm-card-delete-loader hidden">
+                <span class="vm-card-spinner"></span>
+                <span>Procesando...</span>
+            </div>
+            <div class="vm-card-actions">
+                ${isRunning ? `
+                <button type="button" class="btn btn-primary terminal-vm" data-id="${this.escapeAttr(vmName)}" title="Abrir terminal SSH interactivo a esta VM" onclick="window.terminalApp.connectTerminalToVM('${this.escapeAttr(vmName)}')">
+                    <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                    <span>Terminal</span>
+                </button>
+                <button type="button" class="btn btn-stop-vm stop-vm" data-id="${this.escapeAttr(vmName)}" title="Apagado limpio ACPI" onclick="window.terminalApp.stopVM('${this.escapeAttr(vmName)}', this)">
+                    <span class="btn-spinner hidden" aria-hidden="true"></span>
+                    <span class="btn-text">Apagar</span>
+                </button>` : `
+                <button type="button" class="btn btn-success start-vm" data-id="${this.escapeAttr(vmName)}" title="Iniciar máquina virtual" onclick="window.terminalApp.startVM('${this.escapeAttr(vmName)}', this)">
+                    <span class="btn-spinner hidden" aria-hidden="true"></span>
+                    <span class="btn-text">Iniciar</span>
+                </button>`}
+            </div>
+        </div>
+        `;
+    }
+
     renderVMList(vms) {
         if (!this.vmListEl) return;
         this.cachedVMs = Array.isArray(vms) ? vms : [];
@@ -1449,87 +1691,7 @@ class TerminalApp {
             return;
         }
 
-        this.vmListEl.innerHTML = vms.map((vm) => {
-            const stateLower = (vm.state || '').toLowerCase();
-            const isRunning = stateLower === 'running' || stateLower === 'ejecutando';
-            const stateColor = isRunning ? 'var(--accent-green)' : stateLower === 'poweroff' ? 'var(--accent-red)' : 'var(--accent-yellow)';
-            const templateLabel = vm.templateName || vm.os || 'Plantilla Base';
-            const netName = vm.networkName || vm.network || 'vessel-net';
-            const privateIp = vm.privateIp || vm.ip || '';
-
-            let ipDisplayHtml = '';
-            if (privateIp) {
-                ipDisplayHtml = `<span style="color:var(--accent-green);font-family:monospace">${this.escapeHTML(privateIp)}</span>${!isRunning ? ' <span style="color:var(--text-muted);font-size:11px">(última)</span>' : ''}`;
-            } else if (isRunning) {
-                ipDisplayHtml = `<span style="color:var(--accent-yellow)" id="vm-card-ip-${this.escapeAttr(vm.name)}">Detectando DHCP...</span>`;
-            } else {
-                ipDisplayHtml = `<span style="color:var(--text-muted)">Sin asignar (Apagada)</span>`;
-            }
-
-            return `
-            <div class="vm-card" id="vm-card-${this.escapeAttr(vm.name)}">
-                <div class="vm-card-header">
-                    <div class="vm-title-group" style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-                        <span class="vm-name">${this.escapeHTML(vm.name)}</span>
-                        <span class="vm-os">${this.escapeHTML(templateLabel)}</span>
-                    </div>
-                    <div class="card-dropdown">
-                        <button type="button" class="btn-dots" title="Más opciones" onclick="event.stopPropagation(); window.terminalApp.toggleVmMenu(this)">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="1.5"></circle>
-                                <circle cx="19" cy="12" r="1.5"></circle>
-                                <circle cx="5" cy="12" r="1.5"></circle>
-                            </svg>
-                        </button>
-                        <div class="card-dropdown-menu">
-                            <button type="button" class="dropdown-item" onclick="window.terminalApp.viewVirtualMachine('${this.escapeAttr(vm.name)}')">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                                <span>Detalles y Red</span>
-                            </button>
-                            ${isRunning ? `
-                            <button type="button" class="dropdown-item" onclick="window.terminalApp.forcePoweroffVM('${this.escapeAttr(vm.name)}', this)">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-                                <span>Forzar apagado</span>
-                            </button>` : ''}
-                            <div class="dropdown-divider"></div>
-                            <button type="button" class="dropdown-item danger" onclick="window.terminalApp.openDeleteVMModal('${this.escapeAttr(vm.name)}')">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                <span>Eliminar</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="vm-card-details">
-                    <span><strong>CPU:</strong> ${vm.cores || 2} Cores</span>
-                    <span><strong>RAM:</strong> ${vm.memoryMB || 4096} MB</span>
-                    <span><strong>Red:</strong> ${this.escapeHTML(netName)}</span>
-                    <span><strong>IP Privada:</strong> ${ipDisplayHtml}</span>
-                    <span><strong>Usuario SSH:</strong> ${this.escapeHTML(vm.sshUser || 'bootstrap')}</span>
-                    <span><strong>SSH Port:</strong> ${vm.hostPort ? `${vm.host || ''}:${vm.hostPort}` : 'NAT'}</span>
-                    <span><strong>Estado:</strong> <span style="color:${stateColor}">${this.escapeHTML(vm.state || 'Creada')}</span></span>
-                </div>
-                <div class="vm-card-delete-loader hidden">
-                    <span class="vm-card-spinner"></span>
-                    <span>Procesando...</span>
-                </div>
-                <div class="vm-card-actions">
-                    ${isRunning ? `
-                    <button type="button" class="btn btn-primary terminal-vm" data-id="${this.escapeAttr(vm.name)}" title="Abrir terminal SSH interactivo a esta VM" onclick="window.terminalApp.connectTerminalToVM('${this.escapeAttr(vm.name)}')">
-                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-                        <span>Terminal</span>
-                    </button>
-                    <button type="button" class="btn btn-stop-vm stop-vm" data-id="${this.escapeAttr(vm.name)}" title="Apagado limpio ACPI" onclick="window.terminalApp.stopVM('${this.escapeAttr(vm.name)}', this)">
-                        <span class="btn-spinner hidden" aria-hidden="true"></span>
-                        <span class="btn-text">Apagar</span>
-                    </button>` : `
-                    <button type="button" class="btn btn-success start-vm" data-id="${this.escapeAttr(vm.name)}" title="Iniciar máquina virtual" onclick="window.terminalApp.startVM('${this.escapeAttr(vm.name)}', this)">
-                        <span class="btn-spinner hidden" aria-hidden="true"></span>
-                        <span class="btn-text">Iniciar</span>
-                    </button>`}
-                </div>
-            </div>
-        `;
-        }).join('');
+        this.vmListEl.innerHTML = vms.map((vm) => this.buildVMCardHTML(vm, null)).join('');
 
         // Descubrir automáticamente en segundo plano la IP privada de las VMs encendidas que aún no tengan IP registrada
         vms.forEach((vm) => {
@@ -2161,6 +2323,9 @@ class TerminalApp {
             if (spinner) spinner.classList.add('hidden');
             if (text) text.textContent = 'Iniciar';
             await this.loadVirtualMachines();
+            if (this.activeClusterId && this.clusterDetailPanel && !this.clusterDetailPanel.classList.contains('hidden')) {
+                await this.openClusterDetails(this.activeClusterId);
+            }
         }
     }
 
@@ -2188,6 +2353,9 @@ class TerminalApp {
             if (spinner) spinner.classList.add('hidden');
             if (text) text.textContent = 'Apagar';
             await this.loadVirtualMachines();
+            if (this.activeClusterId && this.clusterDetailPanel && !this.clusterDetailPanel.classList.contains('hidden')) {
+                await this.openClusterDetails(this.activeClusterId);
+            }
         }
     }
 
@@ -2212,6 +2380,9 @@ class TerminalApp {
         } finally {
             if (btn) btn.disabled = false;
             await this.loadVirtualMachines();
+            if (this.activeClusterId && this.clusterDetailPanel && !this.clusterDetailPanel.classList.contains('hidden')) {
+                await this.openClusterDetails(this.activeClusterId);
+            }
         }
     }
 
@@ -6182,6 +6353,879 @@ class TerminalApp {
         if (!this.wizFeedback) return;
         this.wizFeedback.className = 'modal-feedback hidden';
         this.wizFeedback.textContent = '';
+    }
+
+    // =========================================================================
+    // Módulo Docker Swarm Clusters (Listado, Creación SSE 11 Pasos, Detalles y Nodos)
+    // =========================================================================
+
+    openVMContainersFromCard(vmName) {
+        this.closeCardDropdowns();
+        if (!vmName) return;
+        this.selectedDockerVm = vmName;
+        if (this.containersVmFilter) this.containersVmFilter.value = vmName;
+        if (this.imagesVmFilter) this.imagesVmFilter.value = vmName;
+        if (this.volumesVmFilter) this.volumesVmFilter.value = vmName;
+        if (this.networksVmFilter) this.networksVmFilter.value = vmName;
+        this.switchSidebarView('containers');
+    }
+
+    async loadClusters() {
+        if (!this.clustersListEl) return;
+        if (this.clustersListPanel) this.clustersListPanel.classList.remove('hidden');
+        if (this.clusterDetailPanel) this.clusterDetailPanel.classList.add('hidden');
+        this.activeClusterId = null;
+
+        this.clustersListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Sincronizando clusters Docker Swarm...</div>`;
+        try {
+            const res = await fetch('/api/clusters');
+            if (!res.ok) {
+                const text = await res.text();
+                this.clustersListEl.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">Error al consultar clusters: ${this.parseApiError(text)}</div>`;
+                return;
+            }
+            const data = await res.json();
+            this.clusters = Array.isArray(data) ? data : [];
+            this.renderClustersList(this.clusters);
+        } catch (e) {
+            console.warn('Error al cargar clusters:', e);
+            this.clustersListEl.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">No se pudo conectar al servidor para listar los clusters.</div>`;
+        }
+    }
+
+    getClusterStatusBadgeClass(status) {
+        const st = (status || '').toLowerCase();
+        if (st === 'active') return 'status-active';
+        if (st === 'creating') return 'status-creating';
+        if (st === 'degraded') return 'status-degraded';
+        return 'status-error';
+    }
+
+    renderClustersList(clusters) {
+        if (!this.clustersListEl) return;
+        if (!Array.isArray(clusters) || clusters.length === 0) {
+            this.clustersListEl.innerHTML = `
+                <div class="empty-vm-list" style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:30px 18px;">
+                    <svg viewBox="0 0 24 24" width="32" height="32" stroke="var(--accent)" stroke-width="1.6" fill="none">
+                        <circle cx="12" cy="5" r="3"></circle>
+                        <circle cx="5" cy="19" r="3"></circle>
+                        <circle cx="19" cy="19" r="3"></circle>
+                        <line x1="10.5" y1="7.5" x2="6.5" y2="16.5"></line>
+                        <line x1="13.5" y1="7.5" x2="17.5" y2="16.5"></line>
+                    </svg>
+                    <strong style="color:#f8fafc;font-size:14px;">Aún no existen clusters Docker Swarm</strong>
+                    <span style="max-width:440px;line-height:1.45;color:var(--text-muted);">
+                        Crea tu primer cluster seleccionando una máquina virtual existente como <strong>Manager</strong> y otras VMs como <strong>Workers</strong> conectadas a través de la red privada <code>vessel-net</code>.
+                    </span>
+                    <button type="button" class="btn btn-primary" style="margin-top:4px;" onclick="window.terminalApp.openCreateClusterModal()">
+                        + Crear primer cluster
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
+        this.clustersListEl.innerHTML = clusters.map((c) => {
+            const status = c.status || 'Active';
+            const badgeClass = this.getClusterStatusBadgeClass(status);
+            const workersConnected = typeof c.workersConnected === 'number' ? c.workersConnected : 0;
+            const workersTotal = typeof c.workersTotal === 'number' ? c.workersTotal : 0;
+            const totalNodes = typeof c.totalNodes === 'number' ? c.totalNodes : (1 + workersTotal);
+
+            return `
+            <div class="cluster-card" onclick="window.terminalApp.openClusterDetails('${this.escapeAttr(c.id)}')">
+                <div class="cluster-card-head">
+                    <span class="cluster-card-name">${this.escapeHTML(c.name)}</span>
+                    <span class="cluster-status-badge ${badgeClass}">${this.escapeHTML(status)}</span>
+                </div>
+                <div class="cluster-card-summary">
+                    <div class="cluster-summary-item">
+                        <span class="cluster-summary-label">VM Manager</span>
+                        <span class="cluster-summary-value" style="color:var(--accent)">${this.escapeHTML(c.managerVmName || '-')}</span>
+                    </div>
+                    <div class="cluster-summary-item">
+                        <span class="cluster-summary-label">Workers Conectados</span>
+                        <span class="cluster-summary-value">${workersConnected} / ${workersTotal}</span>
+                    </div>
+                    <div class="cluster-summary-item">
+                        <span class="cluster-summary-label">Total de Nodos</span>
+                        <span class="cluster-summary-value">${totalNodes}</span>
+                    </div>
+                </div>
+                <div class="cluster-card-footer">
+                    <span>Red: <code>${this.escapeHTML(c.networkName || 'vessel-net')}</code></span>
+                    <span class="cluster-open-link">Ver detalles ›</span>
+                </div>
+            </div>
+            `;
+        }).join('');
+    }
+
+    async openClusterDetails(clusterId) {
+        if (!clusterId) return;
+        this.activeClusterId = clusterId;
+        if (this.clustersListPanel) this.clustersListPanel.classList.add('hidden');
+        if (this.clusterDetailPanel) this.clusterDetailPanel.classList.remove('hidden');
+
+        if (this.clusterManagerCardWrap) {
+            this.clusterManagerCardWrap.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Consultando estado real de los nodos en Docker Swarm...</div>`;
+        }
+        if (this.clusterWorkersListEl) {
+            this.clusterWorkersListEl.innerHTML = '';
+        }
+
+        try {
+            const res = await fetch(`/api/clusters/${encodeURIComponent(clusterId)}`);
+            if (!res.ok) {
+                const text = await res.text();
+                const errMsg = this.parseApiError(text);
+                if (this.clusterManagerCardWrap) {
+                    this.clusterManagerCardWrap.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">Error al cargar el cluster: ${this.escapeHTML(errMsg)}</div>`;
+                }
+                return;
+            }
+            const cluster = await res.json();
+            this.activeClusterData = cluster;
+            this.renderClusterDetailView(cluster);
+        } catch (e) {
+            console.warn('Error al cargar detalle del cluster:', e);
+            if (this.clusterManagerCardWrap) {
+                this.clusterManagerCardWrap.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">No se pudo conectar al servidor para consultar el cluster.</div>`;
+            }
+        }
+    }
+
+    backToClustersList() {
+        this.activeClusterId = null;
+        this.activeClusterData = null;
+        if (this.clusterDetailPanel) this.clusterDetailPanel.classList.add('hidden');
+        if (this.clustersListPanel) this.clustersListPanel.classList.remove('hidden');
+        this.loadClusters();
+    }
+
+    renderClusterDetailView(cluster) {
+        if (!cluster) return;
+        if (this.clusterDetailNameEl) {
+            this.clusterDetailNameEl.textContent = cluster.name || '-';
+        }
+        if (this.clusterDetailStatusPill) {
+            const st = cluster.status || 'Active';
+            this.clusterDetailStatusPill.textContent = st;
+            this.clusterDetailStatusPill.className = `cluster-status-badge ${this.getClusterStatusBadgeClass(st)}`;
+        }
+
+        const nodes = Array.isArray(cluster.nodes) ? cluster.nodes : [];
+        const managerNode = nodes.find((n) => (n.role || '').toLowerCase() === 'manager') || {
+            vmName: cluster.managerVmName,
+            internalIp: cluster.managerIp,
+            role: 'manager',
+            isLeader: true,
+            swarmStatus: 'Unknown',
+        };
+        const workerNodes = nodes.filter((n) => (n.role || '').toLowerCase() === 'worker');
+
+        if (this.clusterDetailSummaryEl) {
+            this.clusterDetailSummaryEl.innerHTML = `
+                <span>Manager: <strong>${this.escapeHTML(cluster.managerVmName || '-')}</strong></span>
+                <span>IP Manager (vessel-net): <strong style="color:var(--accent-green)">${this.escapeHTML(cluster.managerIp || managerNode.internalIp || '-')}</strong></span>
+                <span>Workers conectados: <strong>${cluster.workersConnected ?? 0} / ${cluster.workersTotal ?? workerNodes.length}</strong></span>
+                <span>Total de nodos: <strong>${cluster.totalNodes ?? nodes.length}</strong></span>
+                ${cluster.swarmClusterId ? `<span>Swarm ID: <strong>${this.escapeHTML(cluster.swarmClusterId.slice(0, 14))}...</strong></span>` : ''}
+            `;
+        }
+
+        if (this.clusterDetailWarningEl) {
+            const warnMessages = [];
+            if (cluster.statusReason) warnMessages.push(cluster.statusReason);
+            if (cluster.singleNodeWarning) warnMessages.push(cluster.singleNodeWarning);
+            if (warnMessages.length > 0) {
+                this.clusterDetailWarningEl.textContent = warnMessages.join(' · ');
+                this.clusterDetailWarningEl.classList.remove('hidden');
+            } else {
+                this.clusterDetailWarningEl.textContent = '';
+                this.clusterDetailWarningEl.classList.add('hidden');
+            }
+        }
+
+        // Renderizar la tarjeta de la VM Manager reutilizando buildVMCardHTML
+        if (this.clusterManagerCardWrap) {
+            const mgrVM = {
+                ...(managerNode.vm || {}),
+                name: managerNode.vmName || (managerNode.vm && managerNode.vm.name) || cluster.managerVmName,
+                state: managerNode.vmState || (managerNode.vm && managerNode.vm.state) || 'unknown',
+                privateIp: managerNode.internalIp || (managerNode.vm && managerNode.vm.privateIp) || cluster.managerIp,
+            };
+            this.clusterManagerCardWrap.innerHTML = this.buildVMCardHTML(mgrVM, {
+                clusterId: cluster.id,
+                clusterName: cluster.name,
+                role: 'manager',
+                isLeader: managerNode.isLeader !== false,
+                swarmStatus: managerNode.swarmStatus || 'Ready',
+                availability: managerNode.availability || 'Active',
+                nodeId: managerNode.nodeId || '',
+            });
+        }
+
+        // Renderizar la lista de Workers reutilizando buildVMCardHTML
+        if (this.clusterWorkersCountLabel) {
+            this.clusterWorkersCountLabel.textContent = `${workerNodes.length} nodo(s) Worker (${cluster.workersConnected ?? 0} conectado(s))`;
+        }
+        if (this.clusterWorkersListEl) {
+            if (workerNodes.length === 0) {
+                this.clusterWorkersListEl.innerHTML = `
+                    <div class="empty-vm-list">
+                        Este cluster no tiene nodos Worker asignados (opera únicamente con el nodo Manager).
+                    </div>
+                `;
+            } else {
+                this.clusterWorkersListEl.innerHTML = workerNodes.map((wNode) => {
+                    const wrkVM = {
+                        ...(wNode.vm || {}),
+                        name: wNode.vmName || (wNode.vm && wNode.vm.name),
+                        state: wNode.vmState || (wNode.vm && wNode.vm.state) || 'unknown',
+                        privateIp: wNode.internalIp || (wNode.vm && wNode.vm.privateIp) || '',
+                    };
+                    return this.buildVMCardHTML(wrkVM, {
+                        clusterId: cluster.id,
+                        clusterName: cluster.name,
+                        role: 'worker',
+                        isLeader: false,
+                        swarmStatus: wNode.swarmStatus || 'Unknown',
+                        availability: wNode.availability || 'Active',
+                        nodeId: wNode.nodeId || '',
+                        joinError: wNode.joinError || '',
+                    });
+                }).join('');
+            }
+        }
+    }
+
+    openCreateClusterModal() {
+        if (!this.createClusterModal) return;
+        this.isCreatingCluster = false;
+        this.selectedClusterManagerVM = '';
+        this.selectedClusterWorkerVMs.clear();
+
+        if (this.createClusterForm) this.createClusterForm.reset();
+        this.hideCreateClusterFeedback();
+        this.hideClusterCreateProgress();
+        this.setCreateClusterLoading(false);
+        if (this.createClusterSingleNodeWarning) {
+            this.createClusterSingleNodeWarning.classList.add('hidden');
+        }
+
+        this.createClusterModal.classList.remove('hidden');
+        this.createClusterModal.setAttribute('aria-hidden', 'false');
+        this.loadEligibleVMsForCluster();
+        setTimeout(() => {
+            if (this.createClusterNameInput) this.createClusterNameInput.focus();
+        }, 50);
+    }
+
+    closeCreateClusterModal() {
+        if (this.isCreatingCluster) return;
+        if (!this.createClusterModal) return;
+        this.createClusterModal.classList.add('hidden');
+        this.createClusterModal.setAttribute('aria-hidden', 'true');
+        this.hideCreateClusterFeedback();
+        this.hideClusterCreateProgress();
+    }
+
+    async loadEligibleVMsForCluster() {
+        if (this.createClusterManagerList) {
+            this.createClusterManagerList.innerHTML = `<div style="padding:12px;text-align:center;font-size:12px;color:var(--text-muted)"><span class="btn-spinner"></span> Evaluando disponibilidad, red vessel-net y estado Docker de las VMs...</div>`;
+        }
+        if (this.createClusterWorkersList) {
+            this.createClusterWorkersList.innerHTML = `<div style="padding:12px;text-align:center;font-size:12px;color:var(--text-muted)">Esperando evaluación de VMs...</div>`;
+        }
+
+        try {
+            const res = await fetch('/api/clusters/eligible-vms');
+            if (!res.ok) {
+                const text = await res.text();
+                const errMsg = this.parseApiError(text);
+                if (this.createClusterManagerList) {
+                    this.createClusterManagerList.innerHTML = `<div style="padding:12px;color:var(--accent-red);font-size:12px">Error al evaluar VMs: ${this.escapeHTML(errMsg)}</div>`;
+                }
+                return;
+            }
+            const items = await res.json();
+            this.clusterEligibleVMs = Array.isArray(items) ? items : [];
+
+            // Si la VM seleccionada previamente ya no es elegible, limpiarla
+            const mgrValid = this.clusterEligibleVMs.some((v) => v.vmName === this.selectedClusterManagerVM && v.eligible);
+            if (!mgrValid) {
+                this.selectedClusterManagerVM = '';
+            }
+            for (const wName of Array.from(this.selectedClusterWorkerVMs)) {
+                const wValid = this.clusterEligibleVMs.some((v) => v.vmName === wName && v.eligible) && wName !== this.selectedClusterManagerVM;
+                if (!wValid) {
+                    this.selectedClusterWorkerVMs.delete(wName);
+                }
+            }
+
+            this.renderClusterVMSelectors();
+        } catch (e) {
+            console.warn('Error cargando VMs elegibles para cluster:', e);
+            if (this.createClusterManagerList) {
+                this.createClusterManagerList.innerHTML = `<div style="padding:12px;color:var(--accent-red);font-size:12px">No se pudo conectar al servidor para evaluar VMs.</div>`;
+            }
+        }
+    }
+
+    renderClusterVMSelectors() {
+        const list = this.clusterEligibleVMs || [];
+
+        if (this.createClusterManagerList) {
+            if (list.length === 0) {
+                this.createClusterManagerList.innerHTML = `<div style="padding:12px;color:var(--text-muted);font-size:12px">No existen máquinas virtuales registradas en Vessel.</div>`;
+            } else {
+                this.createClusterManagerList.innerHTML = list.map((vm) => {
+                    const isSelected = vm.eligible && this.selectedClusterManagerVM === vm.vmName;
+                    const disabledClass = vm.eligible ? '' : 'disabled';
+                    const selectedClass = isSelected ? 'selected' : '';
+                    const ipBadge = vm.privateIp ? `<span class="vm-badge">${this.escapeHTML(vm.privateIp)}</span>` : '';
+
+                    return `
+                    <label class="cluster-vm-option ${disabledClass} ${selectedClass}">
+                        <div class="cluster-vm-option-left">
+                            <input type="radio" name="cluster-manager-vm" value="${this.escapeAttr(vm.vmName)}" ${isSelected ? 'checked' : ''} ${vm.eligible ? '' : 'disabled'} onchange="window.terminalApp.handleSelectClusterManager('${this.escapeAttr(vm.vmName)}')" />
+                            <div class="cluster-vm-option-info">
+                                <div class="cluster-vm-option-name">
+                                    <span>${this.escapeHTML(vm.vmName)}</span>
+                                    ${ipBadge}
+                                </div>
+                                <span class="cluster-vm-option-reason">${this.escapeHTML(vm.reason || '')}</span>
+                            </div>
+                        </div>
+                        <span class="swarm-node-pill ${vm.eligible ? 'ready' : 'down'}">${vm.eligible ? 'Elegible' : 'No disponible'}</span>
+                    </label>
+                    `;
+                }).join('');
+            }
+        }
+
+        if (this.createClusterWorkersList) {
+            const workerCandidates = list.filter((vm) => vm.vmName !== this.selectedClusterManagerVM);
+            if (!this.selectedClusterManagerVM) {
+                this.createClusterWorkersList.innerHTML = `<div style="padding:12px;color:var(--text-muted);font-size:12px">Selecciona primero la VM Manager para habilitar la selección de Workers.</div>`;
+            } else if (workerCandidates.length === 0) {
+                this.createClusterWorkersList.innerHTML = `<div style="padding:12px;color:var(--text-muted);font-size:12px">No hay más máquinas virtuales registradas además del Manager seleccionado.</div>`;
+            } else {
+                this.createClusterWorkersList.innerHTML = workerCandidates.map((vm) => {
+                    const isChecked = vm.eligible && this.selectedClusterWorkerVMs.has(vm.vmName);
+                    const disabledClass = vm.eligible ? '' : 'disabled';
+                    const selectedClass = isChecked ? 'selected' : '';
+                    const ipBadge = vm.privateIp ? `<span class="vm-badge">${this.escapeHTML(vm.privateIp)}</span>` : '';
+
+                    return `
+                    <label class="cluster-vm-option ${disabledClass} ${selectedClass}">
+                        <div class="cluster-vm-option-left">
+                            <input type="checkbox" value="${this.escapeAttr(vm.vmName)}" ${isChecked ? 'checked' : ''} ${vm.eligible ? '' : 'disabled'} onchange="window.terminalApp.handleToggleClusterWorker('${this.escapeAttr(vm.vmName)}', this.checked)" />
+                            <div class="cluster-vm-option-info">
+                                <div class="cluster-vm-option-name">
+                                    <span>${this.escapeHTML(vm.vmName)}</span>
+                                    ${ipBadge}
+                                </div>
+                                <span class="cluster-vm-option-reason">${this.escapeHTML(vm.reason || '')}</span>
+                            </div>
+                        </div>
+                        <span class="swarm-node-pill ${vm.eligible ? 'ready' : 'down'}">${vm.eligible ? 'Elegible' : 'No disponible'}</span>
+                    </label>
+                    `;
+                }).join('');
+            }
+        }
+
+        if (this.createClusterWorkersCounter) {
+            const count = this.selectedClusterWorkerVMs.size;
+            this.createClusterWorkersCounter.textContent = `${count} seleccionado${count === 1 ? '' : 's'}`;
+        }
+
+        this.updateSingleNodeWarning();
+    }
+
+    handleSelectClusterManager(vmName) {
+        this.selectedClusterManagerVM = vmName;
+        // Excluir automáticamente el Manager de la selección de Workers
+        if (this.selectedClusterWorkerVMs.has(vmName)) {
+            this.selectedClusterWorkerVMs.delete(vmName);
+        }
+        this.renderClusterVMSelectors();
+    }
+
+    handleToggleClusterWorker(vmName, checked) {
+        if (!vmName || vmName === this.selectedClusterManagerVM) return;
+        if (checked) {
+            this.selectedClusterWorkerVMs.add(vmName);
+        } else {
+            this.selectedClusterWorkerVMs.delete(vmName);
+        }
+        this.renderClusterVMSelectors();
+    }
+
+    updateSingleNodeWarning() {
+        if (!this.createClusterSingleNodeWarning) return;
+        const showWarning = Boolean(this.selectedClusterManagerVM) && this.selectedClusterWorkerVMs.size === 0;
+        this.createClusterSingleNodeWarning.classList.toggle('hidden', !showWarning);
+    }
+
+    showCreateClusterFeedback(msg, type = 'error') {
+        if (!this.createClusterFeedback) return;
+        this.createClusterFeedback.textContent = msg;
+        this.createClusterFeedback.className = `modal-feedback ${type}`;
+    }
+
+    hideCreateClusterFeedback() {
+        if (!this.createClusterFeedback) return;
+        this.createClusterFeedback.textContent = '';
+        this.createClusterFeedback.className = 'modal-feedback hidden';
+    }
+
+    setCreateClusterLoading(loading) {
+        if (!this.submitCreateClusterBtn) return;
+        const spinner = this.submitCreateClusterBtn.querySelector('.btn-spinner');
+        const text = this.submitCreateClusterBtn.querySelector('.btn-text');
+
+        this.submitCreateClusterBtn.disabled = loading;
+        if (this.cancelCreateClusterBtn) this.cancelCreateClusterBtn.disabled = loading;
+        if (this.closeCreateClusterModalBtn) this.closeCreateClusterModalBtn.disabled = loading;
+        if (this.createClusterNameInput) this.createClusterNameInput.disabled = loading;
+        if (this.refreshClusterVmsBtn) this.refreshClusterVmsBtn.disabled = loading;
+
+        if (spinner) spinner.classList.toggle('hidden', !loading);
+        if (text) text.textContent = loading ? 'Configurando Swarm...' : 'Crear Cluster';
+    }
+
+    initClusterCreateProgress() {
+        if (!this.clusterCreateProgressWrap) return;
+        this.clusterCreateProgressWrap.classList.remove('hidden');
+
+        if (this.clusterProgressStageTitle) {
+            this.clusterProgressStageTitle.textContent = 'Inicializando cluster Docker Swarm...';
+        }
+        if (this.clusterProgressStepBadge) {
+            this.clusterProgressStepBadge.textContent = 'Paso 1 de 11';
+            this.clusterProgressStepBadge.className = 'vm-progress-badge';
+        }
+        if (this.clusterProgressBarFill) {
+            this.clusterProgressBarFill.style.width = '5%';
+            this.clusterProgressBarFill.className = 'vm-progress-bar-fill';
+        }
+        if (this.clusterProgressMsg) {
+            this.clusterProgressMsg.textContent = 'Validando la configuración del cluster...';
+        }
+
+        if (this.clusterProgressStepsList) {
+            const steps = this.clusterProgressStepsList.querySelectorAll('.vm-pstep');
+            steps.forEach((el) => {
+                const sNum = parseInt(el.getAttribute('data-cstep'), 10);
+                el.classList.remove('active', 'completed', 'failed', 'warning', 'skipped');
+                const icon = el.querySelector('.vm-pstep-icon');
+                if (sNum === 1) {
+                    el.classList.add('active');
+                    if (icon) icon.innerHTML = `<span class="vm-spinner-mini"></span>`;
+                } else if (icon) {
+                    icon.textContent = String(sNum);
+                }
+            });
+        }
+    }
+
+    hideClusterCreateProgress() {
+        if (!this.clusterCreateProgressWrap) return;
+        this.clusterCreateProgressWrap.classList.add('hidden');
+    }
+
+    updateClusterCreateProgress(ev) {
+        if (!this.clusterCreateProgressWrap || !ev) return;
+        this.clusterCreateProgressWrap.classList.remove('hidden');
+
+        const step = ev.step || 1;
+        const total = ev.total || 11;
+        const status = (ev.status || '').toLowerCase();
+
+        if (ev.stage === 'error' || status === 'failed') {
+            if (this.clusterProgressStageTitle) {
+                this.clusterProgressStageTitle.textContent = 'Proceso detenido por error';
+            }
+            if (this.clusterProgressStepBadge) {
+                this.clusterProgressStepBadge.textContent = `Fallo en paso ${step}`;
+                this.clusterProgressStepBadge.className = 'vm-progress-badge error';
+            }
+            if (this.clusterProgressBarFill) {
+                this.clusterProgressBarFill.className = 'vm-progress-bar-fill error';
+            }
+            if (this.clusterProgressMsg) {
+                this.clusterProgressMsg.textContent = ev.error || ev.message || 'Ocurrió un error al crear el cluster.';
+            }
+            if (this.clusterProgressStepsList) {
+                const stepEl = this.clusterProgressStepsList.querySelector(`.vm-pstep[data-cstep="${step}"]`) ||
+                    this.clusterProgressStepsList.querySelector('.vm-pstep.active');
+                if (stepEl) {
+                    stepEl.classList.remove('active', 'completed');
+                    stepEl.classList.add('failed');
+                    const icon = stepEl.querySelector('.vm-pstep-icon');
+                    if (icon) icon.textContent = '✕';
+                }
+            }
+            return;
+        }
+
+        if (ev.stage === 'done') {
+            const isDegraded = ev.cluster && ev.cluster.status === 'Degraded';
+            if (this.clusterProgressStageTitle) {
+                this.clusterProgressStageTitle.textContent = isDegraded
+                    ? '¡Cluster creado con advertencias (Degraded)!'
+                    : '¡Cluster Docker Swarm creado con éxito!';
+            }
+            if (this.clusterProgressStepBadge) {
+                this.clusterProgressStepBadge.textContent = isDegraded ? 'Parcial (Degraded)' : 'Completado';
+                this.clusterProgressStepBadge.className = `vm-progress-badge ${isDegraded ? 'warning' : 'success'}`;
+            }
+            if (this.clusterProgressBarFill) {
+                this.clusterProgressBarFill.style.width = '100%';
+                this.clusterProgressBarFill.className = `vm-progress-bar-fill ${isDegraded ? 'warning' : 'success'}`;
+            }
+            if (this.clusterProgressMsg && ev.message) {
+                this.clusterProgressMsg.textContent = ev.message;
+            }
+            return;
+        }
+
+        const pct = Math.min(96, Math.max(8, Math.round((step / total) * 100)));
+        if (this.clusterProgressStageTitle) {
+            this.clusterProgressStageTitle.textContent = `Configurando Docker Swarm (Paso ${step}/${total})...`;
+        }
+        if (this.clusterProgressStepBadge) {
+            this.clusterProgressStepBadge.textContent = `Paso ${step} de ${total}`;
+            this.clusterProgressStepBadge.className = 'vm-progress-badge';
+        }
+        if (this.clusterProgressBarFill) {
+            this.clusterProgressBarFill.style.width = `${pct}%`;
+        }
+        if (this.clusterProgressMsg && ev.message) {
+            this.clusterProgressMsg.textContent = ev.message;
+        }
+
+        if (this.clusterProgressStepsList) {
+            const stepEl = this.clusterProgressStepsList.querySelector(`.vm-pstep[data-cstep="${step}"]`);
+            if (stepEl) {
+                const icon = stepEl.querySelector('.vm-pstep-icon');
+                stepEl.classList.remove('active', 'completed', 'failed', 'warning', 'skipped');
+                if (status === 'in_progress') {
+                    stepEl.classList.add('active');
+                    if (icon) icon.innerHTML = `<span class="vm-spinner-mini"></span>`;
+                } else if (status === 'completed') {
+                    stepEl.classList.add('completed');
+                    if (icon) icon.textContent = '✓';
+                } else if (status === 'warning') {
+                    stepEl.classList.add('warning');
+                    if (icon) icon.textContent = '!';
+                } else if (status === 'skipped') {
+                    stepEl.classList.add('skipped');
+                    if (icon) icon.textContent = '–';
+                }
+            }
+        }
+    }
+
+    async submitCreateCluster() {
+        if (this.isCreatingCluster) return;
+
+        const name = this.createClusterNameInput ? this.createClusterNameInput.value.trim() : '';
+        const managerVm = this.selectedClusterManagerVM;
+        const workerVms = Array.from(this.selectedClusterWorkerVMs);
+
+        if (!name) {
+            this.showCreateClusterFeedback('Ingresa un nombre válido para el cluster.', 'error');
+            return;
+        }
+        if (!managerVm) {
+            this.showCreateClusterFeedback('Selecciona una máquina virtual elegible para funcionar como Manager.', 'error');
+            return;
+        }
+
+        this.hideCreateClusterFeedback();
+        this.isCreatingCluster = true;
+        this.setCreateClusterLoading(true);
+        this.initClusterCreateProgress();
+        this.appendInfoLine(`[Swarm] Iniciando creación del cluster '${name}' (Manager: ${managerVm}, Workers: ${workerVms.length})...`);
+
+        try {
+            const res = await fetch('/api/clusters', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream'
+                },
+                body: JSON.stringify({ name, managerVm, workerVms })
+            });
+
+            const contentType = res.headers.get('Content-Type') || '';
+            if (res.ok && contentType.includes('text/event-stream') && res.body) {
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let buffer = '';
+                let finalCluster = null;
+                let streamError = null;
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+
+                    const parts = buffer.split('\n\n');
+                    buffer = parts.pop() || '';
+
+                    for (const block of parts) {
+                        const line = block.split('\n').find((l) => l.startsWith('data:'));
+                        if (!line) continue;
+                        try {
+                            const ev = JSON.parse(line.slice(5).trim());
+                            this.updateClusterCreateProgress(ev);
+                            if (ev.stage === 'error') {
+                                streamError = ev.error || ev.message || 'Error al crear el cluster';
+                            } else if (ev.stage === 'done' && ev.cluster) {
+                                finalCluster = ev.cluster;
+                            }
+                        } catch (parseErr) {
+                            console.warn('Error parseando evento SSE de cluster:', parseErr);
+                        }
+                    }
+                }
+
+                if (streamError) {
+                    this.showCreateClusterFeedback(`Error: ${streamError}`, 'error');
+                    this.appendErrorLine(`[Swarm] Error al crear cluster '${name}': ${streamError}`);
+                    return;
+                }
+
+                if (finalCluster) {
+                    const isDegraded = finalCluster.status === 'Degraded';
+                    this.showCreateClusterFeedback(
+                        isDegraded
+                            ? `Cluster '${finalCluster.name}' creado en estado Degraded (${finalCluster.statusReason || 'revisa los Workers en la vista de detalles'}).`
+                            : `¡Cluster '${finalCluster.name}' creado y verificado con éxito!`,
+                        isDegraded ? 'info' : 'success'
+                    );
+                    this.appendInfoLine(`[Swarm] Cluster '${finalCluster.name}' creado (${finalCluster.status}). Manager: ${finalCluster.managerVmName} (${finalCluster.managerIp}), Nodos: ${finalCluster.totalNodes}.`);
+
+                    setTimeout(async () => {
+                        this.isCreatingCluster = false;
+                        this.closeCreateClusterModal();
+                        await this.openClusterDetails(finalCluster.id);
+                    }, 1400);
+                }
+                return;
+            }
+
+            if (!res.ok) {
+                const text = await res.text();
+                const errMsg = this.parseApiError(text);
+                this.updateClusterCreateProgress({ stage: 'error', step: 1, error: errMsg, message: errMsg });
+                this.showCreateClusterFeedback(`Error: ${errMsg}`, 'error');
+                this.appendErrorLine(`[Swarm] Error al crear cluster '${name}': ${errMsg}`);
+                return;
+            }
+
+            const created = await res.json();
+            this.updateClusterCreateProgress({ stage: 'done', step: 11, total: 11, cluster: created });
+            this.appendInfoLine(`[Swarm] Cluster '${created.name}' creado exitosamente.`);
+            this.isCreatingCluster = false;
+            this.closeCreateClusterModal();
+            await this.openClusterDetails(created.id);
+        } catch (err) {
+            console.warn('Error al crear cluster:', err);
+            this.updateClusterCreateProgress({ stage: 'error', step: 1, error: err.message, message: 'No se pudo conectar al servidor.' });
+            this.showCreateClusterFeedback('No se pudo conectar al servidor para crear el cluster.', 'error');
+        } finally {
+            this.isCreatingCluster = false;
+            this.setCreateClusterLoading(false);
+        }
+    }
+
+    async retryClusterWorker(clusterId, vmName, btn) {
+        if (!clusterId || !vmName) return;
+        const spinner = btn ? btn.querySelector('.btn-spinner') : null;
+        const text = btn ? btn.querySelector('.btn-text') : null;
+        if (btn) btn.disabled = true;
+        if (spinner) spinner.classList.remove('hidden');
+        if (text) text.textContent = 'Uniendo...';
+
+        try {
+            const res = await fetch(`/api/clusters/${encodeURIComponent(clusterId)}/workers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vm: vmName })
+            });
+            if (!res.ok) {
+                const errText = await res.text();
+                const errMsg = this.parseApiError(errText);
+                this.appendErrorLine(`[Swarm] Error al reintentar unión de Worker '${vmName}': ${errMsg}`);
+                alert(`No se pudo incorporar el Worker '${vmName}':\n${errMsg}`);
+            } else {
+                this.appendInfoLine(`[Swarm] Worker '${vmName}' incorporado exitosamente al cluster.`);
+            }
+        } catch (e) {
+            this.appendErrorLine(`[Swarm] Error de red al reintentar unión de Worker '${vmName}'.`);
+        } finally {
+            if (btn) btn.disabled = false;
+            if (spinner) spinner.classList.add('hidden');
+            if (text) text.textContent = 'Reintentar unión';
+            await this.openClusterDetails(clusterId);
+        }
+    }
+
+    openRemoveClusterNodeModal(clusterId, vmName, role, clusterName) {
+        this.closeCardDropdowns();
+        if (!this.removeClusterNodeModal) return;
+
+        const isMgr = (role || '').toLowerCase() === 'manager';
+        const activeWorkersCount = this.activeClusterData && Array.isArray(this.activeClusterData.nodes)
+            ? this.activeClusterData.nodes.filter((n) => (n.role || '').toLowerCase() === 'worker').length
+            : 0;
+
+        this.pendingRemoveClusterNode = {
+            clusterId,
+            vmName,
+            role: isMgr ? 'manager' : 'worker',
+            clusterName: clusterName || (this.activeClusterData && this.activeClusterData.name) || clusterId
+        };
+
+        if (this.removeClusterNodeVmNameEl) {
+            this.removeClusterNodeVmNameEl.textContent = vmName;
+        }
+        if (this.removeClusterNodeRoleBadgeEl) {
+            this.removeClusterNodeRoleBadgeEl.textContent = isMgr ? 'MANAGER' : 'WORKER';
+            this.removeClusterNodeRoleBadgeEl.className = `cluster-role-badge ${isMgr ? 'role-manager' : 'role-worker'}`;
+        }
+        if (this.removeClusterNodeClusterNameEl) {
+            this.removeClusterNodeClusterNameEl.textContent = this.pendingRemoveClusterNode.clusterName;
+        }
+
+        if (this.removeClusterNodeConsequenceEl) {
+            if (isMgr && activeWorkersCount > 0) {
+                this.removeClusterNodeConsequenceEl.innerHTML = `
+                    <strong style="color:var(--accent-yellow)">Acción bloqueada:</strong> Este nodo es el único <strong>Manager</strong> y el cluster aún tiene <strong>${activeWorkersCount} Worker(s)</strong> registrados. Debes retirar todos los Workers antes de poder retirar el Manager.
+                `;
+            } else if (isMgr) {
+                this.removeClusterNodeConsequenceEl.innerHTML = `
+                    Al retirar el último <strong>Manager</strong>, se ejecutará <code>docker swarm leave --force</code> en la VM y se eliminará el registro del cluster en Vessel. <strong>No se eliminará</strong> la máquina virtual de VirtualBox ni sus contenedores/imágenes locales.
+                `;
+            } else {
+                this.removeClusterNodeConsequenceEl.innerHTML = `
+                    Se pondrá el nodo en modo <code>drain</code>, ejecutará <code>docker swarm leave</code> y se eliminará de la lista de nodos del Manager. <strong>No se eliminará</strong> la máquina virtual de VirtualBox, su sistema operativo, Docker Engine ni sus imágenes o volúmenes locales.
+                `;
+            }
+        }
+
+        if (this.removeClusterNodeForceBox) {
+            this.removeClusterNodeForceBox.classList.add('hidden');
+        }
+        if (this.removeClusterNodeForceCheck) {
+            this.removeClusterNodeForceCheck.checked = false;
+        }
+        if (this.removeClusterNodeFeedback) {
+            this.removeClusterNodeFeedback.textContent = '';
+            this.removeClusterNodeFeedback.className = 'modal-feedback hidden';
+        }
+
+        this.setRemoveClusterNodeLoading(false);
+        if (this.confirmRemoveClusterNodeBtn) {
+            this.confirmRemoveClusterNodeBtn.disabled = isMgr && activeWorkersCount > 0;
+        }
+
+        this.removeClusterNodeModal.classList.remove('hidden');
+        this.removeClusterNodeModal.setAttribute('aria-hidden', 'false');
+    }
+
+    closeRemoveClusterNodeModal() {
+        if (!this.removeClusterNodeModal) return;
+        this.removeClusterNodeModal.classList.add('hidden');
+        this.removeClusterNodeModal.setAttribute('aria-hidden', 'true');
+        this.pendingRemoveClusterNode = null;
+        this.setRemoveClusterNodeLoading(false);
+    }
+
+    setRemoveClusterNodeLoading(loading) {
+        if (!this.confirmRemoveClusterNodeBtn) return;
+        const spinner = this.confirmRemoveClusterNodeBtn.querySelector('.btn-spinner');
+        const text = this.confirmRemoveClusterNodeBtn.querySelector('.btn-text');
+
+        this.confirmRemoveClusterNodeBtn.disabled = loading;
+        if (this.cancelRemoveClusterNodeBtn) this.cancelRemoveClusterNodeBtn.disabled = loading;
+        if (this.closeRemoveClusterNodeModalBtn) this.closeRemoveClusterNodeModalBtn.disabled = loading;
+
+        if (spinner) spinner.classList.toggle('hidden', !loading);
+        if (text) text.textContent = loading ? 'Retirando nodo...' : 'Eliminar del cluster';
+    }
+
+    async executeRemoveClusterNode() {
+        if (!this.pendingRemoveClusterNode) return;
+        const { clusterId, vmName, clusterName } = this.pendingRemoveClusterNode;
+        const force = Boolean(this.removeClusterNodeForceCheck && this.removeClusterNodeForceCheck.checked);
+
+        this.setRemoveClusterNodeLoading(true);
+        if (this.removeClusterNodeFeedback) {
+            this.removeClusterNodeFeedback.textContent = '';
+            this.removeClusterNodeFeedback.className = 'modal-feedback hidden';
+        }
+
+        try {
+            const url = `/api/clusters/${encodeURIComponent(clusterId)}/nodes/${encodeURIComponent(vmName)}${force ? '?force=true' : ''}`;
+            const res = await fetch(url, { method: 'DELETE' });
+
+            if (res.status === 409) {
+                const data = await res.json().catch(() => ({}));
+                if (data && data.workerUnreachable) {
+                    if (this.removeClusterNodeForceBox) {
+                        this.removeClusterNodeForceBox.classList.remove('hidden');
+                    }
+                    if (this.removeClusterNodeForceCheck) {
+                        this.removeClusterNodeForceCheck.checked = true;
+                    }
+                    if (this.removeClusterNodeFeedback) {
+                        this.removeClusterNodeFeedback.textContent = data.error || 'El nodo está desconectado. Marca la casilla superior y pulsa nuevamente para forzar su retiro.';
+                        this.removeClusterNodeFeedback.className = 'modal-feedback error';
+                    }
+                    this.setRemoveClusterNodeLoading(false);
+                    return;
+                }
+            }
+
+            if (!res.ok) {
+                const text = await res.text();
+                const errMsg = this.parseApiError(text);
+                if (this.removeClusterNodeFeedback) {
+                    this.removeClusterNodeFeedback.textContent = `Error: ${errMsg}`;
+                    this.removeClusterNodeFeedback.className = 'modal-feedback error';
+                }
+                this.appendErrorLine(`[Swarm] Error al retirar '${vmName}' del cluster '${clusterName}': ${errMsg}`);
+                this.setRemoveClusterNodeLoading(false);
+                return;
+            }
+
+            const result = await res.json();
+            this.appendInfoLine(`[Swarm] ${result.message || `Nodo '${vmName}' retirado del cluster '${clusterName}'.`}`);
+            if (result.warning) {
+                this.appendInfoLine(`[Swarm Aviso] ${result.warning}`);
+            }
+
+            this.closeRemoveClusterNodeModal();
+            if (result.clusterDeleted) {
+                this.backToClustersList();
+            } else {
+                await this.openClusterDetails(clusterId);
+            }
+        } catch (e) {
+            console.warn('Error al retirar nodo del cluster:', e);
+            if (this.removeClusterNodeFeedback) {
+                this.removeClusterNodeFeedback.textContent = 'No se pudo conectar al servidor para retirar el nodo.';
+                this.removeClusterNodeFeedback.className = 'modal-feedback error';
+            }
+            this.setRemoveClusterNodeLoading(false);
+        }
     }
 
     escapeAttr(str) {

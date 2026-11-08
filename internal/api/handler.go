@@ -47,6 +47,7 @@ type Handler struct {
 	vmSvc     *vm.Service
 	tplSvc    *template.Service
 	dockerSvc *docker.Service
+	swarmSvc  *docker.SwarmService
 	hostsPath string
 	hosts     hostsFile
 }
@@ -76,6 +77,12 @@ func NewHandler(cfg *config.Config, log *slog.Logger, staticDir string) *Handler
 	handler.dockerSvc = docker.NewService(handler.executeVMCommand, log)
 	handler.dockerSvc.SetStdinRunner(handler.executeVMCommandWithStdin)
 	handler.dockerSvc.SetCredentialsPath(filepath.Join(".", docker.DefaultDockerHubCredentialsPath))
+	handler.swarmSvc = docker.NewSwarmService(
+		handler.executeVMCommand,
+		&vmSwarmAdapter{vmSvc: handler.vmSvc},
+		docker.NewClusterStore(filepath.Join(".", "clusters.json")),
+		log,
+	)
 	if _, err := os.Stat(hostsPath); os.IsNotExist(err) {
 		if err := saveHosts(hostsPath, hosts); err != nil {
 			log.Warn("no se pudo crear hosts.json", "error", err)
@@ -175,6 +182,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case strings.HasPrefix(r.URL.Path, "/api/networks/"):
 		h.handleNetworkItem(w, r)
+		return
+	case r.URL.Path == "/api/clusters/eligible-vms":
+		h.handleClusterEligibleVMs(w, r)
+		return
+	case r.URL.Path == "/api/clusters":
+		h.handleClusters(w, r)
+		return
+	case strings.HasPrefix(r.URL.Path, "/api/clusters/"):
+		h.handleClusterItem(w, r)
 		return
 	case strings.HasPrefix(r.URL.Path, "/api/vms/"):
 		h.handleVirtualMachineByID(w, r)
@@ -618,6 +634,12 @@ func (h *Handler) handleVirtualMachineByID(w http.ResponseWriter, r *http.Reques
 		json.NewEncoder(w).Encode(vmData)
 
 	case http.MethodDelete:
+		if h.swarmSvc != nil {
+			if cluster, _, inCluster := h.swarmSvc.Store().FindClusterByVM(decodedID, decodedID); inCluster {
+				http.Error(w, fmt.Sprintf(`{"error":"la máquina virtual '%s' forma parte del cluster Docker Swarm '%s'. Retírala primero del cluster antes de eliminar la VM."}`, decodedID, cluster.Name), http.StatusConflict)
+				return
+			}
+		}
 		if err := h.vmSvc.Delete(decodedID); err != nil {
 			h.log.Warn("no se pudo eliminar maquina virtual", "error", err)
 			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
