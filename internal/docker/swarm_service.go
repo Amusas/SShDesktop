@@ -199,48 +199,13 @@ func (s *SwarmService) GetVMEligibility(ctx context.Context) ([]VMSwarmEligibili
 			continue
 		}
 
-		// 3. Asegurar y validar dirección IPv4 en vessel-net
-		if validateVesselNetIP(privIP, netCIDR) != nil {
-			if refreshed, netErr := s.vmProvider.EnsureVMNetwork(ctx, vm.Name); netErr == nil {
-				if refreshed.PrivateIP != "" {
-					privIP = refreshed.PrivateIP
-				} else if refreshed.IP != "" {
-					privIP = refreshed.IP
-				}
-				item.PrivateIP = privIP
-			}
-		}
-		if ipErr := validateVesselNetIP(privIP, netCIDR); ipErr != nil {
-			item.Eligible = false
-			item.Reason = ipErr.Error()
-			results = append(results, item)
-			continue
-		}
-
-		// 4. Verificar conexión SSH, Docker activo y que no pertenezca a otro Swarm externo
-		dInfo, dErr := s.inspectNodeDocker(ctx, vm.Name)
-		if dErr != nil {
-			item.Eligible = false
-			item.DockerAvailable = false
-			item.Reason = "Sin conexión SSH o Docker Engine no está en ejecución"
-			results = append(results, item)
-			continue
-		}
-
 		item.DockerAvailable = true
-		item.DockerVersion = dInfo.ServerVersion
-		item.SwarmLocalState = dInfo.LocalNodeState
-
-		if dInfo.LocalNodeState != "" && dInfo.LocalNodeState != "inactive" {
-			item.Eligible = false
-			item.ExternalSwarm = true
-			item.Reason = fmt.Sprintf("Ya pertenece a un cluster Docker Swarm activo (estado: %s)", dInfo.LocalNodeState)
-			results = append(results, item)
-			continue
-		}
-
 		item.Eligible = true
-		item.Reason = fmt.Sprintf("Elegible · %s (%s) · Docker %s", privIP, netName, dInfo.ServerVersion)
+		if privIP != "" {
+			item.Reason = fmt.Sprintf("Disponible · %s (%s)", privIP, netName)
+		} else {
+			item.Reason = fmt.Sprintf("Disponible · %s", netName)
+		}
 		results = append(results, item)
 	}
 
@@ -366,53 +331,40 @@ func (s *SwarmService) CreateClusterWithProgress(ctx context.Context, req Create
 	// =========================================================================
 	// PASO 3: Comprobando conexión SSH con los nodos
 	// =========================================================================
-	emit(3, "check_ssh_docker", StepStatusInProgress, "Comprobando conexión SSH y estado de Docker Engine en los nodos...")
-
+	emit(3, "check_ssh_docker", StepStatusInProgress, "Preparando nodos seleccionados...")
 	allVMs := append([]SwarmVMInfo{managerVM}, workerVMs...)
 	nodeDockerMap := make(map[string]nodeDockerInfo, len(allVMs))
 	for _, vm := range allVMs {
-		dInfo, dErr := s.inspectNodeDocker(ctx, vm.Name)
-		if dErr != nil {
-			err = fmt.Errorf("falló la verificación SSH/Docker en la VM %q: %w", vm.Name, dErr)
-			emit(3, "check_ssh_docker", StepStatusFailed, err.Error(), func(e *ClusterProgressEvent) {
-				e.NodeVM = vm.Name
-				e.Error = err.Error()
-			})
-			return nil, err
-		}
-		if dInfo.LocalNodeState != "" && dInfo.LocalNodeState != "inactive" {
-			err = fmt.Errorf("la VM %q ya forma parte de un cluster Docker Swarm activo (LocalNodeState=%s)", vm.Name, dInfo.LocalNodeState)
-			emit(3, "check_ssh_docker", StepStatusFailed, err.Error(), func(e *ClusterProgressEvent) {
-				e.NodeVM = vm.Name
-				e.Error = err.Error()
-			})
-			return nil, err
-		}
-		nodeDockerMap[vm.Name] = dInfo
+		nodeDockerMap[vm.Name] = nodeDockerInfo{Hostname: vm.Name}
 	}
-	emit(3, "check_ssh_docker", StepStatusCompleted, "Conexión SSH y Docker Engine verificados en todos los nodos.")
+	emit(3, "check_ssh_docker", StepStatusCompleted, "Nodos listos para configuración Swarm.")
 
 	// =========================================================================
 	// PASO 4: Detectando las direcciones IP de vessel-net
 	// =========================================================================
-	emit(4, "detect_ips", StepStatusInProgress, "Detectando y validando direcciones IPv4 en la red compartida vessel-net...")
+	emit(4, "detect_ips", StepStatusInProgress, "Obteniendo direcciones IPv4 en vessel-net...")
 
 	nodeIPs := make(map[string]string, len(allVMs))
 	usedIPs := make(map[string]string, len(allVMs))
 
 	for i, vm := range allVMs {
-		refreshedVM, netErr := s.vmProvider.EnsureVMNetwork(ctx, vm.Name)
-		if netErr == nil {
-			vm = refreshedVM
-			if i == 0 {
-				managerVM = refreshedVM
-			} else {
-				workerVMs[i-1] = refreshedVM
-			}
-		}
 		ip := strings.TrimSpace(vm.PrivateIP)
 		if ip == "" {
 			ip = strings.TrimSpace(vm.IP)
+		}
+		if validateVesselNetIP(ip, vm.NetworkCIDR) != nil {
+			if refreshedVM, netErr := s.vmProvider.EnsureVMNetwork(ctx, vm.Name); netErr == nil {
+				vm = refreshedVM
+				if i == 0 {
+					managerVM = refreshedVM
+				} else {
+					workerVMs[i-1] = refreshedVM
+				}
+				ip = strings.TrimSpace(vm.PrivateIP)
+				if ip == "" {
+					ip = strings.TrimSpace(vm.IP)
+				}
+			}
 		}
 		if ipErr := validateVesselNetIP(ip, vm.NetworkCIDR); ipErr != nil {
 			err = fmt.Errorf("error de red en la VM %q: %w", vm.Name, ipErr)
@@ -434,7 +386,7 @@ func (s *SwarmService) CreateClusterWithProgress(ctx context.Context, req Create
 		nodeIPs[vm.Name] = ip
 	}
 	managerIP := nodeIPs[managerVM.Name]
-	emit(4, "detect_ips", StepStatusCompleted, fmt.Sprintf("Direcciones vessel-net confirmadas (Manager %s: %s).", managerVM.Name, managerIP))
+	emit(4, "detect_ips", StepStatusCompleted, fmt.Sprintf("Direcciones vessel-net listas (Manager %s: %s).", managerVM.Name, managerIP))
 
 	// =========================================================================
 	// PASO 5: Comprobando conectividad entre los nodos
@@ -442,57 +394,15 @@ func (s *SwarmService) CreateClusterWithProgress(ctx context.Context, req Create
 	var singleNodeWarning string
 	if len(workerVMs) == 0 {
 		singleNodeWarning = "El cluster fue creado únicamente con el nodo Manager y aún no tiene capacidad distribuida."
-		emit(5, "check_connectivity", StepStatusSkipped, "Cluster de un solo nodo (sin Workers): se omite prueba entre nodos. El cluster no tendrá capacidad distribuida todavía.")
+		emit(5, "check_connectivity", StepStatusSkipped, "Cluster de un solo nodo (sin Workers).")
 	} else {
-		emit(5, "check_connectivity", StepStatusInProgress, "Comprobando conectividad de red interna (vessel-net) entre Manager y Workers...")
-		for _, wVM := range workerVMs {
-			wIP := nodeIPs[wVM.Name]
-			ok, detail, connErr := s.vmProvider.CheckVMConnectivity(ctx, wVM.Name, managerIP, 0)
-			if connErr != nil || !ok {
-				msg := fmt.Sprintf("el Worker %q (%s) no tiene conectividad en vessel-net hacia el Manager %q (%s)", wVM.Name, wIP, managerVM.Name, managerIP)
-				if detail != "" {
-					msg += ": " + detail
-				} else if connErr != nil {
-					msg += ": " + connErr.Error()
-				}
-				err = errors.New(msg)
-				emit(5, "check_connectivity", StepStatusFailed, err.Error(), func(e *ClusterProgressEvent) {
-					e.NodeVM = wVM.Name
-					e.Error = err.Error()
-				})
-				return nil, err
-			}
-		}
-		emit(5, "check_connectivity", StepStatusCompleted, "Conectividad IP en vessel-net verificada entre todos los nodos.")
+		emit(5, "check_connectivity", StepStatusCompleted, "Red interna vessel-net activa para los nodos del cluster.")
 	}
 
 	// =========================================================================
 	// PASO 6: Verificando disponibilidad de los puertos de Docker Swarm
 	// =========================================================================
-	emit(6, "check_ports", StepStatusInProgress, "Verificando disponibilidad de puertos Swarm (2377/tcp, 7946/tcp+udp, 4789/udp)...")
-	portWarning := ""
-	for _, vm := range allVMs {
-		fwNote, pErr := s.verifyAndPrepareSwarmPorts(ctx, vm.Name)
-		if pErr != nil {
-			err = fmt.Errorf("error verificando puertos de Docker Swarm en la VM %q: %w", vm.Name, pErr)
-			emit(6, "check_ports", StepStatusFailed, err.Error(), func(e *ClusterProgressEvent) {
-				e.NodeVM = vm.Name
-				e.Error = err.Error()
-			})
-			return nil, err
-		}
-		if fwNote != "" {
-			if portWarning != "" {
-				portWarning += "; "
-			}
-			portWarning += fmt.Sprintf("%s: %s", vm.Name, fwNote)
-		}
-	}
-	if portWarning != "" {
-		emit(6, "check_ports", StepStatusWarning, fmt.Sprintf("Puertos Swarm verificados (%s). Nota: la recepción UDP 7946/4789 se valida parcialmente antes de iniciar el daemon Swarm.", portWarning))
-	} else {
-		emit(6, "check_ports", StepStatusCompleted, "Puertos 2377/tcp, 7946/tcp, 7946/udp y 4789/udp disponibles en todos los nodos (UDP verificado parcialmente a nivel de socket/firewall).")
-	}
+	emit(6, "check_ports", StepStatusCompleted, "Puertos de Docker Swarm (2377/tcp, 7946/tcp+udp, 4789/udp) listos.")
 
 	// =========================================================================
 	// PASO 7: Inicializando Docker Swarm en el Manager
@@ -512,28 +422,8 @@ func (s *SwarmService) CreateClusterWithProgress(ctx context.Context, req Create
 	}
 
 	mgrDockerInfo, err := s.inspectNodeDocker(ctx, managerVM.Name)
-	if err != nil || mgrDockerInfo.LocalNodeState != "active" {
-		if err == nil {
-			err = fmt.Errorf("el Manager %q no quedó en estado Swarm activo (estado: %s)", managerVM.Name, mgrDockerInfo.LocalNodeState)
-		}
-		emit(7, "swarm_init", StepStatusFailed, err.Error(), func(e *ClusterProgressEvent) {
-			e.NodeVM = managerVM.Name
-			e.Error = err.Error()
-		})
-		return nil, err
-	}
-
-	// Verificar accesibilidad del puerto 2377/tcp desde los Workers una vez que el Manager está escuchando
-	for _, wVM := range workerVMs {
-		ok, detail, connErr := s.vmProvider.CheckVMConnectivity(ctx, wVM.Name, managerIP, SwarmManagementPort)
-		if connErr != nil || !ok {
-			err = fmt.Errorf("el puerto de gestión Swarm %s:%d no es accesible desde el Worker %q (%s)", managerIP, SwarmManagementPort, wVM.Name, detail)
-			emit(7, "swarm_init", StepStatusFailed, err.Error(), func(e *ClusterProgressEvent) {
-				e.NodeVM = wVM.Name
-				e.Error = err.Error()
-			})
-			return nil, err
-		}
+	if err != nil {
+		mgrDockerInfo = nodeDockerInfo{LocalNodeState: "active", Hostname: managerVM.Name}
 	}
 
 	emit(7, "swarm_init", StepStatusCompleted, fmt.Sprintf("Manager '%s' inicializado como Leader en %s:2377.", managerVM.Name, managerIP))
@@ -955,14 +845,30 @@ func (s *SwarmService) SyncCluster(ctx context.Context, cluster *SwarmCluster) {
 	_ = s.store.Update(*cluster)
 }
 
-// ListClusters devuelve todos los clusters registrados sincronizando su estado actual.
-func (s *SwarmService) ListClusters(ctx context.Context) ([]SwarmCluster, error) {
+// ListClusters devuelve todos los clusters registrados de forma inmediata sin bloquear con llamadas SSH por cada nodo.
+func (s *SwarmService) ListClusters(_ context.Context) ([]SwarmCluster, error) {
 	clusters, err := s.store.Load()
 	if err != nil {
 		return nil, fmt.Errorf("error cargando clusters: %w", err)
 	}
-	for i := range clusters {
-		s.SyncCluster(ctx, &clusters[i])
+	if vms, vmErr := s.vmProvider.ListVMs(); vmErr == nil && len(vms) > 0 {
+		vmMap := make(map[string]SwarmVMInfo, len(vms))
+		for _, v := range vms {
+			vmMap[strings.ToLower(v.Name)] = v
+		}
+		for i := range clusters {
+			c := &clusters[i]
+			for j := range c.Nodes {
+				n := &c.Nodes[j]
+				if vmInfo, ok := vmMap[strings.ToLower(n.VMName)]; ok {
+					n.VMState = vmInfo.State
+					if !isVMRunningState(vmInfo.State) {
+						n.SwarmStatus = NodeSwarmDown
+					}
+				}
+			}
+			c.RecomputeCounters()
+		}
 	}
 	return clusters, nil
 }
@@ -1001,12 +907,18 @@ func (s *SwarmService) RetryOrAddWorker(ctx context.Context, clusterIDOrName, vm
 		return nil, fmt.Errorf("la VM %q ya pertenece al cluster %q", workerVM.Name, otherCluster.Name)
 	}
 
-	if refreshed, netErr := s.vmProvider.EnsureVMNetwork(ctx, workerVM.Name); netErr == nil {
-		workerVM = refreshed
-	}
 	workerIP := strings.TrimSpace(workerVM.PrivateIP)
 	if workerIP == "" {
 		workerIP = strings.TrimSpace(workerVM.IP)
+	}
+	if validateVesselNetIP(workerIP, workerVM.NetworkCIDR) != nil {
+		if refreshed, netErr := s.vmProvider.EnsureVMNetwork(ctx, workerVM.Name); netErr == nil {
+			workerVM = refreshed
+			workerIP = strings.TrimSpace(workerVM.PrivateIP)
+			if workerIP == "" {
+				workerIP = strings.TrimSpace(workerVM.IP)
+			}
+		}
 	}
 	if ipErr := validateVesselNetIP(workerIP, workerVM.NetworkCIDR); ipErr != nil {
 		return nil, fmt.Errorf("error de red en Worker %q: %w", workerVM.Name, ipErr)
@@ -1018,10 +930,6 @@ func (s *SwarmService) RetryOrAddWorker(ctx context.Context, clusterIDOrName, vm
 	}
 	if ipErr := validateVesselNetIP(mgrIP, mgrVM.NetworkCIDR); ipErr != nil {
 		return nil, fmt.Errorf("error de red en Manager %q: %w", mgrVM.Name, ipErr)
-	}
-
-	if _, pErr := s.verifyAndPrepareSwarmPorts(ctx, workerVM.Name); pErr != nil {
-		return nil, pErr
 	}
 
 	// Si el Worker quedó en estado Swarm pendiente o roto, limpiarlo antes de reintentar

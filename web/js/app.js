@@ -3273,7 +3273,7 @@ class TerminalApp {
             const vms = await res.json();
             this.vms = vms;
 
-            let opts = '<option value="">Todas las máquinas virtuales</option>';
+            let opts = '<option value="" disabled selected>Selecciona MV</option>';
             if (Array.isArray(vms)) {
                 vms.forEach((v) => {
                     const isRunning = (v.state || '').toLowerCase() === 'running';
@@ -3333,10 +3333,15 @@ class TerminalApp {
 
     async loadVolumes(vmFilter) {
         if (!this.volumesListEl) return;
+        const filter = (vmFilter || '').trim();
+        if (!filter) {
+            this.volumes = [];
+            this.volumesListEl.innerHTML = `<div class="empty-vm-list">Selecciona una máquina virtual para ver sus volúmenes Docker.</div>`;
+            return;
+        }
         this.volumesListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando volúmenes...</div>`;
 
-        const filter = (vmFilter || '').trim();
-        const url = filter ? `/api/volumes?vm=${encodeURIComponent(filter)}` : '/api/volumes';
+        const url = `/api/volumes?vm=${encodeURIComponent(filter)}`;
 
         try {
             const res = await fetch(url);
@@ -3499,10 +3504,15 @@ class TerminalApp {
 
     async loadNetworks(vmFilter) {
         if (!this.networksListEl) return;
+        const filter = (vmFilter || '').trim();
+        if (!filter) {
+            this.networks = [];
+            this.networksListEl.innerHTML = `<div class="empty-vm-list">Selecciona una máquina virtual para ver sus redes Docker.</div>`;
+            return;
+        }
         this.networksListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando redes Docker...</div>`;
 
-        const filter = (vmFilter || '').trim();
-        const url = filter ? `/api/networks?vm=${encodeURIComponent(filter)}` : '/api/networks';
+        const url = `/api/networks?vm=${encodeURIComponent(filter)}`;
 
         try {
             const res = await fetch(url);
@@ -3902,10 +3912,18 @@ class TerminalApp {
 
     async loadContainers(vmFilter) {
         if (!this.containersListEl) return;
+        const filter = (vmFilter || '').trim();
+        if (!filter) {
+            if (this.dockerStatusPill) {
+                this.dockerStatusPill.classList.add('hidden');
+            }
+            this.containers = [];
+            this.containersListEl.innerHTML = `<div class="empty-vm-list">Selecciona una máquina virtual para ver sus contenedores Docker.</div>`;
+            return;
+        }
         this.containersListEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Cargando contenedores...</div>`;
 
-        const filter = (vmFilter || '').trim();
-        const url = filter ? `/api/containers?vm=${encodeURIComponent(filter)}` : '/api/containers';
+        const url = `/api/containers?vm=${encodeURIComponent(filter)}`;
 
         if (filter && this.dockerStatusPill) {
             try {
@@ -4605,6 +4623,12 @@ class TerminalApp {
     // =========================================================================
     async loadImages(vmFilter) {
         if (!this.imagesListEl) return;
+        const filter = (vmFilter || '').trim();
+        if (!filter) {
+            this.images = [];
+            this.imagesListEl.innerHTML = `<div class="empty-vm-list">Selecciona una máquina virtual para ver sus imágenes Docker.</div>`;
+            return;
+        }
         this.imagesListEl.innerHTML = `
             <div class="empty-vm-list">
                 <span class="btn-spinner"></span>
@@ -4612,8 +4636,7 @@ class TerminalApp {
             </div>
         `;
 
-        const filter = (vmFilter || '').trim();
-        const url = filter ? `/api/images?vm=${encodeURIComponent(filter)}` : '/api/images';
+        const url = `/api/images?vm=${encodeURIComponent(filter)}`;
 
         try {
             const res = await fetch(url);
@@ -4861,6 +4884,12 @@ class TerminalApp {
 
     async loadExportedTars(vmFilter) {
         if (!this.imagesTarListEl) return;
+        const filter = (vmFilter || '').trim();
+        if (!filter) {
+            this.exportedTars = [];
+            this.imagesTarListEl.innerHTML = `<div class="empty-vm-list">Selecciona una máquina virtual para ver sus archivos TAR exportados.</div>`;
+            return;
+        }
         this.imagesTarListEl.innerHTML = `
             <div class="empty-vm-list">
                 <span class="btn-spinner"></span>
@@ -4868,8 +4897,7 @@ class TerminalApp {
             </div>
         `;
 
-        const filter = (vmFilter || '').trim();
-        const url = filter ? `/api/images/exports?vm=${encodeURIComponent(filter)}` : '/api/images/exports';
+        const url = `/api/images/exports?vm=${encodeURIComponent(filter)}`;
 
         try {
             const res = await fetch(url);
@@ -6633,10 +6661,10 @@ class TerminalApp {
 
     async loadEligibleVMsForCluster() {
         if (this.createClusterManagerList) {
-            this.createClusterManagerList.innerHTML = `<div style="padding:12px;text-align:center;font-size:12px;color:var(--text-muted)"><span class="btn-spinner"></span> Evaluando disponibilidad, red vessel-net y estado Docker de las VMs...</div>`;
+            this.createClusterManagerList.innerHTML = `<div style="padding:12px;text-align:center;font-size:12px;color:var(--text-muted)"><span class="btn-spinner"></span> Cargando máquinas virtuales...</div>`;
         }
         if (this.createClusterWorkersList) {
-            this.createClusterWorkersList.innerHTML = `<div style="padding:12px;text-align:center;font-size:12px;color:var(--text-muted)">Esperando evaluación de VMs...</div>`;
+            this.createClusterWorkersList.innerHTML = `<div style="padding:12px;text-align:center;font-size:12px;color:var(--text-muted)">Cargando máquinas virtuales...</div>`;
         }
 
         try {

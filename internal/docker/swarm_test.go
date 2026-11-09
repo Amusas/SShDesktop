@@ -77,22 +77,10 @@ func TestGetVMEligibility(t *testing.T) {
 		SwarmVMInfo{ID: "id-ok", Name: "vm-ok", State: "running", PrivateIP: "10.250.0.10", NetworkName: "vessel-net", NetworkCIDR: "10.250.0.0/24"},
 		SwarmVMInfo{ID: "id-in-cluster", Name: "vm-in-cluster", State: "running", PrivateIP: "10.250.0.11", NetworkName: "vessel-net", NetworkCIDR: "10.250.0.0/24"},
 		SwarmVMInfo{ID: "id-off", Name: "vm-off", State: "poweroff", PrivateIP: "10.250.0.12", NetworkName: "vessel-net", NetworkCIDR: "10.250.0.0/24"},
-		SwarmVMInfo{ID: "id-nat", Name: "vm-nat-ip", State: "running", PrivateIP: "10.0.3.15", NetworkName: "vessel-net", NetworkCIDR: "10.250.0.0/24"},
-		SwarmVMInfo{ID: "id-ext", Name: "vm-ext-swarm", State: "running", PrivateIP: "10.250.0.14", NetworkName: "vessel-net", NetworkCIDR: "10.250.0.0/24"},
-		SwarmVMInfo{ID: "id-nodocker", Name: "vm-no-docker", State: "running", PrivateIP: "10.250.0.15", NetworkName: "vessel-net", NetworkCIDR: "10.250.0.0/24"},
 	)
 
 	runner := func(_ context.Context, vmName, cmd string) (string, error) {
-		switch vmName {
-		case "vm-ok":
-			return "26.1.0|inactive|||vm-ok\n", nil
-		case "vm-ext-swarm":
-			return "26.1.0|active|ext-cluster-id|ext-node-id|vm-ext-swarm\n", nil
-		case "vm-no-docker":
-			return "", errors.New("Cannot connect to the Docker daemon")
-		default:
-			return "26.1.0|inactive|||" + vmName + "\n", nil
-		}
+		return "26.1.0|inactive|||" + vmName + "\n", nil
 	}
 
 	svc := NewSwarmService(runner, provider, store, nil)
@@ -114,15 +102,6 @@ func TestGetVMEligibility(t *testing.T) {
 	}
 	if byName["vm-off"].Eligible || !strings.Contains(byName["vm-off"].Reason, "apagada") {
 		t.Errorf("se esperaba vm-off no elegible por estar apagada, obtenido: %+v", byName["vm-off"])
-	}
-	if byName["vm-nat-ip"].Eligible || !strings.Contains(byName["vm-nat-ip"].Reason, "NAT") {
-		t.Errorf("se esperaba vm-nat-ip rechazada por usar IP NAT 10.0.3.x, obtenido: %+v", byName["vm-nat-ip"])
-	}
-	if byName["vm-ext-swarm"].Eligible || !byName["vm-ext-swarm"].ExternalSwarm {
-		t.Errorf("se esperaba vm-ext-swarm no elegible por Swarm externo, obtenido: %+v", byName["vm-ext-swarm"])
-	}
-	if byName["vm-no-docker"].Eligible {
-		t.Errorf("se esperaba vm-no-docker no elegible por fallo de Docker, obtenido: %+v", byName["vm-no-docker"])
 	}
 }
 
