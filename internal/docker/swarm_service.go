@@ -111,7 +111,7 @@ func (s *SwarmService) inspectNodeDocker(ctx context.Context, vmName string) (no
 	cmdCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 
-	cmd := "sudo docker info --format '{{.ServerVersion}}|{{.Swarm.LocalNodeState}}|{{.Swarm.Cluster.ID}}|{{.Swarm.NodeID}}|{{.Name}}'"
+	cmd := "sudo docker info --format '{{.ServerVersion}}|{{.Swarm.LocalNodeState}}|{{if .Swarm.Cluster}}{{.Swarm.Cluster.ID}}{{end}}|{{.Swarm.NodeID}}|{{.Name}}'"
 	out, err := s.runner(cmdCtx, vmName, cmd)
 	if err != nil {
 		return nodeDockerInfo{}, fmt.Errorf("no se pudo consultar Docker en la VM %q: %w", vmName, err)
@@ -676,6 +676,7 @@ func (s *SwarmService) refreshNodesFromManager(ctx context.Context, cluster *Swa
 
 	lsByNodeID := make(map[string]dockerNodeLSItem)
 	lsByHost := make(map[string]dockerNodeLSItem)
+	lsByAddr := make(map[string]dockerNodeLSItem)
 
 	for _, rawLine := range strings.Split(out, "\n") {
 		line := strings.TrimSpace(rawLine)
@@ -686,6 +687,32 @@ func (s *SwarmService) refreshNodesFromManager(ctx context.Context, cluster *Swa
 		if jsonErr := json.Unmarshal([]byte(line), &item); jsonErr == nil && item.ID != "" {
 			lsByNodeID[item.ID] = item
 			lsByHost[strings.ToLower(strings.TrimSpace(item.Hostname))] = item
+		}
+	}
+
+	// Obtener la IP interna (Status.Addr) de cada nodo en el Swarm para distinguir VMs clonadas con el mismo hostname (p. ej. "plantilla")
+	if len(lsByNodeID) > 0 {
+		if addrOut, addrErr := s.runner(cmdCtx, cluster.ManagerVMName, "sudo docker node inspect $(sudo docker node ls -q) --format '{{.ID}}|{{.Status.Addr}}'"); addrErr == nil {
+			for _, rawLine := range strings.Split(addrOut, "\n") {
+				parts := strings.SplitN(strings.TrimSpace(rawLine), "|", 2)
+				if len(parts) == 2 {
+					id := strings.TrimSpace(parts[0])
+					addr := strings.TrimSpace(parts[1])
+					if item, ok := lsByNodeID[id]; ok && addr != "" {
+						lsByAddr[addr] = item
+					}
+				}
+			}
+		}
+	}
+
+	usedNodeIDs := make(map[string]bool, len(cluster.Nodes))
+	for i := range cluster.Nodes {
+		id := strings.TrimSpace(cluster.Nodes[i].NodeID)
+		if id != "" {
+			if _, ok := lsByNodeID[id]; ok {
+				usedNodeIDs[id] = true
+			}
 		}
 	}
 
@@ -709,14 +736,27 @@ func (s *SwarmService) refreshNodesFromManager(ctx context.Context, cluster *Swa
 		if n.NodeID != "" {
 			matched, found = lsByNodeID[n.NodeID]
 		}
-		if !found && n.Hostname != "" {
-			matched, found = lsByHost[strings.ToLower(n.Hostname)]
+		if !found && n.InternalIP != "" {
+			if candidate, ok := lsByAddr[strings.TrimSpace(n.InternalIP)]; ok && !usedNodeIDs[candidate.ID] {
+				matched = candidate
+				found = true
+			}
 		}
 		if !found && n.VMName != "" {
-			matched, found = lsByHost[strings.ToLower(n.VMName)]
+			if candidate, ok := lsByHost[strings.ToLower(n.VMName)]; ok && !usedNodeIDs[candidate.ID] {
+				matched = candidate
+				found = true
+			}
+		}
+		if !found && n.Hostname != "" {
+			if candidate, ok := lsByHost[strings.ToLower(n.Hostname)]; ok && !usedNodeIDs[candidate.ID] {
+				matched = candidate
+				found = true
+			}
 		}
 
 		if found {
+			usedNodeIDs[matched.ID] = true
 			n.NodeID = matched.ID
 			if matched.Hostname != "" {
 				n.Hostname = matched.Hostname
@@ -1127,7 +1167,13 @@ func (s *SwarmService) RemoveNodeFromCluster(ctx context.Context, clusterIDOrNam
 	wVM, wErr := s.vmProvider.GetVM(targetNode.VMName)
 	workerReachable := false
 	if wErr == nil && isVMRunningState(wVM.State) {
-		if _, dErr := s.inspectNodeDocker(ctx, targetNode.VMName); dErr == nil {
+		if wInfo, dErr := s.inspectNodeDocker(ctx, targetNode.VMName); dErr == nil {
+			workerReachable = true
+			if nodeID == "" && strings.TrimSpace(wInfo.NodeID) != "" {
+				nodeID = strings.TrimSpace(wInfo.NodeID)
+				targetNode.NodeID = nodeID
+			}
+		} else if _, sshErr := s.runner(ctx, targetNode.VMName, "echo ok"); sshErr == nil {
 			workerReachable = true
 		}
 	}
