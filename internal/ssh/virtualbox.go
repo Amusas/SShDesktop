@@ -549,8 +549,8 @@ func WaitForSSH(ctx context.Context, hostCfg Config, port int, timeout time.Dura
 }
 
 // ProvisionVMUser conecta a la VM con la clave bootstrap, crea el usuario unico, instala la clave publica,
-// remueve la clave de bootstrap autorizada de la VM y configura permisos
-func ProvisionVMUser(ctx context.Context, hostCfg Config, port int, bootstrapUser, bootstrapKeyPath, targetUser, targetPublicKey string, log *slog.Logger) error {
+// actualiza el hostname del sistema operativo al nombre real de la VM, remueve la clave de bootstrap autorizada y configura permisos
+func ProvisionVMUser(ctx context.Context, hostCfg Config, port int, bootstrapUser, bootstrapKeyPath, targetUser, targetPublicKey string, log *slog.Logger, vmName ...string) error {
 	authMethods, err := buildAuthMethodsFromKeyPath(bootstrapKeyPath)
 	if err != nil {
 		log.Warn("no se pudo cargar llave bootstrap, se usara contraseña", "error", err)
@@ -616,23 +616,42 @@ func ProvisionVMUser(ctx context.Context, hostCfg Config, port int, bootstrapUse
 	}
 
 	escapedPubKey := strings.ReplaceAll(targetPublicKey, "'", `'\''`)
+	desiredHost := ""
+	if len(vmName) > 0 {
+		desiredHost = sanitizeLinuxHostname(vmName[0])
+	}
 
 	// Script Linux seguro y determinista:
 	// 1. Garantizar privilegios sudo con password si se requiere
-	// 2. Crear usuario unico si no existe
-	// 3. Dar permisos sudo al nuevo usuario
-	// 4. Crear ~/.ssh y autorizar la llave publica generada para esta VM
-	// 5. Configurar multi-user.target para arranque rapido de servidor sin GUI pesada
-	// 6. Eliminar las llaves y privilegios de bootstrap de la VM
+	// 2. Actualizar el hostname de la VM para no heredar "plantilla" de la imagen base
+	// 3. Crear usuario unico si no existe
+	// 4. Dar permisos sudo al nuevo usuario
+	// 5. Crear ~/.ssh y autorizar la llave publica generada para esta VM
+	// 6. Configurar multi-user.target para arranque rapido de servidor sin GUI pesada
+	// 7. Eliminar las llaves y privilegios de bootstrap de la VM
 	provisionScript := fmt.Sprintf(`
 set -e
 TARGET_USER='%s'
 PUB_KEY='%s'
 BOOTSTRAP_USER='%s'
+NEW_HOSTNAME='%s'
 
 # Asegurar permisos de sudo para bootstrap usando contraseña si se requiere
 if ! sudo -n true 2>/dev/null; then
     echo "admin" | sudo -S sh -c 'mkdir -p /etc/sudoers.d && echo "'"$BOOTSTRAP_USER"' ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/99-bootstrap && chmod 440 /etc/sudoers.d/99-bootstrap' 2>/dev/null || true
+fi
+
+# Actualizar hostname del sistema operativo para reemplazar el hostname heredado de la plantilla
+if [ -n "$NEW_HOSTNAME" ]; then
+    sudo hostnamectl set-hostname "$NEW_HOSTNAME" 2>/dev/null || sudo hostname "$NEW_HOSTNAME" 2>/dev/null || true
+    echo "$NEW_HOSTNAME" | sudo tee /etc/hostname >/dev/null 2>&1 || true
+    if [ -f /etc/hosts ]; then
+        if grep -q '^127\.0\.1\.1' /etc/hosts 2>/dev/null; then
+            sudo sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$NEW_HOSTNAME/" /etc/hosts 2>/dev/null || true
+        else
+            printf "127.0.1.1\t%%s\n" "$NEW_HOSTNAME" | sudo tee -a /etc/hosts >/dev/null 2>&1 || true
+        fi
+    fi
 fi
 
 if ! id -u "$TARGET_USER" >/dev/null 2>&1; then
@@ -686,7 +705,7 @@ sudo systemctl restart docker 2>/dev/null || true
 
 # Limpiar contenedores residuales heredados de plantillas basadas en snapshots para que la VM inicie limpia
 sudo docker rm -f $(sudo docker ps -aq) 2>/dev/null || true
-`, targetUser, escapedPubKey, bootstrapUser)
+`, targetUser, escapedPubKey, bootstrapUser, desiredHost)
 
 	session, err := guestClient.NewSession()
 	if err != nil {
@@ -709,6 +728,16 @@ sudo docker rm -f $(sudo docker ps -aq) 2>/dev/null || true
 func sanitizeVMName(name string) string {
 	r := regexp.MustCompile(`[^a-zA-Z0-9_.-]+`)
 	return strings.TrimSpace(r.ReplaceAllString(name, "-"))
+}
+
+func sanitizeLinuxHostname(name string) string {
+	clean := strings.ToLower(strings.TrimSpace(name))
+	r := regexp.MustCompile(`[^a-z0-9-]+`)
+	clean = strings.Trim(r.ReplaceAllString(clean, "-"), "-")
+	if len(clean) > 63 {
+		clean = strings.TrimRight(clean[:63], "-")
+	}
+	return clean
 }
 
 func escapeForDoubleQuote(value string) string {

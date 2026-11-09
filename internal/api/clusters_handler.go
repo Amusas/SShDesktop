@@ -61,7 +61,7 @@ func (a *vmSwarmAdapter) ListVMs() ([]docker.SwarmVMInfo, error) {
 }
 
 func (a *vmSwarmAdapter) GetVM(nameOrID string) (docker.SwarmVMInfo, error) {
-	rec, err := a.vmSvc.Get(nameOrID)
+	rec, err := a.vmSvc.GetCached(nameOrID)
 	if err != nil {
 		return docker.SwarmVMInfo{}, err
 	}

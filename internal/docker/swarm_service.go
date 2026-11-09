@@ -108,7 +108,7 @@ func validateVesselNetIP(ipStr, expectedCIDR string) error {
 
 // inspectNodeDocker consulta en una sola llamada SSH el estado de Docker y de Swarm de una VM.
 func (s *SwarmService) inspectNodeDocker(ctx context.Context, vmName string) (nodeDockerInfo, error) {
-	cmdCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	cmd := "sudo docker info --format '{{.ServerVersion}}|{{.Swarm.LocalNodeState}}|{{if .Swarm.Cluster}}{{.Swarm.Cluster.ID}}{{end}}|{{.Swarm.NodeID}}|{{.Name}}'"
@@ -409,7 +409,8 @@ func (s *SwarmService) CreateClusterWithProgress(ctx context.Context, req Create
 	// =========================================================================
 	emit(7, "swarm_init", StepStatusInProgress, fmt.Sprintf("Inicializando Docker Swarm en el Manager '%s' (%s)...", managerVM.Name, managerIP))
 
-	initCmd := fmt.Sprintf("sudo docker swarm init --advertise-addr %s --data-path-addr %s",
+	initCmd := fmt.Sprintf("if [ \"$(hostname 2>/dev/null)\" = \"plantilla\" ]; then sudo hostnamectl set-hostname %s 2>/dev/null || sudo hostname %s 2>/dev/null || true; echo %s | sudo tee /etc/hostname >/dev/null 2>&1 || true; fi; sudo docker swarm init --advertise-addr %s --data-path-addr %s",
+		EscapeShellArg(managerVM.Name), EscapeShellArg(managerVM.Name), EscapeShellArg(managerVM.Name),
 		EscapeShellArg(managerIP), EscapeShellArg(managerIP))
 	if out, initErr := s.runner(ctx, managerVM.Name, initCmd); initErr != nil {
 		err = fmt.Errorf("falló 'docker swarm init' en el Manager %q (%s): %s (%w)", managerVM.Name, managerIP, strings.TrimSpace(out), initErr)
@@ -465,12 +466,16 @@ func (s *SwarmService) CreateClusterWithProgress(ctx context.Context, req Create
 	// =========================================================================
 	nowISO := time.Now().Format(time.RFC3339)
 	mgrCopy := managerVM
+	mgrHost := mgrDockerInfo.Hostname
+	if mgrHost == "" || strings.EqualFold(mgrHost, "plantilla") {
+		mgrHost = managerVM.Name
+	}
 	nodes := make([]SwarmNode, 0, 1+len(workerVMs))
 	nodes = append(nodes, SwarmNode{
 		VMID:          managerVM.ID,
 		VMName:        managerVM.Name,
 		NodeID:        mgrDockerInfo.NodeID,
-		Hostname:      mgrDockerInfo.Hostname,
+		Hostname:      mgrHost,
 		Role:          NodeRoleManager,
 		IsLeader:      true,
 		InternalIP:    managerIP,
@@ -498,7 +503,10 @@ func (s *SwarmService) CreateClusterWithProgress(ctx context.Context, req Create
 				fmt.Sprintf("Uniendo Worker %d/%d: '%s' (%s) → %s...", idx+1, len(workerVMs), wVM.Name, wIP, managerAddr),
 				func(e *ClusterProgressEvent) { e.NodeVM = wVM.Name })
 
-			joinCmd := fmt.Sprintf("sudo docker swarm join --token %s --advertise-addr %s --data-path-addr %s %s",
+			joinCmd := fmt.Sprintf("if [ \"$(hostname 2>/dev/null)\" = \"plantilla\" ]; then sudo hostnamectl set-hostname %s 2>/dev/null || sudo hostname %s 2>/dev/null || true; echo %s | sudo tee /etc/hostname >/dev/null 2>&1 || true; fi; sudo docker swarm join --token %s --advertise-addr %s --data-path-addr %s %s",
+				EscapeShellArg(wVM.Name),
+				EscapeShellArg(wVM.Name),
+				EscapeShellArg(wVM.Name),
 				EscapeShellArg(workerJoinToken),
 				EscapeShellArg(wIP),
 				EscapeShellArg(wIP),
@@ -529,11 +537,15 @@ func (s *SwarmService) CreateClusterWithProgress(ctx context.Context, req Create
 			}
 
 			wPostInfo, _ := s.inspectNodeDocker(ctx, wVM.Name)
+			wHost := wPostInfo.Hostname
+			if wHost == "" || strings.EqualFold(wHost, "plantilla") {
+				wHost = wVM.Name
+			}
 			nodes = append(nodes, SwarmNode{
 				VMID:          wVM.ID,
 				VMName:        wVM.Name,
 				NodeID:        wPostInfo.NodeID,
-				Hostname:      wPostInfo.Hostname,
+				Hostname:      wHost,
 				Role:          NodeRoleWorker,
 				InternalIP:    wIP,
 				VMState:       wVM.State,
@@ -666,7 +678,7 @@ echo "PORTS_OK"`
 
 // refreshNodesFromManager consulta `docker node ls` en el Manager y sincroniza el estado real de los nodos del cluster.
 func (s *SwarmService) refreshNodesFromManager(ctx context.Context, cluster *SwarmCluster) error {
-	cmdCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	out, err := s.runner(cmdCtx, cluster.ManagerVMName, "sudo docker node ls --format '{{json .}}'")
@@ -690,8 +702,21 @@ func (s *SwarmService) refreshNodesFromManager(ctx context.Context, cluster *Swa
 		}
 	}
 
-	// Obtener la IP interna (Status.Addr) de cada nodo en el Swarm para distinguir VMs clonadas con el mismo hostname (p. ej. "plantilla")
-	if len(lsByNodeID) > 0 {
+	needsAddrLookup := false
+	usedNodeIDs := make(map[string]bool, len(cluster.Nodes))
+	for i := range cluster.Nodes {
+		id := strings.TrimSpace(cluster.Nodes[i].NodeID)
+		if id != "" {
+			if _, ok := lsByNodeID[id]; ok {
+				usedNodeIDs[id] = true
+				continue
+			}
+		}
+		needsAddrLookup = true
+	}
+
+	// Solo consultar `docker node inspect` si algún nodo aún no tiene su NodeID asociado
+	if needsAddrLookup && len(lsByNodeID) > 0 {
 		if addrOut, addrErr := s.runner(cmdCtx, cluster.ManagerVMName, "sudo docker node inspect $(sudo docker node ls -q) --format '{{.ID}}|{{.Status.Addr}}'"); addrErr == nil {
 			for _, rawLine := range strings.Split(addrOut, "\n") {
 				parts := strings.SplitN(strings.TrimSpace(rawLine), "|", 2)
@@ -702,16 +727,6 @@ func (s *SwarmService) refreshNodesFromManager(ctx context.Context, cluster *Swa
 						lsByAddr[addr] = item
 					}
 				}
-			}
-		}
-	}
-
-	usedNodeIDs := make(map[string]bool, len(cluster.Nodes))
-	for i := range cluster.Nodes {
-		id := strings.TrimSpace(cluster.Nodes[i].NodeID)
-		if id != "" {
-			if _, ok := lsByNodeID[id]; ok {
-				usedNodeIDs[id] = true
 			}
 		}
 	}
@@ -758,8 +773,10 @@ func (s *SwarmService) refreshNodesFromManager(ctx context.Context, cluster *Swa
 		if found {
 			usedNodeIDs[matched.ID] = true
 			n.NodeID = matched.ID
-			if matched.Hostname != "" {
+			if matched.Hostname != "" && !strings.EqualFold(matched.Hostname, "plantilla") {
 				n.Hostname = matched.Hostname
+			} else if n.Hostname == "" || strings.EqualFold(n.Hostname, "plantilla") {
+				n.Hostname = n.VMName
 			}
 			n.Availability = matched.Availability
 			n.SwarmStatus = matched.Status
@@ -853,28 +870,21 @@ func (s *SwarmService) SyncCluster(ctx context.Context, cluster *SwarmCluster) {
 		return
 	}
 
-	mgrInfo, err := s.inspectNodeDocker(ctx, cluster.ManagerVMName)
-	if err != nil {
-		cluster.Status = ClusterStatusError
-		cluster.StatusReason = fmt.Sprintf("No se pudo conectar por SSH/Docker al Manager '%s'", cluster.ManagerVMName)
-		cluster.RecomputeCounters()
-		_ = s.store.Update(*cluster)
-		return
-	}
-	if mgrInfo.LocalNodeState != "active" {
-		cluster.Status = ClusterStatusError
-		cluster.StatusReason = fmt.Sprintf("El Manager '%s' ya no tiene Docker Swarm activo (estado: %s)", cluster.ManagerVMName, mgrInfo.LocalNodeState)
-		cluster.RecomputeCounters()
-		_ = s.store.Update(*cluster)
-		return
-	}
-	if mgrInfo.ClusterID != "" {
-		cluster.SwarmClusterID = mgrInfo.ClusterID
-	}
-
 	if err := s.refreshNodesFromManager(ctx, cluster); err != nil {
-		cluster.Status = ClusterStatusDegraded
-		cluster.StatusReason = fmt.Sprintf("No se pudo listar los nodos desde el Manager '%s': %v", cluster.ManagerVMName, err)
+		errLower := strings.ToLower(err.Error())
+		if strings.Contains(errLower, "not a swarm manager") || strings.Contains(errLower, "this node is not a swarm manager") {
+			cluster.Status = ClusterStatusError
+			cluster.StatusReason = fmt.Sprintf("El Manager '%s' ya no tiene Docker Swarm activo", cluster.ManagerVMName)
+		} else if strings.Contains(errLower, "deadline exceeded") || strings.Contains(errLower, "timeout") {
+			s.log.Warn("Tiempo de espera agotado al sincronizar docker node ls; conservando último estado conocido", "cluster", cluster.Name, "manager", cluster.ManagerVMName)
+			if strings.Contains(strings.ToLower(cluster.StatusReason), "deadline exceeded") {
+				cluster.StatusReason = ""
+				cluster.Status = ClusterStatusActive
+			}
+		} else {
+			cluster.Status = ClusterStatusDegraded
+			cluster.StatusReason = fmt.Sprintf("No se pudo listar los nodos desde el Manager '%s': %v", cluster.ManagerVMName, err)
+		}
 	}
 	if len(cluster.Nodes) == 1 {
 		cluster.SingleNodeWarning = "El cluster opera únicamente con el nodo Manager y aún no tiene capacidad distribuida."

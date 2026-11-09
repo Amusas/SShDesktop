@@ -1032,7 +1032,7 @@ func (h *Handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) executeVMCommand(ctx context.Context, vmName string, command string) (string, error) {
-	vmRec, err := h.vmSvc.Get(vmName)
+	vmRec, err := h.vmSvc.GetCached(vmName)
 	if err != nil {
 		return "", fmt.Errorf("máquina virtual '%s' no encontrada: %w", vmName, err)
 	}
@@ -1082,7 +1082,7 @@ func (h *Handler) executeVMCommand(ctx context.Context, vmName string, command s
 }
 
 func (h *Handler) executeVMCommandWithStdin(ctx context.Context, vmName string, command string, stdinData string) (string, error) {
-	vmRec, err := h.vmSvc.Get(vmName)
+	vmRec, err := h.vmSvc.GetCached(vmName)
 	if err != nil {
 		return "", fmt.Errorf("máquina virtual '%s' no encontrada: %w", vmName, err)
 	}
@@ -1132,7 +1132,7 @@ func (h *Handler) executeVMCommandWithStdin(ctx context.Context, vmName string, 
 }
 
 func (h *Handler) streamVMCommand(ctx context.Context, vmName string, command string, stdout io.Writer) error {
-	vmRec, err := h.vmSvc.Get(vmName)
+	vmRec, err := h.vmSvc.GetCached(vmName)
 	if err != nil {
 		return fmt.Errorf("máquina virtual '%s' no encontrada: %w", vmName, err)
 	}

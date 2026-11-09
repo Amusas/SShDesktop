@@ -259,6 +259,25 @@ func (s *Service) List() ([]VMRecord, error) {
 	return activeRecords, nil
 }
 
+// GetCached devuelve la VM desde el almacén local vms.json de forma inmediata sin ejecutar llamadas VBoxManage por SSH.
+// Si no se encuentra en el almacén local (por nombre o ID), delega a Get().
+func (s *Service) GetCached(nameOrID string) (VMRecord, error) {
+	nameOrID = strings.TrimSpace(nameOrID)
+	if rec, found, err := s.vmStore.Find(nameOrID); err == nil && found {
+		s.normalizeRecordNetworkDefaults(&rec)
+		return rec, nil
+	}
+	if list, err := s.vmStore.Load(); err == nil {
+		for _, rec := range list {
+			if rec.ID == nameOrID || strings.EqualFold(rec.Name, nameOrID) {
+				s.normalizeRecordNetworkDefaults(&rec)
+				return rec, nil
+			}
+		}
+	}
+	return s.Get(nameOrID)
+}
+
 func (s *Service) Get(name string) (VMRecord, error) {
 	name = strings.TrimSpace(name)
 	rec, found, err := s.vmStore.Find(name)
@@ -486,7 +505,7 @@ func (s *Service) CreateFromTemplateWithProgress(ctx context.Context, req VMCrea
 
 	// 7. Aprovisionar usuario unico con la clave bootstrap y eliminar bootstrap de la VM
 	notify("configuring_user", 5, 6, fmt.Sprintf("Configurando usuario único '%s' y accesos SSH...", identity.Username))
-	if err := ssh.ProvisionVMUser(ctx, s.SSHConfig(), hostPort, sshUser, s.cfg.BootstrapKeyPath, identity.Username, identity.PublicKey, s.log); err != nil {
+	if err := ssh.ProvisionVMUser(ctx, s.SSHConfig(), hostPort, sshUser, s.cfg.BootstrapKeyPath, identity.Username, identity.PublicKey, s.log, name); err != nil {
 		s.log.Error("error en provisioning de usuario, ejecutando rollback", "error", err)
 		_ = ssh.DeleteVM(s.SSHConfig(), name, s.log)
 		_ = keys.DeleteVMKeys(s.cfg.SSHRoot, name)
