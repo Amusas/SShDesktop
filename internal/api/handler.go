@@ -46,8 +46,9 @@ type Handler struct {
 	static    http.Handler
 	vmSvc     *vm.Service
 	tplSvc    *template.Service
-	dockerSvc *docker.Service
-	swarmSvc  *docker.SwarmService
+	dockerSvc   *docker.Service
+	swarmSvc    *docker.SwarmService
+	registrySvc *docker.RegistryService
 	hostsPath string
 	hosts     hostsFile
 }
@@ -81,6 +82,12 @@ func NewHandler(cfg *config.Config, log *slog.Logger, staticDir string) *Handler
 		handler.executeVMCommand,
 		&vmSwarmAdapter{vmSvc: handler.vmSvc},
 		docker.NewClusterStore(filepath.Join(".", "clusters.json")),
+		log,
+	)
+	handler.registrySvc = docker.NewRegistryService(
+		handler.executeVMCommand,
+		&vmSwarmAdapter{vmSvc: handler.vmSvc},
+		docker.NewRegistryStore(filepath.Join(".", "registry.json")),
 		log,
 	)
 	if _, err := os.Stat(hostsPath); os.IsNotExist(err) {
@@ -191,6 +198,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case strings.HasPrefix(r.URL.Path, "/api/clusters/"):
 		h.handleClusterItem(w, r)
+		return
+	case r.URL.Path == "/api/registry" || strings.HasPrefix(r.URL.Path, "/api/registry/"):
+		h.handleRegistry(w, r)
 		return
 	case strings.HasPrefix(r.URL.Path, "/api/vms/"):
 		h.handleVirtualMachineByID(w, r)

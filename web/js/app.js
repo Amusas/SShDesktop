@@ -384,6 +384,95 @@ class TerminalApp {
         this.removeClusterNodeFeedback = document.getElementById('remove-cluster-node-feedback');
         this.pendingRemoveClusterNode = null;
 
+        // Elementos de Gestión de Docker Registry y Pull-through Cache
+        this.registryTabLocalBtn = document.getElementById('registry-tab-local-btn');
+        this.registryTabCacheBtn = document.getElementById('registry-tab-cache-btn');
+        this.openSmartPullBtn = document.getElementById('open-smart-pull-btn');
+        this.openRegistryPushBtn = document.getElementById('open-registry-push-btn');
+        this.refreshRegistryBtn = document.getElementById('refresh-registry-btn');
+        this.registryFeedbackBanner = document.getElementById('registry-feedback-banner');
+        this.registryLocalPanel = document.getElementById('registry-local-panel');
+        this.registryCachePanel = document.getElementById('registry-cache-panel');
+        this.registryLocalServerCard = document.getElementById('registry-local-server-card');
+        this.registryCacheServerCard = document.getElementById('registry-cache-server-card');
+        this.registryLocalCountLabel = document.getElementById('registry-local-count-label');
+        this.registryLocalImagesList = document.getElementById('registry-local-images-list');
+        this.registryNodesSummaryLabel = document.getElementById('registry-nodes-summary-label');
+        this.openConfigureAllNodesBtn = document.getElementById('open-configure-all-nodes-btn');
+        this.registryNodesList = document.getElementById('registry-nodes-list');
+        this.registryCacheCountLabel = document.getElementById('registry-cache-count-label');
+        this.registryCacheImagesList = document.getElementById('registry-cache-images-list');
+        this.activeRegistryTab = 'local';
+        this.registryOverview = null;
+        this.registryLocalImages = [];
+        this.registryCacheImages = [];
+
+        // Modales de Registry
+        this.registryDeployModal = document.getElementById('registry-deploy-modal');
+        this.closeRegistryDeployModalBtn = document.getElementById('close-registry-deploy-modal');
+        this.cancelRegistryDeployBtn = document.getElementById('cancel-registry-deploy-btn');
+        this.registryDeployForm = document.getElementById('registry-deploy-form');
+        this.registryDeployTitle = document.getElementById('registry-deploy-title');
+        this.registryDeployTargetInput = document.getElementById('registry-deploy-target');
+        this.registryDeployVmSelect = document.getElementById('registry-deploy-vm');
+        this.registryDeployIpInput = document.getElementById('registry-deploy-ip');
+        this.registryDeployPortInput = document.getElementById('registry-deploy-port');
+        this.registryDeployContainerInput = document.getElementById('registry-deploy-container');
+        this.registryDeployVolumeInput = document.getElementById('registry-deploy-volume');
+        this.registryDeployRemoteGroup = document.getElementById('registry-deploy-remote-group');
+        this.registryDeployRemoteUrlInput = document.getElementById('registry-deploy-remote-url');
+        this.registryDeployFeedback = document.getElementById('registry-deploy-feedback');
+        this.submitRegistryDeployBtn = document.getElementById('submit-registry-deploy-btn');
+
+        this.registryPushModal = document.getElementById('registry-push-modal');
+        this.closeRegistryPushModalBtn = document.getElementById('close-registry-push-modal');
+        this.cancelRegistryPushBtn = document.getElementById('cancel-registry-push-btn');
+        this.registryPushForm = document.getElementById('registry-push-form');
+        this.registryPushVmSelect = document.getElementById('registry-push-vm');
+        this.registryPushSourceSelect = document.getElementById('registry-push-source-image');
+        this.registryPushRepoInput = document.getElementById('registry-push-repo');
+        this.registryPushTagInput = document.getElementById('registry-push-tag');
+        this.registryPushPreview = document.getElementById('registry-push-preview');
+        this.registryPushFeedback = document.getElementById('registry-push-feedback');
+        this.registryPushLogWrap = document.getElementById('registry-push-log-wrap');
+        this.registryPushLogOutput = document.getElementById('registry-push-log-output');
+        this.submitRegistryPushBtn = document.getElementById('submit-registry-push-btn');
+
+        this.registryPullModal = document.getElementById('registry-pull-modal');
+        this.closeRegistryPullModalBtn = document.getElementById('close-registry-pull-modal');
+        this.cancelRegistryPullBtn = document.getElementById('cancel-registry-pull-btn');
+        this.registryPullForm = document.getElementById('registry-pull-form');
+        this.registryPullModeSelect = document.getElementById('registry-pull-mode');
+        this.registryPullVmSelect = document.getElementById('registry-pull-vm');
+        this.registryPullImageInput = document.getElementById('registry-pull-image');
+        this.registryPullFeedback = document.getElementById('registry-pull-feedback');
+        this.registryPullFallbackBox = document.getElementById('registry-pull-fallback-box');
+        this.registryPullFallbackMsg = document.getElementById('registry-pull-fallback-msg');
+        this.registryPullFallbackBtn = document.getElementById('registry-pull-fallback-btn');
+        this.registryPullLogWrap = document.getElementById('registry-pull-log-wrap');
+        this.registryPullLogOutput = document.getElementById('registry-pull-log-output');
+        this.submitRegistryPullBtn = document.getElementById('submit-registry-pull-btn');
+
+        this.registryNodesConfirmModal = document.getElementById('registry-nodes-confirm-modal');
+        this.closeRegistryNodesConfirmModalBtn = document.getElementById('close-registry-nodes-confirm-modal');
+        this.cancelRegistryNodesConfirmBtn = document.getElementById('cancel-registry-nodes-confirm');
+        this.confirmRegistryNodesApplyBtn = document.getElementById('confirm-registry-nodes-apply');
+        this.registryNodesConfirmTargetsEl = document.getElementById('registry-nodes-confirm-targets');
+        this.registryNodesRestartCheck = document.getElementById('registry-nodes-restart-check');
+        this.registryNodesConfirmFeedback = document.getElementById('registry-nodes-confirm-feedback');
+        this.pendingConfigureNodes = [];
+
+        this.registryDeleteImageModal = document.getElementById('registry-delete-image-modal');
+        this.closeRegistryDeleteImageModalBtn = document.getElementById('close-registry-delete-image-modal');
+        this.cancelRegistryDeleteImageBtn = document.getElementById('cancel-registry-delete-image');
+        this.confirmRegistryDeleteImageBtn = document.getElementById('confirm-registry-delete-image');
+        this.registryDeleteImageRefEl = document.getElementById('registry-delete-image-ref');
+        this.registryDeleteSharedBox = document.getElementById('registry-delete-shared-box');
+        this.registryDeleteSharedCheck = document.getElementById('registry-delete-shared-check');
+        this.registryDeleteSharedText = document.getElementById('registry-delete-shared-text');
+        this.registryDeleteImageFeedback = document.getElementById('registry-delete-image-feedback');
+        this.pendingDeleteRegistryImage = null;
+
         // Elementos del modal de configuracion
         this.modalEl = document.getElementById('config-modal');
         this.closeModalBtn = document.getElementById('close-modal-btn');
@@ -1374,6 +1463,8 @@ class TerminalApp {
 
         // Envio del formulario de configuracion (Guardar y Conectar)
         this.configForm.addEventListener('submit', (e) => this.handleConfigSubmit(e));
+
+        this.bindRegistryEvents();
     }
 
     isModalOpen() {
@@ -1389,7 +1480,12 @@ class TerminalApp {
             (this.deleteImageModal && !this.deleteImageModal.classList.contains('hidden')) ||
             (this.commitContainerModal && !this.commitContainerModal.classList.contains('hidden')) ||
             (this.createClusterModal && !this.createClusterModal.classList.contains('hidden')) ||
-            (this.removeClusterNodeModal && !this.removeClusterNodeModal.classList.contains('hidden'));
+            (this.removeClusterNodeModal && !this.removeClusterNodeModal.classList.contains('hidden')) ||
+            (this.registryDeployModal && !this.registryDeployModal.classList.contains('hidden')) ||
+            (this.registryPushModal && !this.registryPushModal.classList.contains('hidden')) ||
+            (this.registryPullModal && !this.registryPullModal.classList.contains('hidden')) ||
+            (this.registryNodesConfirmModal && !this.registryNodesConfirmModal.classList.contains('hidden')) ||
+            (this.registryDeleteImageModal && !this.registryDeleteImageModal.classList.contains('hidden'));
     }
 
     isSidebarOpen() {
@@ -1413,7 +1509,7 @@ class TerminalApp {
     }
 
     switchSidebarView(view) {
-        const isDocker = (view === 'docker' || view === 'containers' || view === 'images' || view === 'volumes' || view === 'networks' || view === 'clusters');
+        const isDocker = (view === 'docker' || view === 'containers' || view === 'images' || view === 'volumes' || view === 'networks' || view === 'clusters' || view === 'registry');
 
         // Resaltar pestañas principales
         this.sideLinks.forEach((l) => {
@@ -1433,7 +1529,7 @@ class TerminalApp {
 
         if (isDocker) {
             let subview = this.activeDockerSubnav || 'containers';
-            if (view === 'images' || view === 'volumes' || view === 'networks' || view === 'clusters') {
+            if (view === 'images' || view === 'volumes' || view === 'networks' || view === 'clusters' || view === 'registry') {
                 subview = view;
             }
             this.switchDockerSubview(subview);
@@ -1465,6 +1561,8 @@ class TerminalApp {
                 s.classList.toggle('active', s.id === 'sidebar-networks-view');
             } else if (subview === 'clusters') {
                 s.classList.toggle('active', s.id === 'sidebar-clusters-view');
+            } else if (subview === 'registry') {
+                s.classList.toggle('active', s.id === 'sidebar-registry-view');
             } else {
                 s.classList.remove('active');
             }
@@ -1489,6 +1587,8 @@ class TerminalApp {
             } else {
                 this.loadClusters();
             }
+        } else if (subview === 'registry') {
+            this.loadRegistryView();
         }
     }
 
@@ -7253,6 +7353,970 @@ class TerminalApp {
                 this.removeClusterNodeFeedback.className = 'modal-feedback error';
             }
             this.setRemoveClusterNodeLoading(false);
+        }
+    }
+
+    // =========================================================================
+    // Gestión de Docker Registry Local y Pull-through Cache
+    // =========================================================================
+    bindRegistryEvents() {
+        if (this.registryTabLocalBtn) {
+            this.registryTabLocalBtn.addEventListener('click', () => this.switchRegistryTab('local'));
+        }
+        if (this.registryTabCacheBtn) {
+            this.registryTabCacheBtn.addEventListener('click', () => this.switchRegistryTab('cache'));
+        }
+        if (this.refreshRegistryBtn) {
+            this.refreshRegistryBtn.addEventListener('click', () => this.loadRegistryView());
+        }
+        if (this.openRegistryPushBtn) {
+            this.openRegistryPushBtn.addEventListener('click', () => this.openRegistryPushModal());
+        }
+        if (this.openSmartPullBtn) {
+            this.openSmartPullBtn.addEventListener('click', () => this.openRegistryPullModal('smart', ''));
+        }
+        if (this.openConfigureAllNodesBtn) {
+            this.openConfigureAllNodesBtn.addEventListener('click', () => this.openConfigureNodesRegistryModal([]));
+        }
+
+        // Modal Desplegar Registry / Cache
+        if (this.closeRegistryDeployModalBtn) {
+            this.closeRegistryDeployModalBtn.addEventListener('click', () => this.closeRegistryDeployModal());
+        }
+        if (this.cancelRegistryDeployBtn) {
+            this.cancelRegistryDeployBtn.addEventListener('click', () => this.closeRegistryDeployModal());
+        }
+        if (this.registryDeployVmSelect) {
+            this.registryDeployVmSelect.addEventListener('change', () => {
+                const selectedName = this.registryDeployVmSelect.value;
+                const found = (this.vms || []).find((v) => (v.name || v.Name) === selectedName);
+                if (found && this.registryDeployIpInput) {
+                    this.registryDeployIpInput.value = found.privateIp || found.ip || '';
+                }
+            });
+        }
+        if (this.registryDeployForm) {
+            this.registryDeployForm.addEventListener('submit', (e) => this.submitRegistryDeploy(e));
+        }
+
+        // Modal Push a Registry Local
+        if (this.closeRegistryPushModalBtn) {
+            this.closeRegistryPushModalBtn.addEventListener('click', () => this.closeRegistryPushModal());
+        }
+        if (this.cancelRegistryPushBtn) {
+            this.cancelRegistryPushBtn.addEventListener('click', () => this.closeRegistryPushModal());
+        }
+        if (this.registryPushVmSelect) {
+            this.registryPushVmSelect.addEventListener('change', () => {
+                this.loadPushModalImagesForVM(this.registryPushVmSelect.value);
+            });
+        }
+        if (this.registryPushSourceSelect) {
+            this.registryPushSourceSelect.addEventListener('change', () => {
+                const val = this.registryPushSourceSelect.value || '';
+                if (val) {
+                    const lastColon = val.lastIndexOf(':');
+                    const lastSlash = val.lastIndexOf('/');
+                    if (lastColon > lastSlash) {
+                        const baseRepo = val.substring(0, lastColon);
+                        const baseTag = val.substring(lastColon + 1);
+                        if (this.registryPushRepoInput) this.registryPushRepoInput.value = baseRepo;
+                        if (this.registryPushTagInput) this.registryPushTagInput.value = baseTag || 'latest';
+                    } else {
+                        if (this.registryPushRepoInput) this.registryPushRepoInput.value = val;
+                        if (this.registryPushTagInput) this.registryPushTagInput.value = 'latest';
+                    }
+                    this.updateRegistryPushPreview();
+                }
+            });
+        }
+        if (this.registryPushRepoInput) {
+            this.registryPushRepoInput.addEventListener('input', () => this.updateRegistryPushPreview());
+        }
+        if (this.registryPushTagInput) {
+            this.registryPushTagInput.addEventListener('input', () => this.updateRegistryPushPreview());
+        }
+        if (this.registryPushForm) {
+            this.registryPushForm.addEventListener('submit', (e) => this.submitRegistryPush(e));
+        }
+
+        // Modal Pull / Smart Pull
+        if (this.closeRegistryPullModalBtn) {
+            this.closeRegistryPullModalBtn.addEventListener('click', () => this.closeRegistryPullModal());
+        }
+        if (this.cancelRegistryPullBtn) {
+            this.cancelRegistryPullBtn.addEventListener('click', () => this.closeRegistryPullModal());
+        }
+        if (this.registryPullForm) {
+            this.registryPullForm.addEventListener('submit', (e) => this.submitRegistryPull(e, false));
+        }
+        if (this.registryPullFallbackBtn) {
+            this.registryPullFallbackBtn.addEventListener('click', (e) => this.submitRegistryPull(e, true));
+        }
+
+        // Modal Confirmación Configurar Nodos Mirror
+        if (this.closeRegistryNodesConfirmModalBtn) {
+            this.closeRegistryNodesConfirmModalBtn.addEventListener('click', () => this.closeConfigureNodesRegistryModal());
+        }
+        if (this.cancelRegistryNodesConfirmBtn) {
+            this.cancelRegistryNodesConfirmBtn.addEventListener('click', () => this.closeConfigureNodesRegistryModal());
+        }
+        if (this.confirmRegistryNodesApplyBtn) {
+            this.confirmRegistryNodesApplyBtn.addEventListener('click', () => this.executeConfigureNodesRegistry());
+        }
+
+        // Modal Eliminar Imagen del Registry
+        if (this.closeRegistryDeleteImageModalBtn) {
+            this.closeRegistryDeleteImageModalBtn.addEventListener('click', () => this.closeDeleteRegistryImageModal());
+        }
+        if (this.cancelRegistryDeleteImageBtn) {
+            this.cancelRegistryDeleteImageBtn.addEventListener('click', () => this.closeDeleteRegistryImageModal());
+        }
+        if (this.confirmRegistryDeleteImageBtn) {
+            this.confirmRegistryDeleteImageBtn.addEventListener('click', () => this.executeDeleteRegistryImage());
+        }
+    }
+
+    switchRegistryTab(tab) {
+        this.activeRegistryTab = tab === 'cache' ? 'cache' : 'local';
+        if (this.registryTabLocalBtn) {
+            this.registryTabLocalBtn.classList.toggle('active', this.activeRegistryTab === 'local');
+        }
+        if (this.registryTabCacheBtn) {
+            this.registryTabCacheBtn.classList.toggle('active', this.activeRegistryTab === 'cache');
+        }
+        if (this.registryLocalPanel) {
+            this.registryLocalPanel.classList.toggle('hidden', this.activeRegistryTab !== 'local');
+        }
+        if (this.registryCachePanel) {
+            this.registryCachePanel.classList.toggle('hidden', this.activeRegistryTab !== 'cache');
+        }
+        this.loadRegistryView();
+    }
+
+    showRegistryBanner(msg, type = 'success') {
+        if (!this.registryFeedbackBanner) return;
+        this.registryFeedbackBanner.textContent = msg;
+        this.registryFeedbackBanner.className = `modal-feedback ${type}`;
+        this.registryFeedbackBanner.classList.remove('hidden');
+        if (this._registryBannerTimer) clearTimeout(this._registryBannerTimer);
+        this._registryBannerTimer = setTimeout(() => {
+            if (this.registryFeedbackBanner) this.registryFeedbackBanner.classList.add('hidden');
+        }, 7000);
+    }
+
+    async loadRegistryView() {
+        if (this.registryLocalServerCard && !this.registryOverview) {
+            this.registryLocalServerCard.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Consultando estado de Registry...</div>`;
+        }
+        try {
+            const res = await fetch('/api/registry/status');
+            if (!res.ok) throw new Error(await res.text());
+            const overview = await res.json();
+            this.registryOverview = overview;
+
+            this.renderRegistryServerCard('local', overview.local);
+            this.renderRegistryServerCard('cache', overview.cache);
+            this.renderRegistryNodesList(overview.nodes || []);
+
+            if (this.activeRegistryTab === 'local') {
+                await this.loadRegistryImages('local');
+            } else {
+                await this.loadRegistryImages('cache');
+            }
+        } catch (e) {
+            console.warn('Error cargando vista de Registry:', e);
+            if (this.registryLocalServerCard) {
+                this.registryLocalServerCard.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">Error al consultar Registry: ${this.escapeHTML(this.parseApiError(e.message))}</div>`;
+            }
+        }
+    }
+
+    renderRegistryServerCard(target, st) {
+        const containerEl = target === 'cache' ? this.registryCacheServerCard : this.registryLocalServerCard;
+        if (!containerEl) return;
+
+        const isCache = target === 'cache';
+        const title = isCache ? 'Pull-through Cache (Docker Hub Proxy)' : 'Registry Local Escribible';
+
+        if (!st || !st.configured) {
+            containerEl.innerHTML = `
+                <div class="vm-card">
+                    <div class="vm-card-header">
+                        <div class="vm-title-row">
+                            <h3 class="vm-name">${this.escapeHTML(title)}</h3>
+                            <span class="vm-state-badge state-stopped">No desplegado</span>
+                        </div>
+                        <div class="vm-state-actions">
+                            <button type="button" class="btn btn-primary btn-sm" onclick="window.terminalApp.openRegistryDeployModal('${target}')">
+                                <span>${isCache ? 'Desplegar Caché' : 'Desplegar Registry'}</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="vm-details-grid">
+                        <div class="vm-detail-item">
+                            <span class="vm-detail-label">Imagen Oficial</span>
+                            <span class="vm-detail-value font-mono">${this.escapeHTML((st && st.image) || 'registry:2.8.3')}</span>
+                        </div>
+                        <div class="vm-detail-item">
+                            <span class="vm-detail-label">Puerto predeterminado</span>
+                            <span class="vm-detail-value font-mono">${isCache ? '5001' : '5000'}</span>
+                        </div>
+                        <div class="vm-detail-item">
+                            <span class="vm-detail-label">Contenedor / Volumen</span>
+                            <span class="vm-detail-value font-mono">${isCache ? 'vessel-registry-cache / vessel-registry-cache-data' : 'vessel-registry / vessel-registry-data'}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        const isRunning = st.containerState === 'running';
+        const badgeClass = (isRunning && st.healthy)
+            ? 'state-running'
+            : isRunning
+            ? 'state-created'
+            : 'state-stopped';
+
+        const endpointDisplay = isCache ? (st.endpointUrl || `http://${st.endpointHost}`) : (st.endpointHost || '-');
+
+        containerEl.innerHTML = `
+            <div class="vm-card">
+                <div class="vm-card-header">
+                    <div class="vm-title-row" style="flex-wrap:wrap;gap:8px;">
+                        <h3 class="vm-name">${this.escapeHTML(title)}</h3>
+                        <span class="vm-source-tag">${this.escapeHTML(st.vmName || '-')}</span>
+                        <span class="vm-state-badge ${badgeClass}">${this.escapeHTML(st.statusText || st.containerState)}</span>
+                    </div>
+                    <div class="vm-state-actions" style="display:flex;gap:6px;flex-wrap:wrap;">
+                        ${
+                            isRunning
+                                ? `<button type="button" class="btn btn-secondary btn-sm" onclick="window.terminalApp.controlRegistryInstance('${target}', 'restart', this)" title="Reiniciar contenedor">Reiniciar</button>
+                                   <button type="button" class="btn btn-danger btn-sm" onclick="window.terminalApp.controlRegistryInstance('${target}', 'stop', this)" title="Detener contenedor">Detener</button>`
+                                : `<button type="button" class="btn btn-primary btn-sm" onclick="window.terminalApp.controlRegistryInstance('${target}', 'start', this)" title="Iniciar contenedor">Iniciar</button>`
+                        }
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="window.terminalApp.openRegistryLogs('${target}')" title="Ver logs del contenedor">Logs</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="window.terminalApp.openRegistryDeployModal('${target}')" title="Cambiar VM o puerto">Reconfigurar</button>
+                    </div>
+                </div>
+                <div class="vm-details-grid">
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Dirección de acceso (Nodos)</span>
+                        <span class="vm-detail-value font-mono" style="display:flex;align-items:center;gap:6px;">
+                            <strong style="color:var(--accent)">${this.escapeHTML(endpointDisplay)}</strong>
+                            <button type="button" class="btn btn-secondary btn-sm" style="padding:1px 6px;font-size:10px;" onclick="window.terminalApp.copyRegistryRef('${this.escapeAttr(endpointDisplay)}', this)">Copiar</button>
+                        </span>
+                    </div>
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Endpoint API V2</span>
+                        <span class="vm-detail-value font-mono">${this.escapeHTML(st.apiUrl || '-')} (${st.healthy ? '200 OK' : 'Sin respuesta'})</span>
+                    </div>
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Contenedor / Imagen</span>
+                        <span class="vm-detail-value font-mono">${this.escapeHTML(st.containerName)} (${this.escapeHTML(st.image)})</span>
+                    </div>
+                    <div class="vm-detail-item">
+                        <span class="vm-detail-label">Volumen Persistente</span>
+                        <span class="vm-detail-value font-mono">${this.escapeHTML(st.volumeName)}</span>
+                    </div>
+                    ${
+                        isCache
+                            ? `<div class="vm-detail-item" style="grid-column: 1 / -1;">
+                                   <span class="vm-detail-label">Upstream Remote URL (proxy.remoteurl)</span>
+                                   <span class="vm-detail-value font-mono">${this.escapeHTML(st.remoteUrl || 'https://registry-1.docker.io')}</span>
+                               </div>`
+                            : ''
+                    }
+                </div>
+            </div>
+        `;
+    }
+
+    async loadRegistryImages(target) {
+        const listEl = target === 'cache' ? this.registryCacheImagesList : this.registryLocalImagesList;
+        const countEl = target === 'cache' ? this.registryCacheCountLabel : this.registryLocalCountLabel;
+        if (!listEl) return;
+
+        const st = this.registryOverview ? (target === 'cache' ? this.registryOverview.cache : this.registryOverview.local) : null;
+        if (!st || !st.configured) {
+            if (countEl) countEl.textContent = '0 imágenes';
+            listEl.innerHTML = `<div class="empty-vm-list">${target === 'cache' ? 'Despliega primero la instancia de Caché para inspeccionar las imágenes almacenadas.' : 'Despliega primero el Registry local para almacenar y consultar imágenes propias.'}</div>`;
+            return;
+        }
+
+        listEl.innerHTML = `<div class="empty-vm-list"><span class="btn-spinner"></span> Consultando catálogo HTTP V2...</div>`;
+
+        try {
+            const res = await fetch(`/api/registry/images?target=${encodeURIComponent(target)}`);
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            const images = Array.isArray(data.images) ? data.images : [];
+
+            if (target === 'cache') {
+                this.registryCacheImages = images;
+            } else {
+                this.registryLocalImages = images;
+            }
+
+            if (countEl) {
+                countEl.textContent = `${images.length} imagen(es) en ${Array.isArray(data.repositories) ? data.repositories.length : 0} repositorio(s)`;
+            }
+
+            if (data.error && !data.healthy) {
+                listEl.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">${this.escapeHTML(data.error)}</div>`;
+                return;
+            }
+
+            if (images.length === 0) {
+                listEl.innerHTML = `<div class="empty-vm-list">${target === 'cache' ? 'Aún no hay imágenes almacenadas en la caché de Docker Hub.' : 'El Registry local está vacío. Usa "Subir imagen" para publicar una imagen desde cualquier nodo.'}</div>`;
+                return;
+            }
+
+            listEl.innerHTML = images
+                .map((img) => {
+                    const shortDigest = img.digest ? img.digest.substring(0, 19) : 'n/a';
+                    const repoTag = `${img.repository}:${img.tag}`;
+                    const sharedStr = Array.isArray(img.sharedTags) && img.sharedTags.length > 0 ? img.sharedTags.join(',') : '';
+
+                    return `
+                        <div class="image-card">
+                            <div class="image-head">
+                                <div class="image-title-group">
+                                    <div class="image-icon">
+                                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                                            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                                            <polyline points="2 17 12 22 22 17"></polyline>
+                                            <polyline points="2 12 12 17 22 12"></polyline>
+                                        </svg>
+                                    </div>
+                                    <div class="image-name">
+                                        <span>${this.escapeHTML(img.repository)}</span>
+                                        <span class="image-tag-badge">${this.escapeHTML(img.tag)}</span>
+                                    </div>
+                                </div>
+                                <div class="image-head-right">
+                                    <div class="image-size-badge">${this.escapeHTML(img.size || 'n/a')}</div>
+                                </div>
+                            </div>
+
+                            <div class="image-info-grid">
+                                <div class="image-info-item" style="grid-column: 1 / -1;">
+                                    <span class="image-info-label">Referencia completa</span>
+                                    <span class="image-info-value font-mono" style="word-break:break-all;">${this.escapeHTML(img.fullReference)}</span>
+                                </div>
+                                <div class="image-info-item">
+                                    <span class="image-info-label">Digest</span>
+                                    <span class="image-info-value font-mono" title="${this.escapeAttr(img.digest || '')}">${this.escapeHTML(shortDigest)}</span>
+                                </div>
+                                <div class="image-info-item">
+                                    <span class="image-info-label">Capas</span>
+                                    <span class="image-info-value font-mono">${img.layersCount || '-'}</span>
+                                </div>
+                            </div>
+
+                            <div class="image-actions" style="display:flex;gap:6px;flex-wrap:wrap;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="window.terminalApp.copyRegistryRef('${this.escapeAttr(img.fullReference)}', this)" title="Copiar referencia completa">
+                                    <span>Copiar ref</span>
+                                </button>
+                                <button type="button" class="btn btn-primary btn-sm" onclick="window.terminalApp.openRegistryPullModal('${target === 'local' ? 'local' : 'smart'}', '${this.escapeAttr(repoTag)}')" title="Descargar esta imagen hacia un nodo">
+                                    <span>Descargar en nodo</span>
+                                </button>
+                                ${
+                                    target === 'local'
+                                        ? `<button type="button" class="btn btn-danger btn-sm" onclick="window.terminalApp.openDeleteRegistryImageModal('${this.escapeAttr(img.repository)}', '${this.escapeAttr(img.tag)}', '${this.escapeAttr(sharedStr)}')" title="Eliminar imagen del Registry local">
+                                               <span>Eliminar</span>
+                                           </button>`
+                                        : ''
+                                }
+                            </div>
+                        </div>
+                    `;
+                })
+                .join('');
+        } catch (e) {
+            console.warn('Error listando imágenes de Registry:', e);
+            listEl.innerHTML = `<div class="empty-vm-list" style="color:var(--accent-red)">No se pudo consultar la API V2 del Registry: ${this.escapeHTML(this.parseApiError(e.message))}</div>`;
+        }
+    }
+
+    renderRegistryNodesList(nodes) {
+        if (!this.registryNodesList) return;
+        if (!Array.isArray(nodes) || nodes.length === 0) {
+            this.registryNodesList.innerHTML = `<div class="empty-vm-list">No hay máquinas virtuales registradas.</div>`;
+            return;
+        }
+
+        const configuredCount = nodes.filter((n) => !n.needsConfiguration && (n.vmState || '').toLowerCase() === 'running').length;
+        if (this.registryNodesSummaryLabel) {
+            this.registryNodesSummaryLabel.textContent = `${configuredCount} de ${nodes.length} nodo(s) con configuración al día`;
+        }
+
+        this.registryNodesList.innerHTML = nodes
+            .map((n) => {
+                const isRunning = (n.vmState || '').toLowerCase() === 'running';
+                const badgeClass = !isRunning
+                    ? 'state-stopped'
+                    : !n.needsConfiguration
+                    ? 'state-running'
+                    : 'state-created';
+
+                const mirrorsText = Array.isArray(n.configuredMirrors) && n.configuredMirrors.length > 0
+                    ? n.configuredMirrors.join(', ')
+                    : 'Ninguno';
+                const insecureText = Array.isArray(n.insecureRegistries) && n.insecureRegistries.length > 0
+                    ? n.insecureRegistries.join(', ')
+                    : 'Ninguno';
+
+                return `
+                    <div class="vm-card">
+                        <div class="vm-card-header">
+                            <div class="vm-title-row">
+                                <h3 class="vm-name">${this.escapeHTML(n.vmName)}</h3>
+                                <span class="vm-state-badge ${badgeClass}">${this.escapeHTML(n.statusLabel || n.vmState)}</span>
+                            </div>
+                            <div class="vm-state-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" ${!isRunning ? 'disabled' : ''} onclick="window.terminalApp.openConfigureNodesRegistryModal(['${this.escapeAttr(n.vmName)}'])">
+                                    <span>${n.needsConfiguration ? 'Aplicar configuración' : 'Reaplicar'}</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="vm-details-grid">
+                            <div class="vm-detail-item">
+                                <span class="vm-detail-label">IP (vessel-net)</span>
+                                <span class="vm-detail-value font-mono">${this.escapeHTML(n.privateIp || '-')}</span>
+                            </div>
+                            <div class="vm-detail-item">
+                                <span class="vm-detail-label">registry-mirrors</span>
+                                <span class="vm-detail-value font-mono">${this.escapeHTML(mirrorsText)}</span>
+                            </div>
+                            <div class="vm-detail-item" style="grid-column: 1 / -1;">
+                                <span class="vm-detail-label">insecure-registries (HTTP)</span>
+                                <span class="vm-detail-value font-mono">${this.escapeHTML(insecureText)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            })
+            .join('');
+    }
+
+    copyRegistryRef(ref, btnEl) {
+        if (!ref) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(ref).catch(() => {});
+        }
+        if (btnEl) {
+            const prev = btnEl.textContent;
+            btnEl.textContent = '¡Copiado!';
+            setTimeout(() => {
+                btnEl.textContent = prev;
+            }, 1400);
+        }
+        this.appendInfoLine(`[Registry] Referencia copiada al portapapeles: ${ref}`);
+    }
+
+    openRegistryDeployModal(target = 'local') {
+        if (!this.registryDeployModal) return;
+        const isCache = target === 'cache';
+        if (this.registryDeployTargetInput) this.registryDeployTargetInput.value = isCache ? 'cache' : 'local';
+        if (this.registryDeployTitle) {
+            this.registryDeployTitle.textContent = isCache
+                ? 'Desplegar Pull-through Cache de Docker Hub'
+                : 'Desplegar Registry Local Escribible';
+        }
+
+        const current = this.registryOverview ? (isCache ? this.registryOverview.cache : this.registryOverview.local) : null;
+
+        if (this.registryDeployVmSelect) {
+            let opts = '<option value="" disabled selected>Selecciona una máquina en ejecución...</option>';
+            (this.vms || []).forEach((v) => {
+                const name = v.name || v.Name;
+                const isRunning = (v.state || '').toLowerCase() === 'running';
+                const ip = v.privateIp || v.ip || '';
+                opts += `<option value="${this.escapeAttr(name)}" ${!isRunning ? 'disabled' : ''}>${this.escapeHTML(name)}${ip ? ` (${ip})` : ''} — ${isRunning ? 'En ejecución' : 'Apagada'}</option>`;
+            });
+            this.registryDeployVmSelect.innerHTML = opts;
+            if (current && current.vmName) {
+                this.registryDeployVmSelect.value = current.vmName;
+            }
+        }
+
+        if (this.registryDeployIpInput) {
+            this.registryDeployIpInput.value = (current && current.hostIp) || '';
+        }
+        if (this.registryDeployPortInput) {
+            this.registryDeployPortInput.value = (current && current.port) || (isCache ? 5001 : 5000);
+        }
+        if (this.registryDeployContainerInput) {
+            this.registryDeployContainerInput.value = (current && current.containerName) || (isCache ? 'vessel-registry-cache' : 'vessel-registry');
+        }
+        if (this.registryDeployVolumeInput) {
+            this.registryDeployVolumeInput.value = (current && current.volumeName) || (isCache ? 'vessel-registry-cache-data' : 'vessel-registry-data');
+        }
+        if (this.registryDeployRemoteGroup) {
+            this.registryDeployRemoteGroup.classList.toggle('hidden', !isCache);
+        }
+        if (this.registryDeployRemoteUrlInput) {
+            this.registryDeployRemoteUrlInput.value = (current && current.remoteUrl) || 'https://registry-1.docker.io';
+        }
+        if (this.registryDeployFeedback) {
+            this.registryDeployFeedback.classList.add('hidden');
+            this.registryDeployFeedback.textContent = '';
+        }
+
+        this.registryDeployModal.classList.remove('hidden');
+        this.registryDeployModal.setAttribute('aria-hidden', 'false');
+    }
+
+    closeRegistryDeployModal() {
+        if (!this.registryDeployModal) return;
+        this.registryDeployModal.classList.add('hidden');
+        this.registryDeployModal.setAttribute('aria-hidden', 'true');
+    }
+
+    async submitRegistryDeploy(e) {
+        e.preventDefault();
+        const target = this.registryDeployTargetInput ? this.registryDeployTargetInput.value : 'local';
+        const vmName = this.registryDeployVmSelect ? this.registryDeployVmSelect.value : '';
+        const hostIp = this.registryDeployIpInput ? this.registryDeployIpInput.value.trim() : '';
+        const port = parseInt(this.registryDeployPortInput ? this.registryDeployPortInput.value : '5000', 10);
+        const containerName = this.registryDeployContainerInput ? this.registryDeployContainerInput.value.trim() : '';
+        const volumeName = this.registryDeployVolumeInput ? this.registryDeployVolumeInput.value.trim() : '';
+        const remoteUrl = this.registryDeployRemoteUrlInput ? this.registryDeployRemoteUrlInput.value.trim() : '';
+
+        if (!vmName) {
+            if (this.registryDeployFeedback) {
+                this.registryDeployFeedback.textContent = 'Selecciona la máquina virtual donde se desplegará el contenedor.';
+                this.registryDeployFeedback.className = 'modal-feedback error';
+                this.registryDeployFeedback.classList.remove('hidden');
+            }
+            return;
+        }
+
+        const spinner = this.submitRegistryDeployBtn ? this.submitRegistryDeployBtn.querySelector('.btn-spinner') : null;
+        const btnText = this.submitRegistryDeployBtn ? this.submitRegistryDeployBtn.querySelector('.btn-text') : null;
+        if (this.submitRegistryDeployBtn) this.submitRegistryDeployBtn.disabled = true;
+        if (spinner) spinner.classList.remove('hidden');
+        if (btnText) btnText.textContent = 'Desplegando...';
+        if (this.registryDeployFeedback) this.registryDeployFeedback.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/registry/deploy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target, vmName, hostIp, port, containerName, volumeName, remoteUrl }),
+            });
+            const text = await res.text();
+            if (!res.ok) {
+                throw new Error(this.parseApiError(text));
+            }
+            const st = JSON.parse(text);
+            this.closeRegistryDeployModal();
+            this.showRegistryBanner(
+                `Instancia '${st.containerName}' desplegada en ${st.vmName} (${st.endpointHost}).`,
+                'success'
+            );
+            this.appendInfoLine(`[Registry] ${st.containerName} desplegado en ${st.vmName} -> ${st.endpointUrl}`);
+            await this.loadRegistryView();
+        } catch (err) {
+            if (this.registryDeployFeedback) {
+                this.registryDeployFeedback.textContent = err.message;
+                this.registryDeployFeedback.className = 'modal-feedback error';
+                this.registryDeployFeedback.classList.remove('hidden');
+            }
+        } finally {
+            if (this.submitRegistryDeployBtn) this.submitRegistryDeployBtn.disabled = false;
+            if (spinner) spinner.classList.add('hidden');
+            if (btnText) btnText.textContent = 'Desplegar Registry';
+        }
+    }
+
+    async controlRegistryInstance(target, action, btnEl) {
+        if (btnEl) btnEl.disabled = true;
+        try {
+            const res = await fetch('/api/registry/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target, action }),
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error(this.parseApiError(text));
+            this.showRegistryBanner(`Acción '${action}' ejecutada correctamente en el Registry (${target}).`, 'success');
+            await this.loadRegistryView();
+        } catch (e) {
+            this.showRegistryBanner(`Error al ejecutar '${action}': ${e.message}`, 'error');
+        } finally {
+            if (btnEl) btnEl.disabled = false;
+        }
+    }
+
+    openRegistryLogs(target) {
+        const st = this.registryOverview ? (target === 'cache' ? this.registryOverview.cache : this.registryOverview.local) : null;
+        if (!st || !st.configured || !st.vmName || !st.containerName) return;
+        this.openContainerLogs(st.vmName, st.containerName, st.containerName);
+    }
+
+    openRegistryPushModal(presetVm = '', presetImage = '') {
+        if (!this.registryPushModal) return;
+        const localSt = this.registryOverview ? this.registryOverview.local : null;
+        if (!localSt || !localSt.configured) {
+            this.showRegistryBanner('Primero debes desplegar el Registry local escribible antes de subir imágenes.', 'error');
+            this.openRegistryDeployModal('local');
+            return;
+        }
+
+        if (this.registryPushFeedback) this.registryPushFeedback.classList.add('hidden');
+        if (this.registryPushLogWrap) this.registryPushLogWrap.classList.add('hidden');
+        if (this.registryPushLogOutput) this.registryPushLogOutput.textContent = '';
+
+        let opts = '<option value="" disabled selected>Selecciona una máquina virtual...</option>';
+        (this.vms || []).forEach((v) => {
+            const name = v.name || v.Name;
+            const isRunning = (v.state || '').toLowerCase() === 'running';
+            if (isRunning) {
+                opts += `<option value="${this.escapeAttr(name)}">${this.escapeHTML(name)}</option>`;
+            }
+        });
+        if (this.registryPushVmSelect) {
+            this.registryPushVmSelect.innerHTML = opts;
+            const defaultVm = presetVm || this.selectedDockerVm || localSt.vmName || '';
+            if (defaultVm) {
+                this.registryPushVmSelect.value = defaultVm;
+                this.loadPushModalImagesForVM(defaultVm, presetImage);
+            }
+        }
+
+        this.updateRegistryPushPreview();
+        this.registryPushModal.classList.remove('hidden');
+        this.registryPushModal.setAttribute('aria-hidden', 'false');
+    }
+
+    closeRegistryPushModal() {
+        if (!this.registryPushModal) return;
+        this.registryPushModal.classList.add('hidden');
+        this.registryPushModal.setAttribute('aria-hidden', 'true');
+    }
+
+    async loadPushModalImagesForVM(vmName, presetImage = '') {
+        if (!this.registryPushSourceSelect) return;
+        if (!vmName) {
+            this.registryPushSourceSelect.innerHTML = '<option value="" disabled selected>Selecciona primero un nodo...</option>';
+            return;
+        }
+        this.registryPushSourceSelect.innerHTML = '<option value="" disabled selected>Cargando imágenes de la VM...</option>';
+        try {
+            const res = await fetch(`/api/images?vm=${encodeURIComponent(vmName)}`);
+            if (!res.ok) throw new Error('No se pudieron listar las imágenes');
+            const imgs = await res.json();
+            if (!Array.isArray(imgs) || imgs.length === 0) {
+                this.registryPushSourceSelect.innerHTML = '<option value="" disabled selected>No hay imágenes locales en esta VM</option>';
+                return;
+            }
+            let opts = '<option value="" disabled selected>Selecciona una imagen local...</option>';
+            imgs.forEach((img) => {
+                const repo = img.repository || '<none>';
+                const tag = img.tag || 'latest';
+                if (repo === '<none>') return;
+                const ref = `${repo}:${tag}`;
+                opts += `<option value="${this.escapeAttr(ref)}">${this.escapeHTML(ref)} (${this.escapeHTML(img.size || '')})</option>`;
+            });
+            this.registryPushSourceSelect.innerHTML = opts;
+            if (presetImage) {
+                this.registryPushSourceSelect.value = presetImage;
+            }
+            this.registryPushSourceSelect.dispatchEvent(new Event('change'));
+        } catch (e) {
+            this.registryPushSourceSelect.innerHTML = '<option value="" disabled selected>Error al cargar imágenes</option>';
+        }
+    }
+
+    updateRegistryPushPreview() {
+        if (!this.registryPushPreview) return;
+        const localSt = this.registryOverview && this.registryOverview.local;
+        const host = (localSt && localSt.endpointHost) || 'IP:5000';
+        const repo = (this.registryPushRepoInput && this.registryPushRepoInput.value.trim()) || '<repositorio>';
+        const tag = (this.registryPushTagInput && this.registryPushTagInput.value.trim()) || 'latest';
+        this.registryPushPreview.textContent = `${host}/${repo}:${tag}`;
+    }
+
+    async submitRegistryPush(e) {
+        e.preventDefault();
+        const vmName = this.registryPushVmSelect ? this.registryPushVmSelect.value : '';
+        const sourceImage = this.registryPushSourceSelect ? this.registryPushSourceSelect.value : '';
+        const repository = this.registryPushRepoInput ? this.registryPushRepoInput.value.trim() : '';
+        const tag = this.registryPushTagInput ? this.registryPushTagInput.value.trim() : 'latest';
+
+        if (!vmName || !sourceImage || !repository) return;
+
+        const spinner = this.submitRegistryPushBtn ? this.submitRegistryPushBtn.querySelector('.btn-spinner') : null;
+        const btnText = this.submitRegistryPushBtn ? this.submitRegistryPushBtn.querySelector('.btn-text') : null;
+        if (this.submitRegistryPushBtn) this.submitRegistryPushBtn.disabled = true;
+        if (spinner) spinner.classList.remove('hidden');
+        if (btnText) btnText.textContent = 'Subiendo al Registry...';
+        if (this.registryPushFeedback) this.registryPushFeedback.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/registry/push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vmName, sourceImage, repository, tag }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (data.output && this.registryPushLogWrap && this.registryPushLogOutput) {
+                this.registryPushLogOutput.textContent = data.output;
+                this.registryPushLogWrap.classList.remove('hidden');
+            }
+            if (!res.ok) {
+                throw new Error(data.error || 'Error subiendo imagen al Registry local');
+            }
+
+            if (this.registryPushFeedback) {
+                this.registryPushFeedback.textContent = `Imagen subida exitosamente como ${data.targetReference}`;
+                this.registryPushFeedback.className = 'modal-feedback success';
+                this.registryPushFeedback.classList.remove('hidden');
+            }
+            this.appendInfoLine(`[Registry Push] ${sourceImage} (${vmName}) -> ${data.targetReference}`);
+            await this.loadRegistryImages('local');
+        } catch (err) {
+            if (this.registryPushFeedback) {
+                this.registryPushFeedback.textContent = err.message;
+                this.registryPushFeedback.className = 'modal-feedback error';
+                this.registryPushFeedback.classList.remove('hidden');
+            }
+        } finally {
+            if (this.submitRegistryPushBtn) this.submitRegistryPushBtn.disabled = false;
+            if (spinner) spinner.classList.add('hidden');
+            if (btnText) btnText.textContent = 'Etiquetar y Subir (Push)';
+        }
+    }
+
+    openRegistryPullModal(presetMode = 'smart', presetImage = '') {
+        if (!this.registryPullModal) return;
+        if (this.registryPullModeSelect) {
+            this.registryPullModeSelect.value = presetMode === 'local' ? 'local' : 'smart';
+        }
+        if (this.registryPullImageInput) {
+            this.registryPullImageInput.value = presetImage || '';
+        }
+        if (this.registryPullFeedback) this.registryPullFeedback.classList.add('hidden');
+        if (this.registryPullFallbackBox) this.registryPullFallbackBox.classList.add('hidden');
+        if (this.registryPullLogWrap) this.registryPullLogWrap.classList.add('hidden');
+        if (this.registryPullLogOutput) this.registryPullLogOutput.textContent = '';
+
+        let opts = '<option value="" disabled selected>Selecciona la máquina virtual destino...</option>';
+        (this.vms || []).forEach((v) => {
+            const name = v.name || v.Name;
+            const isRunning = (v.state || '').toLowerCase() === 'running';
+            if (isRunning) {
+                opts += `<option value="${this.escapeAttr(name)}">${this.escapeHTML(name)}</option>`;
+            }
+        });
+        if (this.registryPullVmSelect) {
+            this.registryPullVmSelect.innerHTML = opts;
+            if (this.selectedDockerVm) {
+                this.registryPullVmSelect.value = this.selectedDockerVm;
+            }
+        }
+
+        this.registryPullModal.classList.remove('hidden');
+        this.registryPullModal.setAttribute('aria-hidden', 'false');
+    }
+
+    closeRegistryPullModal() {
+        if (!this.registryPullModal) return;
+        this.registryPullModal.classList.add('hidden');
+        this.registryPullModal.setAttribute('aria-hidden', 'true');
+    }
+
+    async submitRegistryPull(e, allowFallback = false) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        const mode = this.registryPullModeSelect ? this.registryPullModeSelect.value : 'smart';
+        const vmName = this.registryPullVmSelect ? this.registryPullVmSelect.value : '';
+        const image = this.registryPullImageInput ? this.registryPullImageInput.value.trim() : '';
+
+        if (!vmName || !image) return;
+
+        const spinner = this.submitRegistryPullBtn ? this.submitRegistryPullBtn.querySelector('.btn-spinner') : null;
+        const btnText = this.submitRegistryPullBtn ? this.submitRegistryPullBtn.querySelector('.btn-text') : null;
+        if (this.submitRegistryPullBtn) this.submitRegistryPullBtn.disabled = true;
+        if (spinner) spinner.classList.remove('hidden');
+        if (btnText) btnText.textContent = 'Descargando...';
+        if (this.registryPullFeedback) this.registryPullFeedback.classList.add('hidden');
+        if (this.registryPullFallbackBox) this.registryPullFallbackBox.classList.add('hidden');
+
+        try {
+            const endpoint = mode === 'local' ? '/api/registry/pull' : '/api/registry/smart-pull';
+            const payload = mode === 'local'
+                ? { vmName, imageRef: image, retagLocal: true }
+                : { vmName, image, allowFallback: Boolean(allowFallback) };
+
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (data.output && this.registryPullLogWrap && this.registryPullLogOutput) {
+                this.registryPullLogOutput.textContent = data.output;
+                this.registryPullLogWrap.classList.remove('hidden');
+            }
+
+            if (res.status === 409 && data.localRegistryUnreachable && data.canFallbackToDockerHub) {
+                if (this.registryPullFallbackBox && this.registryPullFallbackMsg) {
+                    this.registryPullFallbackMsg.textContent = `${data.localRegistryError} ¿Deseas continuar la descarga desde Docker Hub / Caché?`;
+                    this.registryPullFallbackBox.classList.remove('hidden');
+                }
+                return;
+            }
+
+            if (!res.ok) {
+                throw new Error(data.error || 'Error al descargar la imagen');
+            }
+
+            const originMsg = `Origen verificado: ${data.sourceLabel || data.source} → ${data.pulledReference} en '${vmName}'`;
+            if (this.registryPullFeedback) {
+                this.registryPullFeedback.textContent = originMsg;
+                this.registryPullFeedback.className = 'modal-feedback success';
+                this.registryPullFeedback.classList.remove('hidden');
+            }
+            this.appendInfoLine(`[Registry Pull] ${originMsg}`);
+            if (this.activeRegistryTab === 'cache') {
+                await this.loadRegistryImages('cache');
+            }
+        } catch (err) {
+            if (this.registryPullFeedback) {
+                this.registryPullFeedback.textContent = err.message;
+                this.registryPullFeedback.className = 'modal-feedback error';
+                this.registryPullFeedback.classList.remove('hidden');
+            }
+        } finally {
+            if (this.submitRegistryPullBtn) this.submitRegistryPullBtn.disabled = false;
+            if (spinner) spinner.classList.add('hidden');
+            if (btnText) btnText.textContent = 'Ejecutar Pull';
+        }
+    }
+
+    openConfigureNodesRegistryModal(vmNames = []) {
+        if (!this.registryNodesConfirmModal) return;
+        this.pendingConfigureNodes = Array.isArray(vmNames) ? vmNames : [];
+        if (this.registryNodesConfirmTargetsEl) {
+            this.registryNodesConfirmTargetsEl.textContent = this.pendingConfigureNodes.length > 0
+                ? this.pendingConfigureNodes.join(', ')
+                : 'Todos los nodos en ejecución';
+        }
+        if (this.registryNodesRestartCheck) {
+            this.registryNodesRestartCheck.checked = false;
+        }
+        if (this.registryNodesConfirmFeedback) {
+            this.registryNodesConfirmFeedback.classList.add('hidden');
+        }
+        this.registryNodesConfirmModal.classList.remove('hidden');
+        this.registryNodesConfirmModal.setAttribute('aria-hidden', 'false');
+    }
+
+    closeConfigureNodesRegistryModal() {
+        if (!this.registryNodesConfirmModal) return;
+        this.registryNodesConfirmModal.classList.add('hidden');
+        this.registryNodesConfirmModal.setAttribute('aria-hidden', 'true');
+        this.pendingConfigureNodes = [];
+    }
+
+    async executeConfigureNodesRegistry() {
+        const restartDocker = Boolean(this.registryNodesRestartCheck && this.registryNodesRestartCheck.checked);
+        const spinner = this.confirmRegistryNodesApplyBtn ? this.confirmRegistryNodesApplyBtn.querySelector('.btn-spinner') : null;
+        if (this.confirmRegistryNodesApplyBtn) this.confirmRegistryNodesApplyBtn.disabled = true;
+        if (spinner) spinner.classList.remove('hidden');
+        if (this.registryNodesConfirmFeedback) this.registryNodesConfirmFeedback.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/registry/nodes/configure', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    vmNames: this.pendingConfigureNodes,
+                    restartDocker,
+                    confirmed: true,
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.error || 'Error configurando daemon.json en los nodos');
+            }
+            this.closeConfigureNodesRegistryModal();
+            this.showRegistryBanner(data.message || 'Configuración aplicada en los nodos.', 'success');
+            await this.loadRegistryView();
+        } catch (err) {
+            if (this.registryNodesConfirmFeedback) {
+                this.registryNodesConfirmFeedback.textContent = err.message;
+                this.registryNodesConfirmFeedback.className = 'modal-feedback error';
+                this.registryNodesConfirmFeedback.classList.remove('hidden');
+            }
+        } finally {
+            if (this.confirmRegistryNodesApplyBtn) this.confirmRegistryNodesApplyBtn.disabled = false;
+            if (spinner) spinner.classList.add('hidden');
+        }
+    }
+
+    openDeleteRegistryImageModal(repository, tag, sharedStr = '') {
+        if (!this.registryDeleteImageModal) return;
+        this.pendingDeleteRegistryImage = { repository, tag };
+        if (this.registryDeleteImageRefEl) {
+            this.registryDeleteImageRefEl.textContent = `${repository}:${tag}`;
+        }
+        const shared = sharedStr ? sharedStr.split(',').filter(Boolean) : [];
+        if (this.registryDeleteSharedBox) {
+            this.registryDeleteSharedBox.classList.toggle('hidden', shared.length === 0);
+        }
+        if (this.registryDeleteSharedCheck) {
+            this.registryDeleteSharedCheck.checked = false;
+        }
+        if (this.registryDeleteSharedText && shared.length > 0) {
+            this.registryDeleteSharedText.textContent = `Este manifiesto comparte el mismo digest con otro(s) tag(s) (${shared.join(', ')}). Confirmo eliminar el manifiesto para todos esos tags.`;
+        }
+        if (this.registryDeleteImageFeedback) {
+            this.registryDeleteImageFeedback.classList.add('hidden');
+        }
+        this.registryDeleteImageModal.classList.remove('hidden');
+        this.registryDeleteImageModal.setAttribute('aria-hidden', 'false');
+    }
+
+    closeDeleteRegistryImageModal() {
+        if (!this.registryDeleteImageModal) return;
+        this.registryDeleteImageModal.classList.add('hidden');
+        this.registryDeleteImageModal.setAttribute('aria-hidden', 'true');
+        this.pendingDeleteRegistryImage = null;
+    }
+
+    async executeDeleteRegistryImage() {
+        if (!this.pendingDeleteRegistryImage) return;
+        const { repository, tag } = this.pendingDeleteRegistryImage;
+        const force = Boolean(this.registryDeleteSharedCheck && this.registryDeleteSharedCheck.checked);
+
+        const spinner = this.confirmRegistryDeleteImageBtn ? this.confirmRegistryDeleteImageBtn.querySelector('.btn-spinner') : null;
+        if (this.confirmRegistryDeleteImageBtn) this.confirmRegistryDeleteImageBtn.disabled = true;
+        if (spinner) spinner.classList.remove('hidden');
+
+        try {
+            const url = `/api/registry/images?repository=${encodeURIComponent(repository)}&tag=${encodeURIComponent(tag)}${force ? '&force=true' : ''}`;
+            const res = await fetch(url, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.error || 'Error eliminando imagen del Registry');
+            }
+            this.closeDeleteRegistryImageModal();
+            this.showRegistryBanner(`Imagen '${repository}:${tag}' eliminada del Registry local.`, 'success');
+            await this.loadRegistryImages('local');
+        } catch (err) {
+            if (this.registryDeleteImageFeedback) {
+                this.registryDeleteImageFeedback.textContent = err.message;
+                this.registryDeleteImageFeedback.className = 'modal-feedback error';
+                this.registryDeleteImageFeedback.classList.remove('hidden');
+            }
+        } finally {
+            if (this.confirmRegistryDeleteImageBtn) this.confirmRegistryDeleteImageBtn.disabled = false;
+            if (spinner) spinner.classList.add('hidden');
         }
     }
 

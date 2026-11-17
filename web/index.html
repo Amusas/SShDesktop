@@ -6,7 +6,7 @@
     <title>Vessel</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="alternate icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/css/style.css?v=55">
+    <link rel="stylesheet" href="/css/style.css?v=56">
 </head>
 <body>
     <div id="app">
@@ -142,6 +142,14 @@
                     <line x1="13.5" y1="7.5" x2="17.5" y2="16.5"></line>
                 </svg>
                 <span>Swarm Clusters</span>
+            </button>
+            <button class="docker-subnav-btn" data-subview="registry" id="docker-subnav-registry">
+                <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                </svg>
+                <span>Registry</span>
             </button>
             </button>
         </div>
@@ -513,6 +521,103 @@
                             </div>
                         </div>
                         <div id="cluster-workers-list" class="vm-list"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Vista Sidebar: Docker Registry y Pull-through Cache -->
+        <section id="sidebar-registry-view" class="sidebar-view">
+            <div class="sidebar-view-header">
+                <div class="sidebar-view-title">Docker Registry &amp; Caché</div>
+            </div>
+
+            <div class="containers-toolbar">
+                <div class="images-subtabs" role="tablist">
+                    <button type="button" class="images-subtab-btn active" data-registrytab="local" id="registry-tab-local-btn">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                        </svg>
+                        <span>Registry local</span>
+                    </button>
+                    <button type="button" class="images-subtab-btn" data-registrytab="cache" id="registry-tab-cache-btn">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                        </svg>
+                        <span>Caché</span>
+                    </button>
+                </div>
+
+                <div class="containers-toolbar-actions">
+                    <button type="button" id="open-smart-pull-btn" class="btn btn-secondary" title="Descargar imagen con prioridad en Registry local y fallback a Docker Hub / Caché">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <span>Descargar imagen</span>
+                    </button>
+                    <button type="button" id="open-registry-push-btn" class="btn btn-primary" title="Etiquetar y subir una imagen local al Registry">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <span>Subir imagen</span>
+                    </button>
+                    <button type="button" id="refresh-registry-btn" class="btn btn-secondary btn-icon" title="Actualizar estado e imágenes del Registry">
+                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="vm-list-wrapper">
+                <div id="registry-feedback-banner" class="modal-feedback hidden" style="margin-bottom: 10px;"></div>
+
+                <!-- SECCIÓN 1: REGISTRY LOCAL ESCRIBIBLE -->
+                <div id="registry-local-panel">
+                    <div id="registry-local-server-card" class="registry-server-card"></div>
+
+                    <div class="cluster-role-section" style="margin-top: 12px;">
+                        <div class="cluster-role-header">
+                            <div class="cluster-role-title-group">
+                                <span class="cluster-role-badge role-manager">IMÁGENES ALMACENADAS (API V2)</span>
+                                <span id="registry-local-count-label" class="cluster-role-subtitle">0 imágenes</span>
+                            </div>
+                        </div>
+                        <div id="registry-local-images-list" class="images-list"></div>
+                    </div>
+                </div>
+
+                <!-- SECCIÓN 2: PULL-THROUGH CACHE DE DOCKER HUB -->
+                <div id="registry-cache-panel" class="hidden">
+                    <div id="registry-cache-server-card" class="registry-server-card"></div>
+
+                    <div class="cluster-role-section" style="margin-top: 12px;">
+                        <div class="cluster-role-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                            <div class="cluster-role-title-group">
+                                <span class="cluster-role-badge role-worker">NODOS DOCKER (REGISTRY-MIRRORS)</span>
+                                <span id="registry-nodes-summary-label" class="cluster-role-subtitle">Estado de configuración en /etc/docker/daemon.json</span>
+                            </div>
+                            <button type="button" id="open-configure-all-nodes-btn" class="btn btn-primary btn-sm">
+                                <span>Configurar en todos los nodos</span>
+                            </button>
+                        </div>
+                        <div id="registry-nodes-list" class="vm-list"></div>
+                    </div>
+
+                    <div class="cluster-role-section" style="margin-top: 14px;">
+                        <div class="cluster-role-header">
+                            <div class="cluster-role-title-group">
+                                <span class="cluster-role-badge role-manager">REPOSITORIOS EN CACHÉ (PROXY)</span>
+                                <span id="registry-cache-count-label" class="cluster-role-subtitle">0 imágenes en caché</span>
+                            </div>
+                        </div>
+                        <div id="registry-cache-images-list" class="images-list"></div>
                     </div>
                 </div>
             </div>
@@ -1772,8 +1877,288 @@ CMD [&quot;echo&quot;, &quot;Hola desde Docker en VM&quot;]"></textarea>
         </div>
     </div>
 
+    <!-- Modal Desplegar / Configurar Registry o Pull-through Cache -->
+    <div id="registry-deploy-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog" role="dialog" aria-labelledby="registry-deploy-title" style="max-width: 500px;">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                        </svg>
+                    </div>
+                    <h2 id="registry-deploy-title">Desplegar Registry Local</h2>
+                </div>
+                <button id="close-registry-deploy-modal" class="modal-close-btn" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="registry-deploy-form" class="vm-form">
+                    <input type="hidden" id="registry-deploy-target" value="local" />
+
+                    <div class="form-field">
+                        <label for="registry-deploy-vm">Máquina Virtual (Host destino) <span class="req">*</span></label>
+                        <select id="registry-deploy-vm" required>
+                            <option value="" disabled selected>Selecciona una máquina en ejecución...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-row compact">
+                        <div class="form-field">
+                            <label for="registry-deploy-ip">Dirección IP (vessel-net)</label>
+                            <input type="text" id="registry-deploy-ip" placeholder="Autodetectar (ej. 10.250.0.5)" autocomplete="off" />
+                        </div>
+                        <div class="form-field">
+                            <label for="registry-deploy-port">Puerto externo <span class="req">*</span></label>
+                            <input type="number" id="registry-deploy-port" min="1024" max="65535" value="5000" required />
+                        </div>
+                    </div>
+
+                    <div class="form-row compact">
+                        <div class="form-field">
+                            <label for="registry-deploy-container">Contenedor Docker</label>
+                            <input type="text" id="registry-deploy-container" value="vessel-registry" required />
+                        </div>
+                        <div class="form-field">
+                            <label for="registry-deploy-volume">Volumen persistente</label>
+                            <input type="text" id="registry-deploy-volume" value="vessel-registry-data" required />
+                        </div>
+                    </div>
+
+                    <div id="registry-deploy-remote-group" class="form-field hidden">
+                        <label for="registry-deploy-remote-url">Upstream Remote URL (Proxy)</label>
+                        <input type="text" id="registry-deploy-remote-url" value="https://registry-1.docker.io" readonly />
+                    </div>
+
+                    <div id="registry-deploy-feedback" class="modal-feedback hidden"></div>
+
+                    <div class="form-actions">
+                        <button type="button" id="cancel-registry-deploy-btn" class="btn btn-secondary">Cancelar</button>
+                        <button type="submit" id="submit-registry-deploy-btn" class="btn btn-primary">
+                            <span class="btn-spinner hidden" aria-hidden="true"></span>
+                            <span class="btn-text">Desplegar Registry</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Subir Imagen al Registry Local (Push) -->
+    <div id="registry-push-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog" role="dialog" aria-labelledby="registry-push-title" style="max-width: 540px;">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                    </div>
+                    <h2 id="registry-push-title">Subir Imagen al Registry Local</h2>
+                </div>
+                <button id="close-registry-push-modal" class="modal-close-btn" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="registry-push-form" class="vm-form">
+                    <div class="form-field">
+                        <label for="registry-push-vm">1. Nodo donde está la imagen <span class="req">*</span></label>
+                        <select id="registry-push-vm" required>
+                            <option value="" disabled selected>Selecciona una máquina virtual...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="registry-push-source-image">2. Imagen local existente <span class="req">*</span></label>
+                        <select id="registry-push-source-image" required>
+                            <option value="" disabled selected>Selecciona primero un nodo...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-row compact">
+                        <div class="form-field">
+                            <label for="registry-push-repo">3. Repositorio destino <span class="req">*</span></label>
+                            <input type="text" id="registry-push-repo" placeholder="ej. mysql o equipo/api" required autocomplete="off" />
+                        </div>
+                        <div class="form-field">
+                            <label for="registry-push-tag">Tag destino <span class="req">*</span></label>
+                            <input type="text" id="registry-push-tag" placeholder="ej. 8.4 o latest" value="latest" required autocomplete="off" />
+                        </div>
+                    </div>
+
+                    <div class="form-field">
+                        <label>Referencia completa en el Registry</label>
+                        <div id="registry-push-preview" class="tar-path-value" style="font-family:monospace;font-size:12px;">-</div>
+                    </div>
+
+                    <div id="registry-push-feedback" class="modal-feedback hidden"></div>
+                    <div id="registry-push-log-wrap" class="hidden" style="margin-top:8px;">
+                        <pre id="registry-push-log-output" class="container-logs-pre" style="max-height:150px;font-size:11px;"></pre>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" id="cancel-registry-push-btn" class="btn btn-secondary">Cancelar</button>
+                        <button type="submit" id="submit-registry-push-btn" class="btn btn-primary">
+                            <span class="btn-spinner hidden" aria-hidden="true"></span>
+                            <span class="btn-text">Etiquetar y Subir (Push)</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Descargar Imagen (Descarga Inteligente / Pull desde Registry) -->
+    <div id="registry-pull-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog" role="dialog" aria-labelledby="registry-pull-title" style="max-width: 540px;">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                    </div>
+                    <h2 id="registry-pull-title">Descargar Imagen en Nodo</h2>
+                </div>
+                <button id="close-registry-pull-modal" class="modal-close-btn" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="registry-pull-form" class="vm-form">
+                    <div class="form-field">
+                        <label for="registry-pull-mode">Modo de descarga</label>
+                        <select id="registry-pull-mode">
+                            <option value="smart">Descarga inteligente (Prioridad 1: Registry local → Prioridad 2: Caché / Docker Hub)</option>
+                            <option value="local">Directamente desde el Registry local escribible</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="registry-pull-vm">Nodo de destino <span class="req">*</span></label>
+                        <select id="registry-pull-vm" required>
+                            <option value="" disabled selected>Selecciona la máquina virtual destino...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="registry-pull-image">Imagen (repositorio:tag) <span class="req">*</span></label>
+                        <input type="text" id="registry-pull-image" placeholder="ej. mysql:8.4, alpine:3.20, equipo/app:1.0" required autocomplete="off" />
+                    </div>
+
+                    <div id="registry-pull-feedback" class="modal-feedback hidden"></div>
+
+                    <div id="registry-pull-fallback-box" class="cluster-warning-box hidden" style="margin-top:8px;">
+                        <p id="registry-pull-fallback-msg" style="margin:0 0 8px 0;font-size:12px;"></p>
+                        <button type="button" id="registry-pull-fallback-btn" class="btn btn-secondary btn-sm">
+                            <span>Descargar desde Docker Hub / Caché de todos modos</span>
+                        </button>
+                    </div>
+
+                    <div id="registry-pull-log-wrap" class="hidden" style="margin-top:8px;">
+                        <pre id="registry-pull-log-output" class="container-logs-pre" style="max-height:150px;font-size:11px;"></pre>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" id="cancel-registry-pull-btn" class="btn btn-secondary">Cerrar</button>
+                        <button type="submit" id="submit-registry-pull-btn" class="btn btn-primary">
+                            <span class="btn-spinner hidden" aria-hidden="true"></span>
+                            <span class="btn-text">Ejecutar Pull</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Confirmación de Configuración de Mirror en Nodos (daemon.json) -->
+    <div id="registry-nodes-confirm-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog delete-modal-dialog" role="dialog" aria-labelledby="registry-nodes-confirm-title" style="max-width: 520px;">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap warning">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h2 id="registry-nodes-confirm-title">Configurar Registry Mirror en Nodos</h2>
+                </div>
+                <button id="close-registry-nodes-confirm-modal" class="modal-close-btn" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body delete-modal-body">
+                <div class="delete-confirm-copy">
+                    <p>Se actualizará <code>/etc/docker/daemon.json</code> en los siguientes nodos combinando <code>registry-mirrors</code> e <code>insecure-registries</code> y <strong>preservando todas las demás propiedades existentes</strong>:</p>
+                    <div class="delete-vm-badge">
+                        <strong id="registry-nodes-confirm-targets">Todos los nodos</strong>
+                    </div>
+                    <div class="cluster-warning-box" style="margin-top:10px;text-align:left;">
+                        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;">
+                            <input type="checkbox" id="registry-nodes-restart-check" style="margin-top:2px;" />
+                            <span><strong>Reiniciar servicio Docker (<code>systemctl restart docker</code>):</strong> Por defecto se aplica con recarga en caliente (<code>systemctl reload docker</code>) para no detener contenedores. Marca esta casilla solo si deseas reiniciar completamente el daemon Docker (<strong>advertencia: interrumpirá contenedores activos sin política de reinicio</strong>).</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="registry-nodes-confirm-feedback" class="modal-feedback hidden"></div>
+
+                <div class="delete-confirm-actions">
+                    <button type="button" id="cancel-registry-nodes-confirm" class="btn btn-secondary">Cancelar</button>
+                    <button type="button" id="confirm-registry-nodes-apply" class="btn btn-primary">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Confirmar y aplicar</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Confirmación de Eliminación de Imagen del Registry Local -->
+    <div id="registry-delete-image-modal" class="modal-backdrop hidden" aria-hidden="true">
+        <div class="modal-dialog delete-modal-dialog" role="dialog" aria-labelledby="registry-delete-image-title">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap warning">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h2 id="registry-delete-image-title">Eliminar Imagen del Registry</h2>
+                </div>
+                <button id="close-registry-delete-image-modal" class="modal-close-btn" aria-label="Cerrar">&times;</button>
+            </div>
+            <div class="modal-body delete-modal-body">
+                <div class="delete-confirm-copy">
+                    <p>¿Deseas eliminar el manifiesto de esta imagen en el Registry local y ejecutar recolección de basura?</p>
+                    <div class="delete-vm-badge">
+                        <strong id="registry-delete-image-ref">repo:tag</strong>
+                    </div>
+                    <div id="registry-delete-shared-box" class="cluster-warning-box hidden" style="margin-top:8px;text-align:left;">
+                        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;">
+                            <input type="checkbox" id="registry-delete-shared-check" style="margin-top:2px;" />
+                            <span id="registry-delete-shared-text">Este manifiesto comparte digest con otros tags del mismo repositorio. Confirmo eliminar el manifiesto compartido.</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="registry-delete-image-feedback" class="modal-feedback hidden"></div>
+
+                <div class="delete-confirm-actions">
+                    <button type="button" id="cancel-registry-delete-image" class="btn btn-secondary">Cancelar</button>
+                    <button type="button" id="confirm-registry-delete-image" class="btn btn-danger">
+                        <span class="btn-spinner hidden" aria-hidden="true"></span>
+                        <span class="btn-text">Eliminar del Registry</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="/js/ansi.js?v=40"></script>
     <script src="/js/websocket.js?v=39"></script>
-    <script src="/js/app.js?v=61"></script>
+    <script src="/js/app.js?v=62"></script>
 </body>
 </html>
