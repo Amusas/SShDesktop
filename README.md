@@ -1,53 +1,108 @@
-# SSH Web Terminal, Virtual Machine & Docker Manager
+# Vessel: SSH Web Terminal, Virtual Machine & Docker Manager
 
-Aplicación web interactiva en tiempo real para emulación de terminal SSH, gestión integral de **Máquinas Virtuales en Oracle VirtualBox 7.2** sobre host remoto Windows, y **administración de Contenedores Docker nativos dentro de las máquinas virtuales Linux**.
+Aplicación web interactiva en tiempo real para emulación de terminal SSH, aprovisionamiento automatizado y gestión integral de **Máquinas Virtuales en Oracle VirtualBox 7.2** sobre host remoto Windows, y una **plataforma completa de contenerización y orquestación Docker nativa dentro de las máquinas virtuales Linux**.
 
-El sistema implementa aprovisionamiento automatizado a partir de **plantillas base con discos Multiattach y discos diferenciales**, generación criptográfica nativa de claves **Ed25519**, verificación estricta de `known_hosts`, túnel SSH transparente con PTY completa, y un motor de contenerización remota que opera 100% dentro de las máquinas virtuales invitadas sin requerir Docker en el host Windows.
+El sistema implementa aprovisionamiento instantáneo a partir de **plantillas base con discos diferenciales**, generación criptográfica nativa de claves **Ed25519**, verificación estricta de `known_hosts`, túnel SSH transparente con PTY completa, red privada compartida inter-VM (**vessel-net**), gestión de **Docker Swarm Clusters** multi-nodo, y un sistema de **Docker Registry Privado Local con Pull-through Cache inteligente**, todo operando 100% dentro de las VMs invitadas sin requerir Docker en el host Windows.
 
 ---
 
 ## 📋 Características Principales
 
-### 🐳 1. Gestión de Docker en VMs Linux (Contenedores e Imágenes)
-- **Cero Docker en el Host Windows**: Todos los contenedores e imágenes se construyen y ejecutan exclusivamente dentro del motor Docker de las máquinas virtuales Linux. El host Windows no requiere tener Docker instalado.
+### 🐳 1. Gestión Integral de Docker en VMs Linux
+- **Cero Docker en el Host Windows**: Todos los contenedores, imágenes, volúmenes y redes se construyen y ejecutan exclusivamente dentro del motor Docker de las máquinas virtuales Linux. El host Windows no requiere tener Docker instalado.
 - **Túnel SSH y Ejecución Segura**: Las operaciones Docker se canalizan mediante el túnel SSH hacia la máquina virtual con validación estricta contra inyección de comandos, escapado POSIX con comillas simples y ejecución controlada vía `sudo docker`.
-- **Navegación Docker Integrada (Submenú Contenedores / Imágenes)**:
-  - Al seleccionar **Docker** en el menú principal, se despliegan las opciones de **Contenedores** e **Imágenes**.
-  - **Filtro dinámico por Máquina Virtual**: Permite consultar todos los recursos o filtrar por una VM específica.
-  - **Indicador de Salud Docker en Vivo**: Muestra si el daemon de Docker está activo y su versión en la VM seleccionada.
-- **Módulo de Imágenes Docker**:
-  - **Listado detallado**: Visualiza Repository, Tag, Image ID, Tamaño y fecha de creación.
-  - **Acción "Ejecutar"**: Abre el asistente de creación de contenedor con la imagen preseleccionada para configurar puertos, volúmenes y variables antes de desplegar.
-  - **Acción "Eliminar"**: Modal de confirmación con opción de forzado (`--force`) y reporte claro de errores de Docker en caso de conflicto con contenedores activos.
-  - **Creación / Compilación de Imágenes (`+ Crear imagen`)**:
-    - Soporte para **subir archivo Dockerfile** (con dropzone interactivo) o **pegar directamente las instrucciones** en editor monoespaciado.
-    - Acciones: **Crear imagen** (construye en la VM con limpieza automática del contexto temporal en `/tmp`) o **Crear y ejecutar** (compila e inmediatamente abre el asistente para desplegar el contenedor).
-- **Asistente Visual de Contenedores con Selección de Origen**:
-  - **Paso 1 (VM y Origen)**: Pregunta inicial: *¿De dónde quieres crear el contenedor?*:
-    - **Usar una imagen**: Lista las imágenes disponibles en la VM seleccionada con botón de acceso rápido para `+ Crear nueva imagen`.
-    - **Aplicaciones**: Flujo visual de categorías (*Bases de Datos, Servidores Web, Mensajería, Caché, Desarrollo o Personalizado*) y plantillas preconfiguradas.
-  - **Paso 2 (Plantilla / Imagen)**: Selección de plantilla si se eligió el catálogo.
-  - **Paso 3 (Configuración Dinámica)**: Configuración de nombre, política de reinicio (`unless-stopped`, `always`, `on-failure`, `no`), imagen Docker, mapeo de puertos (`Host -> Contenedor`), variables de entorno (`KEY = VALUE`) y volúmenes de almacenamiento persistente (`Host Path -> Container Path`).
-  - **Paso 4 (Resumen)**: Tarjeta de revisión de parámetros antes de ordenar la creación.
-- **Ciclo de Vida Completo de Contenedores**:
-  - Iniciar contenedores detenidos, detenerlos y reiniciarlos.
-  - **Visor de Logs**: Consulta de líneas recientes (`100`, `200`, `500`, `1000`) con actualización inmediata.
-  - **Inspección de Detalles**: Consulta de ID, IP interna, puertos, montajes de volúmenes y variables de entorno.
-  - **Eliminación Segura**: Modal de confirmación con soporte para forzado (`--force`).
-- **Terminal Interactiva Directa (`docker exec`)**:
-  - Botón **Consola** en la tarjeta del contenedor para ingresar inmediatamente a una shell interactiva Bash o Sh dentro del contenedor (`docker exec -it <container> ...`) sobre WebSocket y emulación PTY con soporte ANSI completo.
+- **Navegación Docker Integrada con Submenú**:
+  - Al acceder a **Docker** en el menú de navegación, se despliega el submenú con acceso directo a:
+    - **Contenedores**: Ciclo de vida, inspección, logs y consola.
+    - **Imágenes**: Catálogo local, compilación Dockerfile, commit, exportación tar y push a Docker Hub.
+    - **Clusters**: Creación, administración y topología de Docker Swarm.
+    - **Registry**: Registry privado local y proxy caché de Docker Hub.
+  - **Selector Dinámico por Máquina Virtual**: Selector de VM con estado inicial claro (*"Selecciona MV"*) para dirigir operaciones puntuales a cada nodo.
+  - **Indicador de Salud Docker en Vivo**: Muestra en tiempo real si el daemon Docker está activo, su versión y conteo de recursos en la VM seleccionada.
+
+#### 📦 Contenedores y Asistente Visual (Wizard)
+- **Asistente de Creación Paso a Paso**:
+  - **Paso 1 (VM y Origen)**: Selecciona entre imágenes locales existentes o el catálogo de aplicaciones recomendadas.
+  - **Paso 2 (Catálogo / Plantilla)**: Categorías visuales (*Bases de Datos, Servidores Web, Mensajería, Caché, Desarrollo o Personalizado*) con puertos y volúmenes preconfigurados.
+  - **Paso 3 (Configuración Dinámica)**: Nombre, política de reinicio (`unless-stopped`, `always`, `on-failure`, `no`), mapeo de puertos (`Host -> Contenedor`), variables de entorno (`KEY=VALUE`), montajes de volúmenes persistentes y asignación a redes Docker existentes.
+  - **Paso 4 (Resumen)**: Tarjeta de revisión de parámetros antes de la creación.
+- **Ciclo de Vida Completo**: Iniciar, detener, reiniciar y eliminar contenedores (con opción `--force`).
+- **Visor de Logs en Vivo**: Consulta de líneas recientes (`100`, `200`, `500`, `1000`) con refresco dinámico.
+- **Inspección Profunda**: Consulta de ID, IPs internas, redes conectadas, mapeos de puertos, variables de entorno y montajes.
+- **Terminal Interactiva Directa (`docker exec`)**: Consola interactiva Bash/Sh dentro del contenedor mediante WebSocket y PTY con soporte ANSI completo.
+
+#### 🖼️ Gestión de Imágenes Docker
+- **Listado y Filtro**: Visualización de Repository, Tag, Image ID, Tamaño y fecha de creación.
+- **Compilación de Imágenes (`+ Crear imagen`)**: Soporte para subir archivos Dockerfile (dropzone interactivo) o escribir instrucciones en editor integrado.
+- **Commit de Contenedores**: Creación de nuevas imágenes a partir del estado de ejecución de un contenedor existente (`docker commit`).
+- **Exportación a `.tar` y Descarga Directa**: Exporta imágenes a archivos tar dentro de la VM y permite descargarlas directamente al navegador del usuario.
+- **Publicación en Docker Hub**: Gestión segura de credenciales de Docker Hub (`username` y `access_token`) con guardado persistente y subida autenticada (`docker push`).
+
+#### 🗄️ Volúmenes y Redes Docker
+- **Volúmenes**: Listado, creación de volúmenes persistentes con drivers configurables, inspección de puntos de montaje y eliminación segura.
+- **Redes Docker**: Administración de redes puente (`bridge`), superpuestas (`overlay`) y de host; creación con subredes y gateways personalizados, inspección de contenedores adjuntos y desconexión/conexión dinámica.
 
 ---
 
-### 🖥️ 2. Gestión Integral de Máquinas Virtuales (VirtualBox 7.2)
+### 🐝 2. Clusters Docker Swarm (Orquestación Multi-Nodo)
+- **Orquestación sobre VMs Existentes**: Permite formar clusters Docker Swarm utilizando exclusivamente las máquinas virtuales creadas y administradas en Vessel, sin modificar el flujo de creación de VMs.
+- **Asistente de Creación con Progreso en Tiempo Real (SSE)**:
+  - Definición del nombre del cluster.
+  - Selección guiada de un nodo **Manager / Leader** y múltiples nodos **Workers**.
+  - Inicialización automática en el Manager (`docker swarm init --advertise-addr <IP_PRIVADA>`).
+  - Emisión de Server-Sent Events (SSE) para reflejar paso a paso el progreso: validación de red, inicialización del Manager, obtención de tokens y unión de cada Worker (`docker swarm join`).
+- **Gestión Avanzada del Ciclo de Vida del Cluster**:
+  - **Topología en Vivo**: Visualización del Leader, Managers y Workers con sus IPs privadas en `vessel-net`, estado del motor Docker y disponibilidad (`Active`, `Drain`, `Pause`).
+  - **Expulsión y Drenado Seguro de Nodos**: Pone al nodo en modo `drain` para reubicar tareas, ejecuta `docker swarm leave` y lo elimina del inventario del Manager (`docker node rm`).
+  - **Expulsión Forzada de Nodos Desconectados**: Opción de forzar la eliminación desde el Manager si la VM Worker está apagada o sin conexión SSH.
+  - **Reincorporación y Reintento de Workers**: Posibilidad de reintentar la unión de nodos fallidos o incorporar nuevos Workers a un cluster activo.
+  - **Desmantelamiento Completo y Limpio**: Destrucción segura del cluster con liberación de recursos y restauración del estado individual de cada nodo.
+
+---
+
+### 📦 3. Docker Registry Privado Local & Pull-through Cache
+- **Arquitectura de Doble Instancia Aislada (`registry:2.8.3`)**:
+  - **Puerto 5000 (`vessel-registry`) - Registry Local Escribible**:
+    - Instancia dedicada exclusivamente al almacenamiento y distribución de imágenes propias de proyectos o compilaciones locales.
+    - Soporte completo para operaciones `docker push` y `docker pull`.
+    - Persistencia en volumen dedicado `vessel-registry-data`.
+    - Explorador visual del catálogo de repositorios (`/v2/_catalog`), etiquetas, digests y tamaño de capas.
+    - Eliminación de imágenes con limpieza física de blobs mediante recolección de basura (*Garbage Collection*).
+  - **Puerto 5001 (`vessel-registry-cache`) - Pull-through Cache Transparente**:
+    - Proxy caché conectado como espejo de Docker Hub (`REGISTRY_PROXY_REMOTEURL: https://registry-1.docker.io`).
+    - **Interceptación y Almacenamiento Automático**: Intercepta solicitudes de descarga de Docker Hub, guarda las capas localmente en el volumen `vessel-registry-cache-data` y las distribuye a las demás VMs a velocidad de red local gigabit sin consumir internet.
+    - Modo estrictamente desacoplado para no interferir con las imágenes escribibles locales.
+    - Purga y limpieza de caché con un solo clic sin afectar el Registry privado local.
+- **Sincronización Automática de Nodos (`/etc/docker/daemon.json`)**:
+  - Modal inteligente para configurar todas las VMs de Vessel con:
+    - `registry-mirrors`: Registro del puerto 5001 como mirror de Docker Hub.
+    - `insecure-registries`: Permiso HTTP plano para los puertos 5000 y 5001 (evitando errores de certificados TLS).
+  - Opciones de aplicación: **Recarga en caliente (`systemctl reload docker`)** sin detener contenedores activos o **Reinicio completo (`systemctl restart docker`)**.
+- **Descarga Inteligente (*Smart Pull*)**:
+  - Asistente para descargar imágenes con selector de origen: priorizar Registry local, Pull-through Cache o fallback directo.
+
+---
+
+### 🌐 4. Red Privada Inter-VM (`vessel-net`) y Doble Adaptador de Red
+- **Red NAT Compartida (NAT Network)**: Configuración en VirtualBox de la red compartida `vessel-net` (`10.250.0.0/24`, Gateway `10.250.0.1`, servidor DHCP integrado).
+- **Arquitectura de Doble NIC por VM**:
+  - **Adaptador 1 (NAT simple)**: Exclusivo para reenvío de puertos NAT SSH hacia el host Windows (`127.0.0.1:2200X -> 22`), garantizando el túnel de control del backend.
+  - **Adaptador 2 (NAT Network `vessel-net`)**: Comunicación IP directa L3/L4 entre todas las máquinas virtuales invitadas sin salir a la red física externa.
+- **Descubrimiento y Diagnóstico de Red**:
+  - Mapeo automático de direcciones MAC (`MACAddress2`) contra la tabla DHCP y las interfaces del sistema invitado para registrar la IP privada exacta de cada VM.
+  - Herramienta de verificación de conectividad bidireccional inter-VM (ICMP Ping con fallback a comprobación TCP en puertos de servicio).
+
+---
+
+### 🖥️ 5. Gestión Integral de Máquinas Virtuales (VirtualBox 7.2)
 - **Aprovisionamiento Instantáneo mediante Plantillas Base**: Múltiples máquinas virtuales comparten un único disco base en modo lectura con discos diferenciales.
 - **Compatibilidad con VirtualBox 7.2**: Si VirtualBox restringe la asociación directa por estado del medio (`MultiAttach compatibility`), el sistema aprovisiona automáticamente un disco diferencial hijo (`--diffparent`), garantizando que la plantilla original jamás se modifique ni se corrompa.
-- **Aprovisionamiento Automático de Identidad (Zero-Touch Provisioning)**:
+- **Aprovisionamiento de Identidad Criptográfica (Zero-Touch Provisioning)**:
   - Generación nativa en Go de pares de claves **Ed25519** (OpenSSH / PKCS#8 PEM) exclusivas para cada VM.
   - Derivación de usuario Linux único no colisionable (ej. `vm_servidor_8c40`).
   - Inicialización automática de llaves de host SSH en el primer arranque mediante `VBoxManage guestcontrol` o secuencia en consola virtual TTY2.
   - Conexión inicial mediante credenciales temporales de `bootstrap`, creación del usuario único con privilegios `sudo`, autorización de su clave pública y **revocación inmediata del acceso bootstrap**.
-  - Optimización del arranque cambiando el target a `multi-user.target` (modo consola/servidor de alta velocidad).
+  - Optimización del arranque cambiando el target a `multi-user.target` (modo servidor de alta velocidad).
 - **Operaciones de Ciclo de Vida**:
   - Creación con configuración dinámica de CPU cores y memoria RAM.
   - Arranque headless en segundo plano.
@@ -58,28 +113,14 @@ El sistema implementa aprovisionamiento automatizado a partir de **plantillas ba
 
 ---
 
-### 🎨 3. Interfaz Moderna, Minimalista y Scrollbars Personalizados
-- **Panel Flotante Modal Centrado**: Menú de configuración accesible mediante el icono de engranaje (⚙) en la barra superior. Se despliega centrado sobre la terminal sin desplazar el área de trabajo, cerrándose con la tecla `Escape`, botón de cierre 'X' o clic en el fondo.
-- **Navegación Segmentada por Pestañas**:
-  - `[ Hosts ]  [ Máquinas Virtuales ]  [ Docker ▾ (Contenedores | Imágenes) ]  [ Llaves SSH ]`
-- **Diseño Espacioso y Limpio**:
-  - Textos concisos y directos, sin bloques innecesarios ni emojis recargados.
-  - Padding y márgenes confortables en tarjetas (`18px 20px`), barra de herramientas (`12px 16px`) y modales (`24px`).
-  - Separación adecuada entre filas dinámicas e inputs.
-- **Scrollbars Personalizados Acordes al Tema Oscuro**:
-  - Reglas estándar modernas (`scrollbar-width: thin; scrollbar-color: ...`) aplicadas globalmente.
-  - Estilos WebKit (Chrome, Edge, WebView2) con ancho fino de `6px` (`7px` en consolas), fondo transparente, pulgar gris pizarra translúcido y resaltado cian al pasar el cursor.
-
----
-
-### 💻 4. Terminal Web SSH Interactivo
+### 💻 6. Terminal Web SSH Interactivo
 - **Conexión Directa al Host o a VMs**: Conéctate a la máquina Windows anfitriona o salta por túnel SSH transparente hacia el puerto NAT de cualquier VM.
 - **Emulación Completa ANSI / VT100**: Colores enriquecidos, soporte de teclas especiales, atajos interactivos (`Ctrl+C`, `Ctrl+D`, etc.) y redimensionamiento dinámico del terminal (`resize`).
-- **Resaltado Semántico**: Detección inteligente de directorios y rutas en prompts tanto para entornos Windows (PowerShell/CMD) como Linux (Bash).
+- **Resaltado Semántico y Limpieza de Buffer**: Detección inteligente de prompts y rutas; manejo de buffers para evitar repeticiones visuales tras comandos de borrado como `cls` o `clear`.
 
 ---
 
-### 🔑 5. Gestión Centralizada de Llaves SSH
+### 🔑 7. Gestión Centralizada de Llaves SSH
 - **Almacén Seguro de Identidades**: Listado completo de llaves vinculadas a cada máquina virtual en `keys.json`.
 - **Descargas Directas**: Descarga de clave privada (`.pem`) y pública (`.pub`) para uso en clientes externos (OpenSSH, PuTTY, VS Code).
 - **Autorecuperación Inteligente**: Si un archivo físico de clave privada se extravía en disco, el sistema lo regenera automáticamente desde el almacén local.
@@ -88,11 +129,12 @@ El sistema implementa aprovisionamiento automatizado a partir de **plantillas ba
 
 ## 🛠️ Requisitos del Sistema
 
-1. **Host Local (Servidor Web)**:
+1. **Host Local (Servidor Web Vessel)**:
    - [Go 1.22+](https://go.dev/dl/) instalado.
    - Navegador web moderno (Chrome, Firefox, Edge).
 2. **Host Remoto (Servidor de Virtualización)**:
    - Sistema operativo Windows con **Oracle VirtualBox 7.2** instalado y accesible en el `PATH` del sistema (`VBoxManage.exe`).
+   - Red NAT de VirtualBox creada o configurable (`vessel-net` en `10.250.0.0/24`).
    - Servidor OpenSSH habilitado y configurado en el puerto `22` con acceso por clave privada.
    - Directorio configurado para almacenamiento de plantillas y máquinas virtuales.
 3. **Máquinas Virtuales Invitadas (Docker)**:
@@ -106,32 +148,45 @@ El sistema implementa aprovisionamiento automatizado a partir de **plantillas ba
 ```
 SshDesktop/
 ├── cmd/
-│   └── ssh-web/            # Punto de entrada principal (main.go)
+│   └── ssh-web/                  # Punto de entrada principal (main.go)
 ├── internal/
-│   ├── api/                # Controladores HTTP REST API, WebSocket (/ws) y perfiles de hosts
-│   ├── config/             # Carga jerárquica de configuración (config.properties, .env y defaults)
-│   ├── docker/             # Motor de gestión Docker en VMs, validador de inyecciones y catálogo
-│   │   ├── catalog.go      # Catálogo de plantillas, categorías y configuraciones recomendadas
-│   │   ├── service.go      # Orquestador Docker vía túnel SSH, logs, ciclo de vida e inspección
-│   │   ├── types.go        # Estructuras de datos (Container, PortMapping, EnvVar, VolumeMount)
-│   │   └── validator.go    # Validación estricta con Regex y prevención de inyecciones POSIX
-│   ├── keys/               # Generador criptográfico Ed25519/RSA y almacén persistente (keys.json)
-│   ├── ssh/                # Cliente SSH, túnel PTY, integración con VBoxManage, provisioning y known_hosts
-│   ├── template/           # Descubrimiento, validación y sanitización de plantillas remotas
-│   └── vm/                 # Lógica de ciclo de vida de VMs, asignador de puertos y almacén (vms.json)
+│   ├── api/                      # Controladores HTTP REST API y WebSocket (/ws)
+│   │   ├── clusters_handler.go   # Endpoints de Docker Swarm Clusters (SSE, ciclo de vida de nodos)
+│   │   ├── handler.go            # Enrutador central HTTP y WebSocket
+│   │   ├── hosts.go              # Gestión de perfiles de conexión SSH
+│   │   ├── registry_handler.go   # Endpoints de Registry local y Pull-through Cache
+│   │   └── vm_store.go           # Persistencia y adaptadores de VMs
+│   ├── config/                   # Carga jerárquica de configuración (config.properties, .env y defaults)
+│   ├── docker/                   # Motor integral de contenerización y orquestación
+│   │   ├── catalog.go            # Catálogo de plantillas, categorías y configuraciones recomendadas
+│   │   ├── registry_service.go   # Orquestador del Registry local (5000) y Cache (5001)
+│   │   ├── registry_store.go     # Persistencia de estado de Registry (registry.json)
+│   │   ├── registry_types.go     # Modelos de datos para Registry, Cache y daemon.json
+│   │   ├── service.go            # Orquestador Docker vía SSH (contenedores, imágenes, volúmenes, redes)
+│   │   ├── swarm_service.go      # Orquestador de Docker Swarm (init, join, drain, leave, topología)
+│   │   ├── swarm_store.go        # Persistencia de clusters Docker Swarm (clusters.json)
+│   │   ├── swarm_types.go        # Estructuras de datos para Swarm, nodos y progreso SSE
+│   │   ├── types.go              # Modelos de datos principales (Container, Image, Volume, Network)
+│   │   └── validator.go          # Validación con Regex y prevención de inyecciones de comandos POSIX
+│   ├── keys/                     # Generador criptográfico Ed25519/RSA y almacén persistente (keys.json)
+│   ├── ssh/                      # Cliente SSH, túnel PTY, integración con VBoxManage, provisioning y known_hosts
+│   ├── template/                 # Descubrimiento, validación y sanitización de plantillas remotas
+│   └── vm/                       # Lógica de ciclo de vida de VMs, asignador de puertos y almacén (vms.json)
 ├── pkg/
-│   └── logger/             # Logger estructurado JSON basado en log/slog
-├── web/                    # Interfaz web cliente (HTML5, CSS3, JavaScript Vanilla)
-│   ├── css/style.css       # Estilos oscuros, tarjetas, scrollbars personalizados y modales
-│   ├── js/ansi.js          # Sanitizador ANSI, parser de colores y resaltador de rutas/prompts
-│   ├── js/app.js           # Controlador de UI, asistente wizard de contenedores y terminal
-│   ├── js/websocket.js     # Cliente WebSocket robusto con reconexión limpia y sin duplicados
-│   └── index.html          # Estructura principal de la aplicación y modales
-├── config.properties       # Archivo de configuración base
-├── hosts.json              # Perfiles de hosts SSH guardados
-├── keys.json               # Almacén local de llaves criptográficas generadas
-├── vms.json                # Almacén local de máquinas virtuales registradas
-└── README.md               # Documentación completa del proyecto
+│   └── logger/                   # Logger estructurado JSON basado en log/slog
+├── web/                          # Interfaz web cliente (HTML5, CSS3, JavaScript Vanilla)
+│   ├── css/style.css             # Estilos oscuros, tarjetas, scrollbars personalizados y modales
+│   ├── js/ansi.js                # Sanitizador ANSI, parser de colores y resaltador de rutas/prompts
+│   ├── js/app.js                 # Controlador central de UI, wizard de Docker, Swarm y Registry
+│   ├── js/websocket.js           # Cliente WebSocket robusto con reconexión limpia
+│   └── index.html                # Estructura principal de la aplicación y modales
+├── clusters.json                 # Almacén persistente de clusters Docker Swarm
+├── config.properties             # Archivo de configuración base
+├── hosts.json                    # Perfiles de hosts SSH guardados
+├── keys.json                     # Almacén local de llaves criptográficas generadas
+├── registry.json                 # Almacén de configuración de Registry y Cache
+├── vms.json                      # Almacén local de máquinas virtuales registradas
+└── README.md                     # Documentación completa del proyecto
 ```
 
 ---
@@ -160,114 +215,46 @@ La aplicación lee su configuración de forma jerárquica: primero `config.prope
 
 ---
 
-## 🏗️ Arquitectura de Ejecución de Contenedores Docker
+## 🏗️ Arquitectura de Red y Virtualización Multi-Capa
 
-La arquitectura garantiza total aislamiento y elimina dependencias en el host Windows:
+La arquitectura desacopla por completo la virtualización del host y organiza las cargas mediante redes privadas dedicadas:
 
 ```
-+-----------------------------------------------------------+
-|                      Navegador Web                        |
-|   (Dashboard de Contenedores, Wizard, Logs y Consola)     |
-+-----------------------------+-----------------------------+
-                              | HTTP / WebSocket
-                              v
-+-----------------------------------------------------------+
-|                       Backend Go                          |
-|           (Validación, Regex, Túneles SSH, PTY)           |
-+-----------------------------+-----------------------------+
-                              | SSH Tunnel (Puerto 22 Host)
-                              v
-+-----------------------------------------------------------+
-|                    Host Windows Remoto                    |
-|      (Sin Docker - Solo VirtualBox 7.2 y Reenvío NAT)     |
-+-----------------------------+-----------------------------+
-                              | NAT Port Forwarding (127.0.0.1:2200X)
-                              v
-+-----------------------------------------------------------+
-|                  Máquina Virtual Linux                    |
-|  +-----------------------------------------------------+  |
-|  |             Motor Docker (Daemon Nativo)            |  |
-|  |                                                     |  |
-|  |   [Contenedor 1]      [Contenedor 2]      [ ... ]   |  |
-|  |    (PostgreSQL)          (Nginx)          (Redis)   |  |
-|  +-----------------------------------------------------+  |
-+-----------------------------------------------------------+
++-----------------------------------------------------------------------------------+
+|                                  Navegador Web                                    |
+|         (Terminal SSH, Wizard Contenedores, Clusters Swarm, Registry y Cache)     |
++-----------------------------------------+-----------------------------------------+
+                                          | HTTP / WebSocket / SSE
+                                          v
++-----------------------------------------------------------------------------------+
+|                                   Backend Go                                      |
+|               (API REST, Túneles SSH, Orquestador Docker, Swarm y Registry)       |
++-----------------------------------------+-----------------------------------------+
+                                          | SSH Tunnel (Puerto 22 Host Windows)
+                                          v
++-----------------------------------------------------------------------------------+
+|                               Host Windows Remoto                                 |
+|          (Oracle VirtualBox 7.2 - Red NAT vessel-net 10.250.0.0/24)               |
++--------------------+---------------------------------------------+----------------+
+                     |                                             |
+   [NIC 1: NAT Forwarding 22000]                 [NIC 1: NAT Forwarding 22001]
+                     |                                             |
+                     v                                             v
++-----------------------------------------+   +-------------------------------------+
+|        VM 1: Manager / Registry         |   |            VM 2: Worker             |
+|                                         |   |                                     |
+|  [NIC 2: 10.250.0.5 en vessel-net]      |<->|  [NIC 2: 10.250.0.6 en vessel-net]  |
+|                                         |   |                                     |
+|  +-----------------------------------+  |   |  +-------------------------------+  |
+|  |       Docker Engine (Daemon)      |  |   |  |     Docker Engine (Daemon)    |  |
+|  |                                   |  |   |  |                               |  |
+|  |  * Swarm Leader (Puerto 2377)     |  |   |  |  * Swarm Worker               |  |
+|  |  * Local Registry (Puerto 5000)   |  |   |  |  * daemon.json configurado con|  |
+|  |  * Pull-thru Cache (Puerto 5001)  |  |   |  |    mirrors hacia 10.250.0.5   |  |
+|  |  * Contenedores de aplicaciones   |  |   |  |  * Contenedores de aplicacion |  |
+|  +-----------------------------------+  |   |  +-------------------------------+  |
++-----------------------------------------+   +-------------------------------------+
 ```
-
-### Catálogo de Plantillas Integradas
-
-| Categoría | Aplicación / Plantilla | Imagen Docker Sugerida | Puertos Predeterminados |
-|---|---|---|---|
-| **Bases de Datos** | PostgreSQL | `postgres:16-alpine` | `5432:5432/tcp` |
-| | MySQL | `mysql:8.4` | `3306:3306/tcp` |
-| | MariaDB | `mariadb:11` | `3306:3306/tcp` |
-| | MongoDB | `mongo:7` | `27017:27017/tcp` |
-| **Servidores Web** | Nginx | `nginx:alpine` | `80:80/tcp`, `443:443/tcp` |
-| | Apache HTTP Server | `httpd:alpine` | `80:80/tcp` |
-| | Traefik Proxy | `traefik:v3.1` | `80:80/tcp`, `8080:8080/tcp` |
-| **Mensajería** | RabbitMQ (con Management) | `rabbitmq:3-management-alpine`| `5672:5672/tcp`, `15672:15672/tcp` |
-| | Mosquitto MQTT | `eclipse-mosquitto:latest` | `1883:1883/tcp`, `9001:9001/tcp` |
-| **Caché y Rendimiento** | Redis | `redis:alpine` | `6379:6379/tcp` |
-| | Memcached | `memcached:alpine` | `11211:11211/tcp` |
-| **Desarrollo** | Node.js Runtime | `node:20-alpine` | `3000:3000/tcp` |
-| | Python Environment | `python:3.12-alpine` | `8000:8000/tcp` |
-| **Personalizada** | Imagen Personalizada | Configurable por usuario | Puertos personalizados |
-
----
-
-## 🔄 Flujo Completo de Creación y Aprovisionamiento de VMs
-
-Al solicitar la creación de una máquina virtual desde la interfaz web o la API, el sistema ejecuta el siguiente pipeline automatizado:
-
-```mermaid
-flowchart TD
-    A["1. Solicitud Web (Nombre, Plantilla, Cores, RAM)"] --> B["2. Validación & Bloqueo de Concurrencia"]
-    B --> C["3. Asignación Dinámica de Puerto NAT (PortAllocator)"]
-    C --> D["4. Generación Nativa de Clave Ed25519 & Usuario Único"]
-    D --> E["5. VBoxManage createvm & Configuración SATA"]
-    E --> F{"6. Asociación de Disco Base"}
-    F -->|"Intento Multiattach"| G["storageattach --mtype multiattach"]
-    F -->|"Fallback si hay conflicto"| H["createmedium disk --diffparent & storageattach"]
-    G --> I["7. modifyvm: Cores, RAM & Reenvío de Puerto NAT"]
-    H --> I
-    I --> J["8. VBoxManage startvm --type headless"]
-    J --> K["9. Inicialización de Host Keys (guestcontrol / TTY2)"]
-    K --> L["10. WaitForSSH: Sondeo activo con detección de Banner SSH-2.0"]
-    L --> M["11. ProvisionVMUser: Creación de usuario único & Instalación de Llave"]
-    M --> N["12. Revocación de acceso bootstrap & multi-user.target"]
-    N --> O["13. Registro en KeyStore, known_hosts y vms.json"]
-    
-    L -.->|"Timeout / Error"| ROLLBACK["Rollback Automático: DeleteVM & Limpieza de Llaves"]
-    M -.->|"Fallo"| ROLLBACK
-```
-
-1. **Validación**: Verifica que no exista una máquina con el mismo nombre en VirtualBox para evitar colisiones.
-2. **Asignación de Puerto**: `PortAllocator` reserva el siguiente puerto libre en el rango a partir de `base_port` (ej. `22000`, `22001`, etc.).
-3. **Generación de Identidad Criptográfica**:
-   - Genera un par de claves **Ed25519** nativo en Go.
-   - Deriva un usuario Linux con el formato `vm_<nombre>_<hash>` (ej. `vm_miVM_7a4b`).
-   - Almacena las llaves en `C:\VMManager\SSH\vms\<vmName>\id_ed25519` y `.pub`.
-4. **Construcción en VirtualBox**:
-   - Registra la VM con su arquitectura correspondiente (`createvm`).
-   - Agrega controladora SATA AHCI (`storagectl`).
-   - Asocia el disco en modo `multiattach`. Si VirtualBox arroja error de compatibilidad por registro previo del medio, crea automáticamente un disco diferencial hijo (`--diffparent`) en la carpeta de la máquina virtual.
-   - Configura la memoria RAM, los cores de CPU y la regla de reenvío NAT: `ssh,tcp,,<hostPort>,,22`.
-   - Establece el orden de arranque prioritario a disco (`--boot1 disk`).
-5. **Arranque Headless y Generación de Host Keys**:
-   - Inicia la máquina virtual en modo silencioso (`startvm --type headless`).
-   - Envía la instrucción de inicialización de host keys (`ssh-keygen -A && systemctl restart ssh`) mediante `guestcontrol` o inyección de scancodes por consola virtual.
-6. **Espera Activa con Validación de Banner**:
-   - `WaitForSSH` monitorea activamente el puerto forwardeado vía túnel SSH hasta verificar la recepción del encabezado oficial `SSH-2.0-...`.
-7. **Aprovisionamiento y Securización del Usuario**:
-   - Conecta con el usuario `bootstrap`.
-   - Crea el usuario único en el sistema Linux invitado con shell `/bin/bash` y permisos `sudo`.
-   - Instala su clave pública Ed25519 en `~/.ssh/authorized_keys`.
-   - Configura el target del sistema a `multi-user.target` para optimizar arranques posteriores.
-   - **Revoca el acceso de bootstrap**: elimina su clave autorizada y bloquea la cuenta para garantizar que sólo la aplicación pueda conectarse con la llave Ed25519 generada.
-8. **Persistencia y Known Hosts**:
-   - Almacena la clave en `keys.json` para permitir su descarga.
-   - Registra la clave de host en `known_hosts`.
-   - Guarda el registro con todos sus metadatos en `vms.json`.
 
 ---
 
@@ -276,7 +263,7 @@ flowchart TD
 ### Contenedores Docker (`/api/containers` y `/api/docker`)
 | Método | Endpoint | Descripción | Cuerpo de Solicitud (JSON) |
 |---|---|---|---|
-| `GET` | `/api/docker/catalog` | Obtiene el catálogo de aplicaciones recomendadas por categoría | - |
+| `GET` | `/api/docker/catalog` | Catálogo de aplicaciones recomendadas por categoría | - |
 | `GET` | `/api/vms/{name}/docker/status` | Verifica la disponibilidad y versión de Docker en la VM | - |
 | `GET` | `/api/containers` | Lista contenedores en todas las máquinas virtuales | - |
 | `GET` | `/api/containers?vm={name}` | Filtra contenedores de una máquina virtual específica | - |
@@ -291,10 +278,49 @@ flowchart TD
 ### Imágenes Docker (`/api/images`)
 | Método | Endpoint | Descripción | Cuerpo de Solicitud (JSON) |
 |---|---|---|---|
-| `GET` | `/api/images` | Lista todas las imágenes Docker en todas las máquinas virtuales | - |
-| `GET` | `/api/images?vm={name}` o `/api/vms/{name}/images` | Lista las imágenes Docker en una máquina virtual específica | - |
-| `POST` | `/api/images/build` | Construye una imagen Docker a partir de un Dockerfile | `{"vmName":"servidor","imageName":"mi-app","tag":"1.0","dockerfile":"FROM alpine\n..."}` |
-| `DELETE` | `/api/images/{vm}/{id}?force=true` o `/api/images?vm={name}&image={ref}` | Elimina una imagen Docker en la VM (soporta `--force`) | - |
+| `GET` | `/api/images` | Lista imágenes Docker en todas las máquinas virtuales | - |
+| `GET` | `/api/images?vm={name}` | Lista imágenes Docker en una máquina virtual específica | - |
+| `POST` | `/api/images/build` | Construye una imagen a partir de un Dockerfile | `{"vmName":"servidor","imageName":"mi-app","tag":"1.0","dockerfile":"FROM alpine\n..."}` |
+| `POST` | `/api/images/export` | Exporta una imagen Docker a archivo `.tar` en la VM | `{"vmName":"servidor","image":"nginx:alpine"}` |
+| `GET` | `/api/images/exports?vm={name}` | Lista los archivos `.tar` exportados en la VM | - |
+| `GET` | `/api/images/exports/download?vm={name}&file={fileName}` | Descarga directa del archivo `.tar` al navegador | - |
+| `POST` | `/api/images/push` | Etiqueta y publica una imagen en Docker Hub | `{"vmName":"servidor","sourceImage":"mi-app:1.0","repository":"user/mi-app","tag":"1.0"}` |
+| `GET` / `POST` | `/api/dockerhub/credentials` | Consulta estado o guarda credenciales para Docker Hub | `{"username":"user","access_token":"dckr_pat_..."}` |
+| `DELETE` | `/api/images/{vm}/{id}?force=true` | Elimina una imagen Docker en la VM (soporta `--force`) | - |
+
+### Volúmenes y Redes Docker (`/api/volumes` y `/api/networks`)
+| Método | Endpoint | Descripción | Cuerpo de Solicitud (JSON) |
+|---|---|---|---|
+| `GET` | `/api/volumes?vm={name}` | Lista volúmenes Docker en la máquina virtual | - |
+| `POST` | `/api/volumes` | Crea un volumen Docker persistente | `{"vmName":"servidor","name":"datos-app","driver":"local"}` |
+| `DELETE` | `/api/volumes/{vm}/{name}` | Elimina un volumen Docker | - |
+| `GET` | `/api/networks?vm={name}` | Lista redes Docker configuradas en la máquina virtual | - |
+| `POST` | `/api/networks` | Crea una red Docker | `{"vmName":"servidor","name":"red-interna","driver":"bridge","subnet":"172.28.0.0/16"}` |
+| `DELETE` | `/api/networks/{vm}/{id}` | Elimina una red Docker | - |
+
+### Clusters Docker Swarm (`/api/clusters`)
+| Método | Endpoint | Descripción | Cuerpo de Solicitud (JSON) |
+|---|---|---|---|
+| `GET` | `/api/clusters/eligible-vms` | Evalúa la elegibilidad de las VMs para formar clusters Swarm | - |
+| `GET` | `/api/clusters` | Lista los clusters Docker Swarm registrados con estado en vivo | - |
+| `POST` | `/api/clusters` | Crea un cluster Swarm (soporta `Accept: text/event-stream` para progreso SSE) | `{"name":"cluster-prod","managerVm":"nodo-manager","workerVms":["nodo-worker1","nodo-worker2"]}` |
+| `GET` | `/api/clusters/{id}` | Inspecciona la topología, Leader, Managers y estado de los Workers | - |
+| `POST` | `/api/clusters/{id}/workers` | Incorpora o reintenta la unión de un Worker al cluster | `{"vm":"nodo-worker3"}` |
+| `DELETE` | `/api/clusters/{id}/nodes/{vm}?force=true` | Drena y expulsa un nodo del cluster (soporta forzado si está apagado) | - |
+
+### Docker Registry & Pull-through Cache (`/api/registry`)
+| Método | Endpoint | Descripción | Cuerpo de Solicitud (JSON) |
+|---|---|---|---|
+| `GET` | `/api/registry/status` | Estado global del Registry local, Pull-through Cache y nodos | - |
+| `POST` | `/api/registry/deploy` | Despliega el Registry local (`target:"local"`, puerto 5000) o la Caché (`target:"cache"`, puerto 5001) | `{"target":"local","vmName":"nodo-1"}` |
+| `POST` | `/api/registry/action` | Inicia, detiene, reinicia o purga datos de una instancia | `{"target":"cache","action":"purge"}` |
+| `GET` | `/api/registry/logs?target={local\|cache}&tail=200` | Consulta los logs del contenedor del Registry o de la Caché | - |
+| `GET` | `/api/registry/images?target=local` | Consulta el catálogo de imágenes y tags almacenados en el Registry | - |
+| `DELETE` | `/api/registry/images?repository={repo}&tag={tag}&force=true` | Elimina una imagen del Registry y ejecuta Garbage Collection | - |
+| `POST` | `/api/registry/push` | Etiqueta y sube una imagen de una VM hacia el Registry local | `{"vmName":"nodo-2","sourceImage":"mi-app:1.0","targetRepository":"mi-app","tag":"1.0"}` |
+| `POST` | `/api/registry/pull` | Descarga una imagen desde el Registry local hacia una VM | `{"vmName":"nodo-2","repository":"mi-app","tag":"1.0"}` |
+| `POST` | `/api/registry/smart-pull` | Descarga inteligente resolviendo desde Registry local, Cache o Hub | `{"vmName":"nodo-2","image":"nginx:alpine","preferRegistry":true}` |
+| `POST` | `/api/registry/nodes/configure` | Aplica `registry-mirrors` e `insecure-registries` en `/etc/docker/daemon.json` de las VMs | `{"vms":["nodo-1","nodo-2"],"restartService":false}` |
 
 ### Máquinas Virtuales (`/api/vms`)
 | Método | Endpoint | Descripción | Cuerpo de Solicitud (JSON) |
@@ -303,11 +329,11 @@ flowchart TD
 | `POST` | `/api/vms` | Crea y aprovisiona una nueva VM a partir de plantilla | `{"name":"miVM","templateId":"debian-13.7.0","cores":2,"memoryMB":4096}` |
 | `GET` | `/api/vms/{name}` | Obtiene los detalles y estado actual de una VM | - |
 | `DELETE` | `/api/vms/{name}` | Elimina la VM de VirtualBox y limpia sus llaves y registros | - |
-| `POST` | `/api/vms/{name}/start` | Inicia la VM en modo headless (y migra a doble NIC si aplica) | - |
+| `POST` | `/api/vms/{name}/start` | Inicia la VM en modo headless (y verifica adaptadores de red) | - |
 | `POST` | `/api/vms/{name}/stop` | Apagado limpio de la VM mediante señal ACPI | - |
 | `POST` | `/api/vms/{name}/poweroff` | Apagado forzado inmediato de la VM | - |
-| `GET` / `POST` | `/api/vms/{name}/network-info` | Consulta o refresca el descubrimiento por MAC de la IP privada en `vessel-net` y estado de adaptadores | - |
-| `POST` | `/api/vms/{name}/connectivity` | Verifica la conectividad directa (ICMP + fallback TCP) desde una VM hacia otra VM o IP en `vessel-net` | `{"target":"otraVM","targetPort":22}` |
+| `GET` / `POST` | `/api/vms/{name}/network-info` | Consulta o refresca el descubrimiento por MAC de la IP privada en `vessel-net` | - |
+| `POST` | `/api/vms/{name}/connectivity` | Verifica la conectividad directa (ICMP + TCP) desde una VM hacia otra VM o IP en `vessel-net` | `{"target":"otraVM","targetPort":22}` |
 
 ### Plantillas (`/api/templates`)
 | Método | Endpoint | Descripción |
@@ -329,11 +355,6 @@ flowchart TD
 | `WSS` / `WS` | `/ws` | `host`, `port`, `user`, `shell`, `startPath` | Terminal interactivo contra el host Windows |
 | `WSS` / `WS` | `/ws?vm={name}` | `vm={name}` | Terminal interactivo directo hacia la VM vía túnel SSH |
 | `WSS` / `WS` | `/ws?vm={name}&container={id}` | `vm={name}`, `container={id}` | Consola interactiva directa dentro del contenedor (`docker exec -it <container> /bin/sh`) |
-
-#### Mensajes WebSocket:
-- **Entrada de usuario**: `{"type":"input","data":"ls -la\r\n"}`
-- **Redimensionamiento PTY**: `{"type":"resize","cols":120,"rows":35}`
-- **Salida de terminal**: Flujo bidireccional transmitido directamente desde el canal PTY remoto.
 
 ---
 
@@ -361,9 +382,9 @@ La consola mostrará el inicio del servidor:
 Abre tu navegador en:
 **http://localhost:8080**
 
-- Haz clic en el **icono de engranaje (⚙)** en la esquina superior izquierda para abrir el panel flotante de control.
+- Haz clic en el **icono de engranaje (⚙)** en la barra superior para abrir el panel de control.
 - Alterna entre las pestañas:
   - **Hosts**: Conexión directa y perfiles de servidores SSH.
-  - **Máquinas Virtuales**: Ciclo de vida y terminal de VMs en VirtualBox.
-  - **Contenedores**: Administración y despliegue de contenedores Docker en VMs, visor de logs y consola interactiva.
+  - **Máquinas Virtuales**: Ciclo de vida, asignación de recursos y red privada `vessel-net`.
+  - **Docker ▾**: Submenú con **Contenedores**, **Imágenes**, **Clusters (Swarm)** y **Registry (Local & Cache)**.
   - **Llaves SSH**: Auditoría y descarga de claves Ed25519.
