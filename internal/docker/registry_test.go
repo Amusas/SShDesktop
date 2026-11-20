@@ -316,3 +316,60 @@ func TestSmartPullImage_LocalPriorityAndCacheFallback(t *testing.T) {
 		t.Errorf("se esperaba éxito al usar AllowFallback=true hacia Docker Hub: res=%+v err=%v", res5, err)
 	}
 }
+
+func TestListCacheImages_FromContainerFS_IncludesManifestOnlyRepos(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "registry.json")
+	store := NewRegistryStore(tmpFile)
+	_ = store.SetInstance(RegistryInstanceConfig{
+		Target:        RegistryTargetCache,
+		VMID:          "vm-reg",
+		VMName:        "nodo-principal",
+		HostIP:        "10.250.0.5",
+		Port:          5001,
+		ContainerPort: 5000,
+		ContainerName: DefaultCacheRegistryContainer,
+		VolumeName:    DefaultCacheRegistryVolume,
+		Image:         DefaultRegistryImage,
+		RemoteURL:     DefaultCacheRemoteURL,
+	})
+
+	provider := newMockSwarmVMProvider(
+		SwarmVMInfo{ID: "vm-reg", Name: "nodo-principal", State: "running", PrivateIP: "10.250.0.5"},
+	)
+
+	manifestJSON := `{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json","config":{"size":1080,"digest":"sha256:1fb6ae95069e83880a137d27ccb3af55f75ee18b2645119f44d787539d312fda"},"layers":[{"size":3792075,"digest":"sha256:53f8f5e03afd86ade91b7aa57a749f5a3d1419c113be5d8c10e7ee61bb5ab887"},{"size":2251129,"digest":"sha256:07f8932af15c70b370d9f577b78df11b6241cf96dc06d726e74e99c99928aa35"}]}`
+	b64Manifest := "eyJzY2hlbWFWZXJzaW9uIjoyLCJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi92bmQuZG9ja2VyLmRpc3RyaWJ1dGlvbi5tYW5pZmVzdC52Mitqc29uIiwiY29uZmlnIjp7InNpemUiOjEwODAsImRpZ2VzdCI6InNoYTI1NjoxZmI2YWU5NTA2OWU4Mzg4MGExMzdkMjdjY2IzYWY1NWY3NWVlMThiMjY0NTExOWY0NGQ3ODc1MzlkMzEyZmRhIn0sImxheWVycyI6W3sic2l6ZSI6Mzc5MjA3NSwiZGlnZXN0Ijoic2hhMjU2OjUzZjhmNWUwM2FmZDg2YWRlOTFiN2FhNTdhNzQ5ZjVhM2QxNDE5YzExM2JlNWQ4YzEwZTdlZTYxYmI1YWI4ODcifSx7InNpemUiOjIyNTExMjksImRpZ2VzdCI6InNoYTI1NjowN2Y4OTMyYWYxNWM3MGIzNzBkOWY1NzdiNzhkZjExYjYyNDFjZjk2ZGMwNmQ3MjZlNzRlOTljOTk5MjhhYTM1In1dfQ=="
+	_ = manifestJSON
+
+	var warmedBlobs []string
+	runner := func(_ context.Context, vmName, cmd string) (string, error) {
+		if strings.Contains(cmd, "FS_SCAN_DONE") {
+			return fmt.Sprintf("HTTP_V2|200\nFS_ITEM|amusasuq/ensayo|latest|sha256:dea168c5a3b80cc5df187ea90c8a2d672aaecadbab6c1438b8aa854f01c9fb04|0|%s\nFS_SCAN_DONE\n", b64Manifest), nil
+		}
+		if strings.Contains(cmd, "/blobs/sha256:1fb6ae95069e") {
+			warmedBlobs = append(warmedBlobs, cmd)
+			return "", nil
+		}
+		if strings.Contains(cmd, "/tags/list") {
+			t.Fatalf("no se debe invocar /tags/list en Pull-through Cache cuando el escaneo del contenedor tuvo éxito")
+		}
+		return "", nil
+	}
+
+	svc := NewRegistryService(runner, provider, store, nil)
+	res, err := svc.ListRegistryImages(context.Background(), RegistryTargetCache)
+	if err != nil {
+		t.Fatalf("error listando imágenes en caché: %v", err)
+	}
+	if !res.Healthy || len(res.Images) != 1 {
+		t.Fatalf("se esperaba 1 imagen en caché (amusasuq/ensayo:latest), obtenido: %+v", res)
+	}
+	img := res.Images[0]
+	if img.Repository != "amusasuq/ensayo" || img.Tag != "latest" || img.LayersCount != 2 || img.SizeBytes != 6044284 {
+		t.Errorf("metadatos inesperados para amusasuq/ensayo:latest: %+v", img)
+	}
+	if len(warmedBlobs) != 1 {
+		t.Errorf("se esperaba calentamiento del blob de config cuando has_layers=0, obtenido: %d", len(warmedBlobs))
+	}
+}
+

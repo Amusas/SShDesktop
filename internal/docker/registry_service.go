@@ -764,6 +764,15 @@ func (s *RegistryService) ListRegistryImages(ctx context.Context, target string)
 	cmdCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 
+	// Intentar primero inspección directa del almacenamiento local del contenedor (/var/lib/registry).
+	// Esto es indispensable para Pull-through Cache (donde /v2/_catalog omite repositorios cuyo cliente ya tenía las capas
+	// y donde /v2/<repo>/tags/list consulta todos los cientos de tags remotos de Docker Hub causando timeouts).
+	if strings.TrimSpace(cfg.ContainerName) != "" {
+		if fsRes, ok := s.listRegistryImagesFromContainerFS(cmdCtx, target, cfg, endpointHost, endpointURL); ok {
+			return fsRes, nil
+		}
+	}
+
 	catCmd := fmt.Sprintf(`curl -fsS --max-time 8 "http://127.0.0.1:%d/v2/_catalog?n=500"`, cfg.Port)
 	catOut, catErr := s.runner(cmdCtx, cfg.VMName, catCmd)
 	if catErr != nil {
@@ -851,6 +860,287 @@ func (s *RegistryService) ListRegistryImages(ctx context.Context, target string)
 		Repositories: catalog.Repositories,
 		Images:       allImages,
 	}, nil
+}
+
+// listRegistryImagesFromContainerFS inspecciona en una sola llamada SSH los repositorios, tags y manifiestos
+// realmente almacenados en el volumen del contenedor (/var/lib/registry/docker/registry/v2).
+func (s *RegistryService) listRegistryImagesFromContainerFS(
+	ctx context.Context,
+	target string,
+	cfg *RegistryInstanceConfig,
+	endpointHost, endpointURL string,
+) (*RegistryImagesResponse, bool) {
+	scanScript := fmt.Sprintf(`HTTP_CODE=$(curl -s -o /dev/null -w '%%{http_code}' --max-time 5 "http://127.0.0.1:%d/v2/" 2>/dev/null || echo "000")
+echo "HTTP_V2|$HTTP_CODE"
+if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "401" ]; then
+    echo "FS_SCAN_DONE"
+    exit 0
+fi
+sudo docker exec %s sh -c '
+ROOT="/var/lib/registry/docker/registry/v2"
+if [ -d "$ROOT/repositories" ]; then
+    for link_file in $(find "$ROOT/repositories" -type f -name "link" 2>/dev/null | grep "/_manifests/tags/.*/current/link$"); do
+        rel="${link_file#$ROOT/repositories/}"
+        repo="${rel%%%%/_manifests/tags/*}"
+        rest="${rel#*/_manifests/tags/}"
+        tag="${rest%%%%/current/link}"
+        digest=$(cat "$link_file" 2>/dev/null | tr -d " \t\r\n")
+        if [ -z "$digest" ]; then continue; fi
+        hex="${digest#sha256:}"
+        if [ ! -f "$ROOT/repositories/$repo/_manifests/revisions/sha256/$hex/link" ]; then continue; fi
+        p2=$(echo "$hex" | cut -c1-2)
+        blob="$ROOT/blobs/sha256/$p2/$hex/data"
+        b64=""
+        if [ -f "$blob" ]; then
+            b64=$(base64 "$blob" 2>/dev/null | tr -d "\r\n")
+        fi
+        has_layers=0
+        if [ -d "$ROOT/repositories/$repo/_layers" ]; then
+            has_layers=1
+        fi
+        echo "FS_ITEM|$repo|$tag|$digest|$has_layers|$b64"
+    done
+fi
+echo "FS_SCAN_DONE"
+' 2>/dev/null || true
+`, cfg.Port, EscapeShellArg(cfg.ContainerName))
+
+	out, err := s.runner(ctx, cfg.VMName, scanScript)
+	if err != nil || !strings.Contains(out, "FS_SCAN_DONE") {
+		return nil, false
+	}
+
+	httpCode := "000"
+	type rawFSItem struct {
+		repo          string
+		tag           string
+		digest        string
+		hasLayers     bool
+		manifestBytes []byte
+	}
+	byRepo := make(map[string][]rawFSItem)
+	repoSet := make(map[string]bool)
+
+	for _, rawLine := range strings.Split(strings.TrimSpace(out), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if strings.HasPrefix(line, "HTTP_V2|") {
+			httpCode = strings.TrimSpace(strings.TrimPrefix(line, "HTTP_V2|"))
+			continue
+		}
+		if !strings.HasPrefix(line, "FS_ITEM|") {
+			continue
+		}
+		parts := strings.SplitN(strings.TrimPrefix(line, "FS_ITEM|"), "|", 5)
+		if len(parts) < 5 {
+			continue
+		}
+		repo := strings.TrimSpace(parts[0])
+		tag := strings.TrimSpace(parts[1])
+		digest := strings.TrimSpace(parts[2])
+		hasLayers := strings.TrimSpace(parts[3]) == "1"
+		b64 := strings.TrimSpace(parts[4])
+		if repo == "" || tag == "" {
+			continue
+		}
+		var mBytes []byte
+		if b64 != "" {
+			if decoded, decErr := base64.StdEncoding.DecodeString(b64); decErr == nil {
+				mBytes = decoded
+			}
+		}
+		repoSet[repo] = true
+		byRepo[repo] = append(byRepo[repo], rawFSItem{
+			repo:          repo,
+			tag:           tag,
+			digest:        digest,
+			hasLayers:     hasLayers,
+			manifestBytes: mBytes,
+		})
+	}
+
+	if httpCode != "200" && httpCode != "401" {
+		return &RegistryImagesResponse{
+			Target:       target,
+			EndpointHost: endpointHost,
+			EndpointURL:  endpointURL,
+			Healthy:      false,
+			Repositories: []string{},
+			Images:       []RegistryImageItem{},
+			Error:        fmt.Sprintf("El endpoint V2 (%s/v2/) no responde (HTTP %s)", endpointURL, httpCode),
+		}, true
+	}
+
+	repos := make([]string, 0, len(repoSet))
+	for r := range repoSet {
+		repos = append(repos, r)
+	}
+	sort.Strings(repos)
+
+	var allImages []RegistryImageItem
+	for _, repo := range repos {
+		rawItems := byRepo[repo]
+		sort.Slice(rawItems, func(i, j int) bool {
+			return rawItems[i].tag < rawItems[j].tag
+		})
+
+		digestToTags := make(map[string][]string)
+		repoItems := make([]RegistryImageItem, 0, len(rawItems))
+
+		for _, raw := range rawItems {
+			item := s.buildRegistryItemFromFS(ctx, target, cfg, endpointHost, raw.repo, raw.tag, raw.digest, raw.hasLayers, raw.manifestBytes)
+			if item.Digest != "" {
+				digestToTags[item.Digest] = append(digestToTags[item.Digest], item.Tag)
+			}
+			repoItems = append(repoItems, item)
+		}
+
+		for i := range repoItems {
+			d := repoItems[i].Digest
+			if d != "" && len(digestToTags[d]) > 1 {
+				for _, otherTag := range digestToTags[d] {
+					if otherTag != repoItems[i].Tag {
+						repoItems[i].SharedTags = append(repoItems[i].SharedTags, otherTag)
+					}
+				}
+			}
+			allImages = append(allImages, repoItems[i])
+		}
+	}
+
+	if allImages == nil {
+		allImages = []RegistryImageItem{}
+	}
+	return &RegistryImagesResponse{
+		Target:       target,
+		EndpointHost: endpointHost,
+		EndpointURL:  endpointURL,
+		Healthy:      true,
+		Repositories: repos,
+		Images:       allImages,
+	}, true
+}
+
+func (s *RegistryService) buildRegistryItemFromFS(
+	ctx context.Context,
+	target string,
+	cfg *RegistryInstanceConfig,
+	endpointHost, repo, tag, digest string,
+	hasLayers bool,
+	manifestBytes []byte,
+) RegistryImageItem {
+	if len(manifestBytes) == 0 {
+		return s.inspectManifestV2(ctx, cfg.VMName, cfg.Port, endpointHost, repo, tag)
+	}
+
+	fullRef := fmt.Sprintf("%s/%s:%s", endpointHost, repo, tag)
+	item := RegistryImageItem{
+		Repository:    repo,
+		Tag:           tag,
+		Digest:        digest,
+		FullReference: fullRef,
+		Size:          "n/a",
+	}
+
+	var manifest struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		MediaType     string `json:"mediaType"`
+		Config        struct {
+			Size   int64  `json:"size"`
+			Digest string `json:"digest"`
+		} `json:"config"`
+		Layers []struct {
+			Size   int64  `json:"size"`
+			Digest string `json:"digest"`
+		} `json:"layers"`
+		Manifests []struct {
+			Digest   string `json:"digest"`
+			Size     int64  `json:"size"`
+			Platform struct {
+				Architecture string `json:"architecture"`
+				OS           string `json:"os"`
+			} `json:"platform"`
+		} `json:"manifests"`
+	}
+
+	if json.Unmarshal(manifestBytes, &manifest) != nil {
+		return item
+	}
+	if manifest.MediaType != "" {
+		item.MediaType = manifest.MediaType
+	}
+
+	if len(manifest.Layers) > 0 || manifest.Config.Size > 0 {
+		var total int64 = manifest.Config.Size
+		for _, l := range manifest.Layers {
+			total += l.Size
+		}
+		item.SizeBytes = total
+		item.Size = FormatByteSize(total)
+		item.LayersCount = len(manifest.Layers)
+
+		// Si estamos en Pull-through Cache y el repositorio solo tenía el manifiesto (porque la VM cliente ya poseía las capas),
+		// calentar el blob de configuración para que registry:2.8.3 registre _layers y lo incluya en /v2/_catalog.
+		if target == RegistryTargetCache && !hasLayers && strings.HasPrefix(manifest.Config.Digest, "sha256:") {
+			warmCmd := fmt.Sprintf(`curl -fsS -o /dev/null --max-time 5 "http://127.0.0.1:%d/v2/%s/blobs/%s" 2>/dev/null || true`,
+				cfg.Port, repo, manifest.Config.Digest)
+			_, _ = s.runner(ctx, cfg.VMName, warmCmd)
+		}
+		return item
+	}
+
+	// Si es un Manifest List / OCI Index (multi-arquitectura), resolver el manifiesto hijo linux/amd64
+	if len(manifest.Manifests) > 0 {
+		chosenDigest := manifest.Manifests[0].Digest
+		for _, m := range manifest.Manifests {
+			if m.Platform.OS == "linux" && m.Platform.Architecture == "amd64" && m.Digest != "" {
+				chosenDigest = m.Digest
+				break
+			}
+		}
+		if strings.HasPrefix(chosenDigest, "sha256:") {
+			subHex := strings.TrimPrefix(chosenDigest, "sha256:")
+			if len(subHex) >= 2 {
+				subCmd := fmt.Sprintf(
+					`sudo docker exec %s cat "/var/lib/registry/docker/registry/v2/blobs/sha256/%s/%s/data" 2>/dev/null || curl -fsS --max-time 6 -H %s "http://127.0.0.1:%d/v2/%s/manifests/%s"`,
+					EscapeShellArg(cfg.ContainerName),
+					subHex[:2],
+					subHex,
+					EscapeShellArg("Accept: "+registryAcceptHeaders),
+					cfg.Port,
+					repo,
+					chosenDigest,
+				)
+				if subOut, subErr := s.runner(ctx, cfg.VMName, subCmd); subErr == nil {
+					var subManifest struct {
+						Config struct {
+							Size   int64  `json:"size"`
+							Digest string `json:"digest"`
+						} `json:"config"`
+						Layers []struct {
+							Size int64 `json:"size"`
+						} `json:"layers"`
+					}
+					if json.Unmarshal([]byte(strings.TrimSpace(subOut)), &subManifest) == nil && len(subManifest.Layers) > 0 {
+						var total int64 = subManifest.Config.Size
+						for _, l := range subManifest.Layers {
+							total += l.Size
+						}
+						item.SizeBytes = total
+						item.Size = FormatByteSize(total)
+						item.LayersCount = len(subManifest.Layers)
+
+						if target == RegistryTargetCache && !hasLayers && strings.HasPrefix(subManifest.Config.Digest, "sha256:") {
+							warmCmd := fmt.Sprintf(`curl -fsS -o /dev/null --max-time 5 "http://127.0.0.1:%d/v2/%s/blobs/%s" 2>/dev/null || true`,
+								cfg.Port, repo, subManifest.Config.Digest)
+							_, _ = s.runner(ctx, cfg.VMName, warmCmd)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return item
 }
 
 // inspectManifestV2 consulta el manifiesto de <repo>:<tag> en la API V2 soportando esquemas Docker V2 y OCI.
@@ -1318,6 +1608,24 @@ func (s *RegistryService) SmartPullImage(ctx context.Context, req SmartPullReque
 	if cacheActiveOnNode && persisted.Cache != nil {
 		if healthy, matchedCacheRepo, _ := s.checkManifestInRegistry(ctx, persisted.Cache, repo, tag); healthy && matchedCacheRepo != "" {
 			isCachedAfter = true
+		} else if healthy && strings.TrimSpace(persisted.Cache.ContainerName) != "" {
+			// Si el daemon Docker del nodo ya tenía las capas preinstaladas y no forzó la escritura en el mirror,
+			// calentar el manifiesto en el Pull-through Cache para garantizar que quede registrado en caché.
+			warmRepo := repo
+			if !strings.Contains(repo, "/") {
+				warmRepo = "library/" + repo
+			}
+			warmCmd := fmt.Sprintf(
+				`curl -fsS -o /dev/null --max-time 8 -H %s "http://127.0.0.1:%d/v2/%s/manifests/%s" 2>/dev/null || true`,
+				EscapeShellArg("Accept: "+registryAcceptHeaders),
+				persisted.Cache.Port,
+				warmRepo,
+				tag,
+			)
+			_, _ = s.runner(ctx, persisted.Cache.VMName, warmCmd)
+			if h2, m2, _ := s.checkManifestInRegistry(ctx, persisted.Cache, repo, tag); h2 && m2 != "" {
+				isCachedAfter = true
+			}
 		}
 	}
 
@@ -1375,6 +1683,36 @@ func (s *RegistryService) checkManifestInRegistry(ctx context.Context, cfg *Regi
 			return false, "", pingErr
 		}
 		return false, "", fmt.Errorf("HTTP %s en /v2/", code)
+	}
+
+	if strings.EqualFold(cfg.Target, RegistryTargetCache) && strings.TrimSpace(cfg.ContainerName) != "" {
+		for _, candidateRepo := range candidates {
+			fsCheckCmd := fmt.Sprintf(
+				`sudo docker exec %s sh -c 'if [ -f "/var/lib/registry/docker/registry/v2/repositories/%s/_manifests/tags/%s/current/link" ]; then echo "FS_CACHED|1"; else echo "FS_CACHED|0"; fi' 2>/dev/null || true`,
+				EscapeShellArg(cfg.ContainerName),
+				candidateRepo,
+				tag,
+			)
+			fsOut, fsErr := s.runner(cmdCtx, cfg.VMName, fsCheckCmd)
+			if fsErr == nil && strings.Contains(fsOut, "FS_CACHED|") {
+				if strings.Contains(fsOut, "FS_CACHED|1") {
+					return true, candidateRepo, nil
+				}
+				continue
+			}
+			checkCmd := fmt.Sprintf(
+				`curl -s -o /dev/null -w '%%{http_code}' --max-time 5 -H %s "http://127.0.0.1:%d/v2/%s/manifests/%s"`,
+				EscapeShellArg("Accept: "+registryAcceptHeaders),
+				cfg.Port,
+				candidateRepo,
+				tag,
+			)
+			out, err := s.runner(cmdCtx, cfg.VMName, checkCmd)
+			if err == nil && strings.TrimSpace(out) == "200" {
+				return true, candidateRepo, nil
+			}
+		}
+		return true, "", nil
 	}
 
 	for _, candidateRepo := range candidates {
