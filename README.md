@@ -6,9 +6,9 @@ El sistema implementa aprovisionamiento instantáneo a partir de **plantillas ba
 
 ---
 
-## 📋 Características Principales
+## Características Principales
 
-### 🐳 1. Gestión Integral de Docker en VMs Linux
+### 1. Gestión Integral de Docker en VMs Linux
 - **Cero Docker en el Host Windows**: Todos los contenedores, imágenes, volúmenes y redes se construyen y ejecutan exclusivamente dentro del motor Docker de las máquinas virtuales Linux. El host Windows no requiere tener Docker instalado.
 - **Túnel SSH y Ejecución Segura**: Las operaciones Docker se canalizan mediante el túnel SSH hacia la máquina virtual con validación estricta contra inyección de comandos, escapado POSIX con comillas simples y ejecución controlada vía `sudo docker`.
 - **Navegación Docker Integrada con Submenú**:
@@ -20,7 +20,7 @@ El sistema implementa aprovisionamiento instantáneo a partir de **plantillas ba
   - **Selector Dinámico por Máquina Virtual**: Selector de VM con estado inicial claro (*"Selecciona MV"*) para dirigir operaciones puntuales a cada nodo.
   - **Indicador de Salud Docker en Vivo**: Muestra en tiempo real si el daemon Docker está activo, su versión y conteo de recursos en la VM seleccionada.
 
-#### 📦 Contenedores y Asistente Visual (Wizard)
+#### Contenedores y Asistente Visual (Wizard)
 - **Asistente de Creación Paso a Paso**:
   - **Paso 1 (VM y Origen)**: Selecciona entre imágenes locales existentes o el catálogo de aplicaciones recomendadas.
   - **Paso 2 (Catálogo / Plantilla)**: Categorías visuales (*Bases de Datos, Servidores Web, Mensajería, Caché, Desarrollo o Personalizado*) con puertos y volúmenes preconfigurados.
@@ -31,20 +31,20 @@ El sistema implementa aprovisionamiento instantáneo a partir de **plantillas ba
 - **Inspección Profunda**: Consulta de ID, IPs internas, redes conectadas, mapeos de puertos, variables de entorno y montajes.
 - **Terminal Interactiva Directa (`docker exec`)**: Consola interactiva Bash/Sh dentro del contenedor mediante WebSocket y PTY con soporte ANSI completo.
 
-#### 🖼️ Gestión de Imágenes Docker
+#### Gestión de Imágenes Docker
 - **Listado y Filtro**: Visualización de Repository, Tag, Image ID, Tamaño y fecha de creación.
 - **Compilación de Imágenes (`+ Crear imagen`)**: Soporte para subir archivos Dockerfile (dropzone interactivo) o escribir instrucciones en editor integrado.
 - **Commit de Contenedores**: Creación de nuevas imágenes a partir del estado de ejecución de un contenedor existente (`docker commit`).
 - **Exportación a `.tar` y Descarga Directa**: Exporta imágenes a archivos tar dentro de la VM y permite descargarlas directamente al navegador del usuario.
 - **Publicación en Docker Hub**: Gestión segura de credenciales de Docker Hub (`username` y `access_token`) con guardado persistente y subida autenticada (`docker push`).
 
-#### 🗄️ Volúmenes y Redes Docker
+#### Volúmenes y Redes Docker
 - **Volúmenes**: Listado, creación de volúmenes persistentes con drivers configurables, inspección de puntos de montaje y eliminación segura.
 - **Redes Docker**: Administración de redes puente (`bridge`), superpuestas (`overlay`) y de host; creación con subredes y gateways personalizados, inspección de contenedores adjuntos y desconexión/conexión dinámica.
 
 ---
 
-### 🐝 2. Clusters Docker Swarm (Orquestación Multi-Nodo)
+### 2. Clusters Docker Swarm (Orquestación Multi-Nodo)
 - **Orquestación sobre VMs Existentes**: Permite formar clusters Docker Swarm utilizando exclusivamente las máquinas virtuales creadas y administradas en Vessel, sin modificar el flujo de creación de VMs.
 - **Asistente de Creación con Progreso en Tiempo Real (SSE)**:
   - Definición del nombre del cluster.
@@ -60,7 +60,7 @@ El sistema implementa aprovisionamiento instantáneo a partir de **plantillas ba
 
 ---
 
-### 📦 3. Docker Registry Privado Local & Pull-through Cache
+### 3. Docker Registry Privado Local & Pull-through Cache
 - **Arquitectura de Doble Instancia Aislada (`registry:2.8.3`)**:
   - **Puerto 5000 (`vessel-registry`) - Registry Local Escribible**:
     - Instancia dedicada exclusivamente al almacenamiento y distribución de imágenes propias de proyectos o compilaciones locales.
@@ -83,7 +83,7 @@ El sistema implementa aprovisionamiento instantáneo a partir de **plantillas ba
 
 ---
 
-### 🌐 4. Red Privada Inter-VM (`vessel-net`) y Doble Adaptador de Red
+### 4. Red Privada Inter-VM (`vessel-net`) y Doble Adaptador de Red
 - **Red NAT Compartida (NAT Network)**: Configuración en VirtualBox de la red compartida `vessel-net` (`10.250.0.0/24`, Gateway `10.250.0.1`, servidor DHCP integrado).
 - **Arquitectura de Doble NIC por VM**:
   - **Adaptador 1 (NAT simple)**: Exclusivo para reenvío de puertos NAT SSH hacia el host Windows (`127.0.0.1:2200X -> 22`), garantizando el túnel de control del backend.
@@ -94,7 +94,7 @@ El sistema implementa aprovisionamiento instantáneo a partir de **plantillas ba
 
 ---
 
-### 🖥️ 5. Gestión Integral de Máquinas Virtuales (VirtualBox 7.2)
+### 5. Gestión Integral de Máquinas Virtuales (VirtualBox 7.2)
 - **Aprovisionamiento Instantáneo mediante Plantillas Base**: Múltiples máquinas virtuales comparten un único disco base en modo lectura con discos diferenciales.
 - **Compatibilidad con VirtualBox 7.2**: Si VirtualBox restringe la asociación directa por estado del medio (`MultiAttach compatibility`), el sistema aprovisiona automáticamente un disco diferencial hijo (`--diffparent`), garantizando que la plantilla original jamás se modifique ni se corrompa.
 - **Aprovisionamiento de Identidad Criptográfica (Zero-Touch Provisioning)**:
@@ -113,21 +113,21 @@ El sistema implementa aprovisionamiento instantáneo a partir de **plantillas ba
 
 ---
 
-### 💻 6. Terminal Web SSH Interactivo
+### 6. Terminal Web SSH Interactivo
 - **Conexión Directa al Host o a VMs**: Conéctate a la máquina Windows anfitriona o salta por túnel SSH transparente hacia el puerto NAT de cualquier VM.
 - **Emulación Completa ANSI / VT100**: Colores enriquecidos, soporte de teclas especiales, atajos interactivos (`Ctrl+C`, `Ctrl+D`, etc.) y redimensionamiento dinámico del terminal (`resize`).
 - **Resaltado Semántico y Limpieza de Buffer**: Detección inteligente de prompts y rutas; manejo de buffers para evitar repeticiones visuales tras comandos de borrado como `cls` o `clear`.
 
 ---
 
-### 🔑 7. Gestión Centralizada de Llaves SSH
+### 7. Gestión Centralizada de Llaves SSH
 - **Almacén Seguro de Identidades**: Listado completo de llaves vinculadas a cada máquina virtual en `keys.json`.
 - **Descargas Directas**: Descarga de clave privada (`.pem`) y pública (`.pub`) para uso en clientes externos (OpenSSH, PuTTY, VS Code).
 - **Autorecuperación Inteligente**: Si un archivo físico de clave privada se extravía en disco, el sistema lo regenera automáticamente desde el almacén local.
 
 ---
 
-## 🛠️ Requisitos del Sistema
+## Requisitos del Sistema
 
 1. **Host Local (Servidor Web Vessel)**:
    - [Go 1.22+](https://go.dev/dl/) instalado.
@@ -143,7 +143,7 @@ El sistema implementa aprovisionamiento instantáneo a partir de **plantillas ba
 
 ---
 
-## 📁 Estructura del Proyecto
+## Estructura del Proyecto
 
 ```
 SshDesktop/
@@ -191,7 +191,7 @@ SshDesktop/
 
 ---
 
-## ⚙️ Configuración (`config.properties` / `.env`)
+## Configuración (`config.properties` / `.env`)
 
 La aplicación lee su configuración de forma jerárquica: primero `config.properties`, luego `.env` (si existe), complementando con valores predeterminados.
 
@@ -215,7 +215,7 @@ La aplicación lee su configuración de forma jerárquica: primero `config.prope
 
 ---
 
-## 🏗️ Arquitectura de Red y Virtualización Multi-Capa
+## Arquitectura de Red y Virtualización Multi-Capa
 
 La arquitectura desacopla por completo la virtualización del host y organiza las cargas mediante redes privadas dedicadas:
 
@@ -258,7 +258,7 @@ La arquitectura desacopla por completo la virtualización del host y organiza la
 
 ---
 
-## 📡 Referencia de la API REST y WebSocket
+## Referencia de la API REST y WebSocket
 
 ### Contenedores Docker (`/api/containers` y `/api/docker`)
 | Método | Endpoint | Descripción | Cuerpo de Solicitud (JSON) |
@@ -358,7 +358,7 @@ La arquitectura desacopla por completo la virtualización del host y organiza la
 
 ---
 
-## 🚀 Compilación y Puesta en Marcha
+## Compilación y Puesta en Marcha
 
 ### 1. Compilación del Binario
 ```powershell
@@ -382,9 +382,9 @@ La consola mostrará el inicio del servidor:
 Abre tu navegador en:
 **http://localhost:8080**
 
-- Haz clic en el **icono de engranaje (⚙)** en la barra superior para abrir el panel de control.
+- Haz clic en el **icono de engranaje** en la barra superior para abrir el panel de control.
 - Alterna entre las pestañas:
   - **Hosts**: Conexión directa y perfiles de servidores SSH.
   - **Máquinas Virtuales**: Ciclo de vida, asignación de recursos y red privada `vessel-net`.
-  - **Docker ▾**: Submenú con **Contenedores**, **Imágenes**, **Clusters (Swarm)** y **Registry (Local & Cache)**.
+  - **Docker**: Submenú con **Contenedores**, **Imágenes**, **Clusters (Swarm)** y **Registry (Local & Cache)**.
   - **Llaves SSH**: Auditoría y descarga de claves Ed25519.
